@@ -25,14 +25,16 @@
                         <Border Background="{DynamicResource SurfaceRaisedBrush}"
                                 BorderBrush="{DynamicResource BorderSubtleBrush}" BorderThickness="1"
                                 CornerRadius="8" Padding="20,16">
-                            <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto">
+                            <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto,Auto">
                                 <TextBlock Text="{Binding DisplayName}" FontSize="16" FontWeight="SemiBold"
                                            Foreground="{DynamicResource TextPrimaryBrush}" />
                                 <TextBlock Grid.Column="1" Text="{Binding Host}"
                                            Foreground="{DynamicResource AccentBrush}" />
-                                <TextBlock Grid.Row="1" Grid.ColumnSpan="2" Text="{Binding Location}" Margin="0,6,0,0"
+                                <TextBlock Grid.Row="1" Grid.ColumnSpan="2" Text="{Binding BuildText}" Margin="0,6,0,0"
+                                           Foreground="{DynamicResource TextPrimaryBrush}" />
+                                <TextBlock Grid.Row="2" Grid.ColumnSpan="2" Text="{Binding Location}" Margin="0,4,0,0"
                                            Foreground="{DynamicResource TextSecondaryBrush}" />
-                                <SelectableTextBlock Grid.Row="2" Grid.ColumnSpan="2" Text="{Binding GamePath}" Margin="0,4,0,0"
+                                <SelectableTextBlock Grid.Row="3" Grid.ColumnSpan="2" Text="{Binding GamePath}" Margin="0,4,0,0"
                                                      FontFamily="monospace" FontSize="12"
                                                      Foreground="{DynamicResource TextSecondaryBrush}" />
                             </Grid>

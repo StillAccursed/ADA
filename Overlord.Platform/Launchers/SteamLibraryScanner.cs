@@ -74,7 +74,8 @@ public sealed class SteamLibraryScanner(Func<string, string?> mapPath, GameHost 
         if (gamePath is null || !GameInstallValidator.LooksLikeGame(gamePath))
             return;
 
-        results.Add(new GameInstall(gamePath, GameLauncher.Steam, host, kind, state.GetString("buildid"), location));
+        results.Add(new GameInstall(gamePath, GameLauncher.Steam, host, kind, state.GetString("buildid"), location,
+            GameBuildReader.Read(gamePath)));
     }
 
     private static string Normalize(string path) =>

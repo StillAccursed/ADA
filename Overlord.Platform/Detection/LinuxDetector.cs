@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Overlord.Core.Games;
+using Overlord.Platform.Formats;
 using Overlord.Platform.Launchers;
 
 namespace Overlord.Platform.Detection;
@@ -76,7 +77,8 @@ public sealed class LinuxDetector(string home) : IGameDetector
                     continue;
 
                 var version = game.Value.TryGetProperty("version", out var v) ? v.GetString() : null;
-                yield return new GameInstall(path, GameLauncher.Epic, GameHost.LinuxCompat, kind, version, "Heroic / Legendary");
+                yield return new GameInstall(path, GameLauncher.Epic, GameHost.LinuxCompat, kind, version, "Heroic / Legendary",
+                    GameBuildReader.Read(path));
             }
         }
     }

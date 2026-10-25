@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Overlord.Core.Games;
+using Overlord.Platform.Formats;
 
 namespace Overlord.Platform.Launchers;
 
@@ -33,7 +34,8 @@ public sealed class EpicManifestScanner(Func<string, string?> mapPath, GameHost 
             if (gamePath is null || GameInstallValidator.InspectKind(gamePath) is not { } kind)
                 continue;
 
-            results.Add(new GameInstall(gamePath, GameLauncher.Epic, host, kind, manifest.Version, location));
+            results.Add(new GameInstall(gamePath, GameLauncher.Epic, host, kind, manifest.Version, location,
+                GameBuildReader.Read(gamePath)));
         }
 
         return results;

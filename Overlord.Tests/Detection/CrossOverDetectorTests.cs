@@ -45,6 +45,8 @@ public class CrossOverDetectorTests
     {
         var (dir, game) = EpicBottleWithGameOnMappedDrive(EpicItem(@"Y:\Games\Satisfactory"));
         using var _ = dir;
+        dir.WriteFile("home/Games/Satisfactory/Engine/Binaries/Win64/FactoryGameEGS-Win64-Shipping.version",
+            """{ "Changelist": 513885, "GameVersion": "1.2.4.1" }""");
 
         var install = Assert.Single(new CrossOverDetector(dir.Combine("Bottles")).Detect());
 
@@ -54,6 +56,7 @@ public class CrossOverDetectorTests
         Assert.Equal(GameKind.Client, install.Kind);
         Assert.Equal("513885.383", install.Version);
         Assert.Contains("Epic Games Store", install.Location);
+        Assert.Equal(513885, install.Build?.Changelist);
     }
 
     [UnixFact]

@@ -37,19 +37,28 @@ public enum GameKind
 /// <param name="Launcher">Store that owns the install.</param>
 /// <param name="Host">How the game runs on this OS.</param>
 /// <param name="Kind">Client or dedicated server.</param>
-/// <param name="Version">Build identifier as reported by the launcher, if it gave one.</param>
+/// <param name="Version">
+/// Build identifier as reported by the launcher, if it gave one. Steam's is its own build counter,
+/// not the game's changelist; use <see cref="Build"/> for compatibility checks.
+/// </param>
 /// <param name="Location">Human-readable origin, e.g. the CrossOver bottle name or Steam library.</param>
+/// <param name="Build">The game build read from the install's files, or null if it could not be read.</param>
 public sealed record GameInstall(
     string GamePath,
     GameLauncher Launcher,
     GameHost Host,
     GameKind Kind,
     string? Version,
-    string Location)
+    string Location,
+    GameBuild? Build = null)
 {
     public string ModsPath => Path.Combine(GamePath, "FactoryGame", "Mods");
 
     public string DisplayName => Kind == GameKind.DedicatedServer
         ? $"Satisfactory Dedicated Server ({Launcher})"
         : $"Satisfactory ({Launcher})";
+
+    public string BuildText => Build is null
+        ? "Game build unknown"
+        : $"Game {Build.GameVersion ?? "?"} · CL {Build.Changelist}";
 }

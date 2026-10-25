@@ -1,5 +1,7 @@
 # Overlord
 
+[![CI](https://github.com/StillAccursed/Overlord/actions/workflows/ci.yml/badge.svg)](https://github.com/StillAccursed/Overlord/actions/workflows/ci.yml)
+
 A cross-platform mod manager for [Satisfactory](https://www.satisfactorygame.com/), built with .NET 10 and Avalonia.
 
 Overlord's core promise: **a mod install either completes fully or leaves your game exactly as it was.** No half-installed mods, even if the app crashes mid-install.
@@ -47,3 +49,7 @@ Each release lists SHA-256 checksums so you can verify the download.
 ## Clean-room note
 
 Overlord is written from public API documentation and observed file formats. It does not copy or port code from Satisfactory Mod Manager.
+
+## Licence
+
+[MIT](LICENSE). Mod data comes from the [ficsit.app](https://ficsit.app) API, whose terms require that applications using it are open source.
