@@ -3,7 +3,9 @@ using System.Collections.Generic;
 using System.Net.Http;
 using CommunityToolkit.Mvvm.ComponentModel;
 using Overlord.Infrastructure.Catalog;
+using Overlord.Infrastructure.Downloads;
 using Overlord.Infrastructure.Ficsit;
+using Overlord.Infrastructure.Installing;
 using Overlord.Infrastructure.Settings;
 using Overlord.Platform.Detection;
 using Overlord.Platform.Storage;
@@ -26,7 +28,13 @@ public partial class MainViewModel : ViewModelBase
         var sync = new CatalogSync(new FicsitApiClient(http), new ModCatalogStore(paths.CatalogDatabase));
         var catalog = new CatalogStatusViewModel(sync);
 
-        var dashboard = new DashboardViewModel(GameDetection.ForCurrentOS(), catalog);
+        // API queries are small and should fail fast; mod downloads can be hundreds of MB.
+        var downloadHttp = new HttpClient { Timeout = TimeSpan.FromMinutes(30) };
+        var settings = new SettingsStore(paths.SettingsFile);
+        var installs = new ModInstallService(settings, new ArchiveDownloader(downloadHttp, paths.Archives),
+            sync.GetVersionsAsync, GameProcesses.IsAnyRunning);
+
+        var dashboard = new DashboardViewModel(GameDetection.ForCurrentOS(), catalog, installs);
         NavItems =
         [
             new("Dashboard", "◧", dashboard),
@@ -34,12 +42,13 @@ public partial class MainViewModel : ViewModelBase
             new("Profiles", "☰", new PlaceholderViewModel("Profiles", "Switch, import and export mod profiles. Coming in Phase 2.")),
             new("Servers", "⇅", new PlaceholderViewModel("Servers", "Deploy profiles to dedicated servers over FTP and SFTP. Coming in Phase 3.")),
             new("Activity", "◷", new PlaceholderViewModel("Activity", "Install transaction history and logs. Coming in Phase 1.")),
-            new("Settings", "⚙", new SettingsViewModel(new SettingsStore(paths.SettingsFile), new ArchiveCache(paths.Archives))),
+            new("Settings", "⚙", new SettingsViewModel(settings, new ArchiveCache(paths.Archives))),
         ];
         SelectedNav = NavItems[0];
 
         // On launch: find installs, show the cached catalogue at once, then fetch the latest mods.
         dashboard.ScanCommand.Execute(null);
+        _ = dashboard.WatchGameAsync();
         _ = catalog.LoadAsync();
         catalog.CheckForUpdatesCommand.Execute(null);
     }

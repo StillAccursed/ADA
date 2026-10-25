@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Overlord.Core.Settings;
+using Overlord.Infrastructure.IO;
 
 namespace Overlord.Infrastructure.Settings;
 
@@ -33,17 +34,9 @@ public sealed class SettingsStore(string settingsPath)
     /// Writes to a temporary file, flushes it to disk, then renames it over the old file, so a
     /// crash mid-save leaves the previous settings intact rather than a half-written file.
     /// </summary>
-    public void Save(AppSettings settings)
-    {
-        Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(SettingsPath))!);
-        var temp = SettingsPath + ".tmp";
-        using (var stream = new FileStream(temp, FileMode.Create, FileAccess.Write, FileShare.None))
-        {
-            JsonSerializer.Serialize(stream, settings.Normalized(), SettingsJsonContext.Default.AppSettings);
-            stream.Flush(flushToDisk: true);
-        }
-        File.Move(temp, SettingsPath, overwrite: true);
-    }
+    public void Save(AppSettings settings) =>
+        AtomicFile.Write(SettingsPath,
+            stream => JsonSerializer.Serialize(stream, settings.Normalized(), SettingsJsonContext.Default.AppSettings));
 }
 
 [JsonSourceGenerationOptions(JsonSerializerDefaults.Web, WriteIndented = true)]

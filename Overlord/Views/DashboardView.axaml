@@ -1,7 +1,6 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:Overlord.ViewModels"
-             xmlns:games="using:Overlord.Core.Games"
              x:Class="Overlord.Views.DashboardView"
              x:DataType="vm:DashboardViewModel">
     <DockPanel Margin="32,28">
@@ -12,6 +11,38 @@
         </Grid>
         <TextBlock DockPanel.Dock="Top" Text="{Binding StatusText}" TextWrapping="Wrap" Margin="0,0,0,20"
                    Foreground="{DynamicResource TextSecondaryBrush}" />
+
+        <!-- Satisfactory is running: mods can't change until it closes. -->
+        <Border DockPanel.Dock="Top" Margin="0,0,0,20" Padding="20,14" CornerRadius="8" BorderThickness="1"
+                IsVisible="{Binding IsGameRunning}"
+                Background="{DynamicResource SurfaceRaisedBrush}"
+                BorderBrush="{DynamicResource WarningBrush}">
+            <StackPanel Spacing="10">
+                <Grid ColumnDefinitions="*,Auto" IsVisible="{Binding ShowCloseOffer}">
+                    <StackPanel Spacing="2" VerticalAlignment="Center">
+                        <TextBlock Text="Satisfactory is running" FontWeight="SemiBold"
+                                   Foreground="{DynamicResource WarningBrush}" />
+                        <TextBlock Text="Close it before installing, updating or repairing mods. The game locks mod files while it runs."
+                                   TextWrapping="Wrap" Foreground="{DynamicResource TextSecondaryBrush}" />
+                    </StackPanel>
+                    <Button Grid.Column="1" Margin="16,0,0,0" VerticalAlignment="Center"
+                            Content="Close Satisfactory" Command="{Binding CloseGameCommand}" />
+                </Grid>
+
+                <Grid ColumnDefinitions="*,Auto,Auto" IsVisible="{Binding ConfirmingClose}">
+                    <TextBlock VerticalAlignment="Center" TextWrapping="Wrap" Foreground="{DynamicResource TextPrimaryBrush}"
+                               Text="Close Satisfactory now? Anything since your last save or autosave will be lost." />
+                    <Button Grid.Column="1" Margin="16,0,8,0" Content="Close now" Command="{Binding ConfirmCloseGameCommand}" />
+                    <Button Grid.Column="2" Content="Cancel" Command="{Binding CancelCloseGameCommand}" />
+                </Grid>
+
+                <TextBlock Text="Closing Satisfactory…" IsVisible="{Binding IsClosingGame}"
+                           Foreground="{DynamicResource TextSecondaryBrush}" />
+                <TextBlock Text="{Binding CloseError}" TextWrapping="Wrap"
+                           IsVisible="{Binding CloseError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                           Foreground="{DynamicResource WarningBrush}" />
+            </StackPanel>
+        </Border>
 
         <!-- Mod catalogue: checked on launch and by the button. -->
         <Border DockPanel.Dock="Top" Margin="0,0,0,20" Padding="20,16" CornerRadius="8" BorderThickness="1"
@@ -39,22 +70,38 @@
                     </ItemsPanelTemplate>
                 </ItemsControl.ItemsPanel>
                 <ItemsControl.ItemTemplate>
-                    <DataTemplate x:DataType="games:GameInstall">
+                    <DataTemplate x:DataType="vm:GameInstallViewModel">
                         <Border Background="{DynamicResource SurfaceRaisedBrush}"
                                 BorderBrush="{DynamicResource BorderSubtleBrush}" BorderThickness="1"
                                 CornerRadius="8" Padding="20,16">
-                            <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto,Auto">
-                                <TextBlock Text="{Binding DisplayName}" FontSize="16" FontWeight="SemiBold"
+                            <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto">
+                                <TextBlock Text="{Binding Install.DisplayName}" FontSize="16" FontWeight="SemiBold"
                                            Foreground="{DynamicResource TextPrimaryBrush}" />
-                                <TextBlock Grid.Column="1" Text="{Binding Host}"
+                                <TextBlock Grid.Column="1" Text="{Binding Install.Host}"
                                            Foreground="{DynamicResource AccentBrush}" />
-                                <TextBlock Grid.Row="1" Grid.ColumnSpan="2" Text="{Binding BuildText}" Margin="0,6,0,0"
+                                <TextBlock Grid.Row="1" Grid.ColumnSpan="2" Text="{Binding Install.BuildText}" Margin="0,6,0,0"
                                            Foreground="{DynamicResource TextPrimaryBrush}" />
-                                <TextBlock Grid.Row="2" Grid.ColumnSpan="2" Text="{Binding Location}" Margin="0,4,0,0"
+                                <TextBlock Grid.Row="2" Grid.ColumnSpan="2" Text="{Binding Install.Location}" Margin="0,4,0,0"
                                            Foreground="{DynamicResource TextSecondaryBrush}" />
-                                <SelectableTextBlock Grid.Row="3" Grid.ColumnSpan="2" Text="{Binding GamePath}" Margin="0,4,0,0"
+                                <SelectableTextBlock Grid.Row="3" Grid.ColumnSpan="2" Text="{Binding Install.GamePath}" Margin="0,4,0,0"
                                                      FontFamily="monospace" FontSize="12"
                                                      Foreground="{DynamicResource TextSecondaryBrush}" />
+
+                                <!-- Mods Overlord manages in this game: from the launch check. -->
+                                <Border Grid.Row="4" Grid.ColumnSpan="2" Height="1" Margin="0,14,0,12"
+                                        Background="{DynamicResource BorderSubtleBrush}" />
+                                <TextBlock Grid.Row="5" Text="{Binding ModsSummary}" TextWrapping="Wrap" VerticalAlignment="Center"
+                                           Foreground="{DynamicResource TextPrimaryBrush}" />
+                                <Button Grid.Row="5" Grid.Column="1" Content="Repair" Margin="12,0,0,0"
+                                        Command="{Binding RepairCommand}" IsVisible="{Binding HasRepairs}" />
+                                <StackPanel Grid.Row="6" Grid.ColumnSpan="2" Spacing="4">
+                                    <TextBlock Text="{Binding ProgressText}" Margin="0,6,0,0" TextWrapping="Wrap"
+                                               IsVisible="{Binding ProgressText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                                               Foreground="{DynamicResource TextSecondaryBrush}" />
+                                    <TextBlock Text="{Binding Notice}" Margin="0,6,0,0" TextWrapping="Wrap"
+                                               IsVisible="{Binding Notice, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                                               Foreground="{DynamicResource WarningBrush}" />
+                                </StackPanel>
                             </Grid>
                         </Border>
                     </DataTemplate>
