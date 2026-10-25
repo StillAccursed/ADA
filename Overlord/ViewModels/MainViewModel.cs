@@ -14,14 +14,14 @@ public partial class MainViewModel : ViewModelBase
     [ObservableProperty]
     public partial NavItem SelectedNav { get; set; }
 
-    public MainViewModel(DashboardViewModel dashboard, CatalogStatusViewModel catalog, SettingsViewModel settings)
+    public MainViewModel(DashboardViewModel dashboard, ModsViewModel mods, CatalogStatusViewModel catalog, SettingsViewModel settings)
     {
         _dashboard = dashboard;
         _catalog = catalog;
         NavItems =
         [
             new("Dashboard", "◧", dashboard),
-            new("Mods", "▦", new PlaceholderViewModel("Mods", "Browse, search and install mods. Coming in Phase 2.")),
+            new("Mods", "▦", mods),
             new("Profiles", "☰", new PlaceholderViewModel("Profiles", "Switch, import and export mod profiles. Coming in Phase 2.")),
             new("Servers", "⇅", new PlaceholderViewModel("Servers", "Deploy profiles to dedicated servers over FTP and SFTP. Coming in Phase 3.")),
             new("Activity", "◷", new PlaceholderViewModel("Activity", "Install transaction history and logs. Coming in Phase 1.")),

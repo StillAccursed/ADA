@@ -17,6 +17,9 @@ internal sealed class GameModFolders(string gameRoot)
 
     public string InstalledRecord => Path.Combine(Work, "installed.json");
 
+    /// <summary>The mods the user asked for, as opposed to those installed only as dependencies.</summary>
+    public string RequestedRecord => Path.Combine(Work, "requested.json");
+
     public string Journal => Path.Combine(Work, "journal.json");
 
     public string Lock => Path.Combine(Work, "lock");

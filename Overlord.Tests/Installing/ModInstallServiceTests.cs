@@ -2,6 +2,7 @@ using System.Net;
 using System.Security.Cryptography;
 using Overlord.Core.Catalog;
 using Overlord.Core.Games;
+using Overlord.Core.Resolution;
 using Overlord.Core.Settings;
 using Overlord.Infrastructure.Downloads;
 using Overlord.Infrastructure.Installing;
@@ -39,7 +40,8 @@ public sealed class ModInstallServiceTests : IDisposable
         _ => Task.FromResult(_gameRunning));
 
     /// <summary>Publishes a mod version on the fake ficsit.app; returns the catalogue entry.</summary>
-    private CatalogVersion Publish(string reference, string version, bool gameFeature = false)
+    private CatalogVersion Publish(string reference, string version, bool gameFeature = false,
+        IReadOnlyList<VersionDependency>? deps = null)
     {
         var path = new SmodBuilder(reference, version).GameFeature(gameFeature).Typical().WriteTo(_dir.Combine("Published", version));
         var bytes = File.ReadAllBytes(path);
@@ -47,7 +49,7 @@ public sealed class ModInstallServiceTests : IDisposable
         _files[link] = bytes;
         var entry = new CatalogVersion($"{reference}-{version}", reference, version, ">=513885", VersionStability.Release, false,
             DateTimeOffset.UnixEpoch,
-            [new VersionTarget(TargetPlatform.Windows, link, bytes.Length, Convert.ToHexStringLower(SHA256.HashData(bytes)))], []);
+            [new VersionTarget(TargetPlatform.Windows, link, bytes.Length, Convert.ToHexStringLower(SHA256.HashData(bytes)))], deps ?? []);
         if (!_catalog.TryGetValue(reference, out var list))
             _catalog[reference] = list = [];
         list.Add(entry);
@@ -64,6 +66,145 @@ public sealed class ModInstallServiceTests : IDisposable
         Directory.Exists(_archives)
             ? Directory.EnumerateFiles(_archives, "*.smod", SearchOption.AllDirectories).Select(Path.GetFileName).OfType<string>().Order().ToArray()
             : [];
+
+    private ModResolutionService Resolver() => new(
+        (reference, _) => Task.FromResult<IReadOnlyList<CatalogVersion>>(_catalog.GetValueOrDefault(reference) ?? []),
+        Service());
+
+    [Fact]
+    public async Task Resolves_dependencies_keeping_installed_versions_then_installs_them()
+    {
+        var game = _install with { Build = new GameBuild(513885, "1.2.4.1") };
+        var sml = Publish("SML", "3.12.0");
+        Serve(sml);
+        await Service().InstallAsync(game, [sml]);
+
+        Publish("SML", "3.12.5"); // newer, but the installed 3.12.0 still fits
+        var weather = Publish("WeatherExtended", "1.1.0", gameFeature: true, deps: [new VersionDependency("SML", "^3.12.0", false)]);
+
+        var resolved = await Resolver().ResolveAsync(game, [new ModRequirement("WeatherExtended")]);
+
+        Assert.True(resolved.Succeeded, string.Join(" ", resolved.Problems));
+        Assert.Equal(["SML 3.12.0", "WeatherExtended 1.1.0"], resolved.Mods.Select(m => $"{m.Reference} {m.Version.Version}"));
+
+        Serve(weather);
+        var result = await Service().InstallAsync(game, resolved.Mods.Select(m => m.Version).ToList());
+        Assert.Contains(result.Installed, m => m.Reference == "WeatherExtended");
+        Assert.NotNull(_game.Read("Mods/GameFeatures/WeatherExtended"));
+    }
+
+    [Fact]
+    public async Task Resolving_without_a_known_game_build_explains_why()
+    {
+        var result = await Resolver().ResolveAsync(_install with { Build = null }, [new ModRequirement("SML")]);
+
+        Assert.Contains("build number", Assert.Single(result.Problems));
+    }
+
+    private GameInstall KnownBuild => _install with { Build = new GameBuild(513885, "1.2.4.1") };
+
+    private static VersionDependency Needs(string reference, string range = "^3.12.0") => new(reference, range, false);
+
+    private string[] InstalledNow() => new ModInstaller(_game.Root, () => false).Installed.Keys.Order().ToArray();
+
+    [Fact]
+    public async Task Installing_a_mod_pulls_in_its_dependencies_and_records_only_what_was_asked_for()
+    {
+        var sml = Publish("SML", "3.12.0");
+        var weather = Publish("WeatherExtended", "1.1.0", gameFeature: true, deps: [Needs("SML")]);
+        Serve(sml, weather);
+
+        var plan = await Resolver().PlanInstallAsync(KnownBuild, "WeatherExtended");
+
+        Assert.True(plan.Succeeded, string.Join(" ", plan.Problems));
+        Assert.Equal(["SML", "WeatherExtended"], plan.Install.Select(i => i.Reference));
+        Assert.Empty(plan.Uninstall);
+        Assert.Equal(sml.Targets[0].Size + weather.Targets[0].Size, plan.DownloadBytes);
+
+        await Resolver().ApplyAsync(KnownBuild, plan);
+
+        Assert.Equal(["SML", "WeatherExtended"], InstalledNow());
+        Assert.Equal(["WeatherExtended"], new ModInstaller(_game.Root, () => false).Requested);
+    }
+
+    [Fact]
+    public async Task Uninstalling_removes_dependencies_nothing_else_needs()
+    {
+        Serve(Publish("SML", "3.12.0"), Publish("A", "1.0.0", deps: [Needs("SML")]), Publish("B", "1.0.0", deps: [Needs("SML")]));
+        await Resolver().ApplyAsync(KnownBuild, await Resolver().PlanInstallAsync(KnownBuild, "A"));
+        await Resolver().ApplyAsync(KnownBuild, await Resolver().PlanInstallAsync(KnownBuild, "B"));
+
+        var removeA = await Resolver().PlanUninstallAsync(KnownBuild, "A");
+        Assert.Equal(["A"], removeA.Uninstall); // B still needs SML
+        await Resolver().ApplyAsync(KnownBuild, removeA);
+
+        var removeB = await Resolver().PlanUninstallAsync(KnownBuild, "B");
+        Assert.Equal(["B", "SML"], removeB.Uninstall);
+        await Resolver().ApplyAsync(KnownBuild, removeB);
+
+        Assert.Empty(InstalledNow());
+        Assert.Null(_game.Read("Mods/SML"));
+    }
+
+    [Fact]
+    public async Task Refuses_to_uninstall_a_mod_another_one_needs()
+    {
+        Serve(Publish("SML", "3.12.0"), Publish("A", "1.0.0", deps: [Needs("SML")]));
+        await Resolver().ApplyAsync(KnownBuild, await Resolver().PlanInstallAsync(KnownBuild, "A"));
+
+        var plan = await Resolver().PlanUninstallAsync(KnownBuild, "SML");
+
+        Assert.Equal("SML can't be removed while A 1.0.0 needs it.", Assert.Single(plan.Problems));
+    }
+
+    [Fact]
+    public async Task Mods_installed_before_requests_were_recorded_are_never_removed_as_unneeded()
+    {
+        var sml = Publish("SML", "3.12.0");
+        Serve(sml, Publish("A", "1.0.0", deps: [Needs("SML")]));
+        await Service().InstallAsync(KnownBuild, [sml]); // e.g. a repair: no record of what was asked for
+
+        var plan = await Resolver().PlanInstallAsync(KnownBuild, "A");
+        await Resolver().ApplyAsync(KnownBuild, plan);
+        await Resolver().ApplyAsync(KnownBuild, await Resolver().PlanUninstallAsync(KnownBuild, "A"));
+
+        Assert.Equal(["SML"], InstalledNow());
+    }
+
+    [Fact]
+    public async Task Asking_for_a_dependency_keeps_it_once_nothing_needs_it()
+    {
+        Serve(Publish("SML", "3.12.0"), Publish("A", "1.0.0", deps: [Needs("SML")]));
+        await Resolver().ApplyAsync(KnownBuild, await Resolver().PlanInstallAsync(KnownBuild, "A"));
+
+        var keepSml = await Resolver().PlanInstallAsync(KnownBuild, "SML");
+        Assert.False(keepSml.ChangesNothing);
+        await Resolver().ApplyAsync(KnownBuild, keepSml);
+        await Resolver().ApplyAsync(KnownBuild, await Resolver().PlanUninstallAsync(KnownBuild, "A"));
+
+        Assert.Equal(["SML"], InstalledNow());
+    }
+
+    [Fact]
+    public async Task Plans_refuse_to_overwrite_mods_another_manager_installed()
+    {
+        Publish("SML", "3.12.0");
+        Publish("A", "1.0.0", deps: [Needs("SML")]);
+        Directory.CreateDirectory(_game.ModFolder("Mods/SML"));
+
+        var plan = await Resolver().PlanInstallAsync(KnownBuild, "A");
+
+        Assert.StartsWith("SML is already in the Mods folder, but not installed by Overlord", Assert.Single(plan.Problems));
+    }
+
+    [Fact]
+    public async Task Installing_what_is_already_installed_changes_nothing()
+    {
+        Serve(Publish("SML", "3.12.0"));
+        await Resolver().ApplyAsync(KnownBuild, await Resolver().PlanInstallAsync(KnownBuild, "SML"));
+
+        Assert.True((await Resolver().PlanInstallAsync(KnownBuild, "SML")).ChangesNothing);
+    }
 
     [Fact]
     public async Task Downloads_then_installs_and_keeps_archives_by_default()

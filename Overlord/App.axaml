@@ -11,6 +11,9 @@
         <DataTemplate DataType="vm:DashboardViewModel">
             <views:DashboardView />
         </DataTemplate>
+        <DataTemplate DataType="vm:ModsViewModel">
+            <views:ModsView />
+        </DataTemplate>
         <DataTemplate DataType="vm:SettingsViewModel">
             <views:SettingsView />
         </DataTemplate>

@@ -78,6 +78,7 @@ public sealed class ModInstaller
     private readonly Action<string> _checkpoint;
     private readonly InstalledModsStore _records;
     private readonly JournalStore _journal;
+    private readonly RequestedModsStore _requested;
 
     /// <param name="gameRoot">The folder containing <c>FactoryGame</c>.</param>
     /// <param name="isGameRunning">Checked before every transaction, on the thread running it.</param>
@@ -93,11 +94,37 @@ public sealed class ModInstaller
         _checkpoint = checkpoint ?? (_ => { });
         _records = new InstalledModsStore(_folders.InstalledRecord);
         _journal = new JournalStore(_folders.Journal);
+        _requested = new RequestedModsStore(_folders.RequestedRecord);
     }
 
     public bool HasInterruptedTransaction => _journal.Exists;
 
     public IReadOnlyDictionary<string, InstalledMod> Installed => _records.Load();
+
+    /// <summary>
+    /// Installed mods the user asked for; the rest are there as dependencies. Mods installed before
+    /// Overlord recorded this all count as asked for, so none is ever removed as unneeded by surprise.
+    /// </summary>
+    public IReadOnlySet<string> Requested
+    {
+        get
+        {
+            var installed = _records.Load();
+            var requested = _requested.Load();
+            return (requested is null ? installed.Keys : installed.Keys.Where(requested.Contains))
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        }
+    }
+
+    /// <summary>
+    /// Records which mods the user asked for. Callers save additions before installing and removals
+    /// after, so a crash in between never leaves a wanted mod looking unneeded.
+    /// </summary>
+    public void SaveRequested(IEnumerable<string> references)
+    {
+        _folders.EnsureWorkFolder();
+        _requested.Save(references);
+    }
 
     /// <summary>
     /// Applies the changes in order (callers put dependencies first). Each mod goes live as soon as

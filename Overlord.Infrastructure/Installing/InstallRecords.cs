@@ -40,6 +40,30 @@ internal sealed class InstalledModsStore(string path)
             InstallJsonContext.Default.ListInstalledMod));
 }
 
+/// <summary>
+/// Which installed mods the user asked for, kept in <c>FactoryGame/.overlord/requested.json</c>. The rest
+/// are dependencies, removed once nothing needs them. Only intent: <see cref="InstalledModsStore"/>
+/// stays the record of what is on disk.
+/// </summary>
+internal sealed class RequestedModsStore(string path)
+{
+    /// <returns>Null if never written (mods installed before Overlord tracked this).</returns>
+    public HashSet<string>? Load()
+    {
+        if (!File.Exists(path))
+            return null;
+
+        using var stream = File.OpenRead(path);
+        var list = JsonSerializer.Deserialize(stream, InstallJsonContext.Default.ListString) ?? [];
+        return list.ToHashSet(StringComparer.OrdinalIgnoreCase);
+    }
+
+    public void Save(IEnumerable<string> references) =>
+        AtomicFile.Write(path, stream => JsonSerializer.Serialize(stream,
+            references.Distinct(StringComparer.OrdinalIgnoreCase).Order(StringComparer.OrdinalIgnoreCase).ToList(),
+            InstallJsonContext.Default.ListString));
+}
+
 internal enum StepState
 {
     /// <summary>Nothing verified yet; anything in <c>new/</c> is incomplete.</summary>
@@ -93,4 +117,5 @@ internal sealed class JournalStore(string path)
 [JsonSourceGenerationOptions(JsonSerializerDefaults.Web, WriteIndented = true, UseStringEnumConverter = true)]
 [JsonSerializable(typeof(List<InstalledMod>))]
 [JsonSerializable(typeof(Journal))]
+[JsonSerializable(typeof(List<string>))]
 internal sealed partial class InstallJsonContext : JsonSerializerContext;

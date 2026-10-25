@@ -74,15 +74,24 @@ public sealed class ModInstallService(
     /// <exception cref="GameRunningException">Checked before anything is downloaded.</exception>
     /// <exception cref="ArchiveDownloadException">A download failed every attempt; nothing was installed.</exception>
     /// <exception cref="InstallException">The install failed and was rolled back.</exception>
-    public async Task<TransactionResult> InstallAsync(GameInstall game, IReadOnlyList<CatalogVersion> versions,
-        IProgress<ModInstallProgress>? progress = null, CancellationToken ct = default)
+    public Task<TransactionResult> InstallAsync(GameInstall game, IReadOnlyList<CatalogVersion> versions,
+        IProgress<ModInstallProgress>? progress = null, CancellationToken ct = default) =>
+        ApplyAsync(game, versions, [], progress, ct);
+
+    /// <summary>
+    /// Uninstalls <paramref name="uninstall"/> and installs <paramref name="install"/> (dependencies
+    /// first) in one transaction, so a failure leaves the game exactly as it was.
+    /// </summary>
+    /// <inheritdoc cref="InstallAsync" path="/exception"/>
+    public async Task<TransactionResult> ApplyAsync(GameInstall game, IReadOnlyList<CatalogVersion> install,
+        IReadOnlyList<string> uninstall, IProgress<ModInstallProgress>? progress = null, CancellationToken ct = default)
     {
         if (await isGameRunning(ct))
             throw new GameRunningException();
 
         var current = settings.Current;
         var platform = TargetFor(game);
-        var targets = versions
+        var targets = install
             .Select(v => (Version: v, Target: v.TargetFor(platform)
                 ?? throw new InstallException($"{v.ModReference} {v.Version} has no {platform} build.")))
             .ToList();
@@ -118,10 +127,12 @@ public sealed class ModInstallService(
             ? null
             : new InlineProgress<InstallProgress>(p =>
                 progress.Report(new ModInstallProgress(p.Reference, p.Stage, p.FilesDone, p.FilesTotal)));
-        var changes = archives.Select(a => (ModChange)new ModChange.Install(a, platform)).ToList();
+        var changes = uninstall.Select(r => (ModChange)new ModChange.Uninstall(r))
+            .Concat(archives.Select(a => new ModChange.Install(a, platform)))
+            .ToList();
         var result = await Task.Run(() => InstallerFor(game).Apply(changes, installProgress, ct), ct);
-        _log.LogInformation("Installed {Mods} in {Game}",
-            result.Installed.Select(m => $"{m.Reference} {m.Version}"), game.GamePath);
+        _log.LogInformation("Installed {Mods} and uninstalled {Removed} in {Game}",
+            result.Installed.Select(m => $"{m.Reference} {m.Version}"), result.Uninstalled, game.GamePath);
 
         // Only once everything is committed: a rolled-back install keeps its archives for a retry.
         if (!current.KeepDownloadedArchives)

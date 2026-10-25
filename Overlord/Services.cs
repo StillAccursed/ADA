@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Overlord.Core.Games;
+using Overlord.Imaging;
 using Overlord.Infrastructure.Catalog;
 using Overlord.Infrastructure.Downloads;
 using Overlord.Infrastructure.Ficsit;
@@ -44,13 +45,26 @@ public static class Services
             sp.GetRequiredService<CatalogSync>().GetVersionsAsync,
             GameProcesses.IsAnyRunningAsync,
             sp.GetRequiredService<ILogger<ModInstallService>>()));
+        services.AddSingleton(sp => new ModResolutionService(
+            sp.GetRequiredService<CatalogSync>().GetVersionsAsync,
+            sp.GetRequiredService<ModInstallService>(),
+            sp.GetRequiredService<ILogger<ModResolutionService>>()));
         services.AddSingleton(_ => GameDetection.ForCurrentOS());
+        services.AddSingleton(sp => new ModLogos(Http(sp, ApiClient), sp.GetRequiredService<ILogger<ModLogos>>()));
 
         services.AddSingleton<CatalogStatusViewModel>();
         services.AddSingleton<SettingsViewModel>();
         services.AddSingleton<Func<GameInstall, GameInstallViewModel>>(sp => install => new GameInstallViewModel(
             install, sp.GetRequiredService<ModInstallService>(), sp.GetRequiredService<ILogger<GameInstallViewModel>>()));
         services.AddSingleton<DashboardViewModel>();
+        services.AddSingleton(sp => new ModsViewModel(
+            sp.GetRequiredService<ModCatalogStore>(),
+            sp.GetRequiredService<CatalogSync>().GetVersionsAsync,
+            sp.GetRequiredService<ModResolutionService>(),
+            sp.GetRequiredService<ModInstallService>(),
+            sp.GetRequiredService<DashboardViewModel>(),
+            sp.GetRequiredService<ModLogos>(),
+            sp.GetRequiredService<ILogger<ModsViewModel>>()));
         services.AddSingleton<MainViewModel>();
 
         return services.BuildServiceProvider(new ServiceProviderOptions { ValidateOnBuild = true });

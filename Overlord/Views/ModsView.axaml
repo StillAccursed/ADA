@@ -1,0 +1,143 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Overlord.ViewModels"
+             x:Class="Overlord.Views.ModsView"
+             x:DataType="vm:ModsViewModel">
+    <!-- Skyve-style: list | details pane. -->
+    <Grid ColumnDefinitions="*,380">
+        <DockPanel Grid.Column="0" Margin="32,28,24,20">
+            <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" Margin="0,0,0,16">
+                <TextBlock Text="Mods" FontSize="24" FontWeight="SemiBold" VerticalAlignment="Center"
+                           Foreground="{DynamicResource TextPrimaryBrush}" />
+                <ComboBox Grid.Column="1" MinWidth="260" PlaceholderText="No game found"
+                          ItemsSource="{Binding Games}" SelectedItem="{Binding SelectedGame}">
+                    <ComboBox.ItemTemplate>
+                        <DataTemplate x:DataType="vm:GameInstallViewModel">
+                            <StackPanel>
+                                <TextBlock Text="{Binding Install.DisplayName}" />
+                                <TextBlock Text="{Binding Install.BuildText}" FontSize="12"
+                                           Foreground="{DynamicResource TextSecondaryBrush}" />
+                            </StackPanel>
+                        </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                </ComboBox>
+            </Grid>
+
+            <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" Margin="0,0,0,8">
+                <TextBox PlaceholderText="Search names, descriptions, authors, tags and images" Text="{Binding SearchText}" />
+                <CheckBox Grid.Column="1" Margin="16,0,0,0" Content="Installed only" IsChecked="{Binding InstalledOnly}" />
+            </Grid>
+            <TextBlock DockPanel.Dock="Top" Text="{Binding ResultsText}" Margin="2,0,0,8" FontSize="12"
+                       Foreground="{DynamicResource TextSecondaryBrush}" />
+
+            <ListBox ItemsSource="{Binding Results}" SelectedItem="{Binding SelectedMod}" Background="Transparent">
+                <ListBox.ItemTemplate>
+                    <DataTemplate x:DataType="vm:ModItemViewModel">
+                        <Grid ColumnDefinitions="*,Auto" Margin="0,4">
+                            <StackPanel Spacing="2">
+                                <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"
+                                           Foreground="{DynamicResource TextPrimaryBrush}" />
+                                <TextBlock Text="{Binding ShortDescription}" TextTrimming="CharacterEllipsis" FontSize="12"
+                                           Foreground="{DynamicResource TextSecondaryBrush}" />
+                            </StackPanel>
+                            <TextBlock Grid.Column="1" Margin="12,0,0,0" VerticalAlignment="Center" FontSize="12"
+                                       Text="{Binding InstalledText}" IsVisible="{Binding IsInstalled}"
+                                       Foreground="{DynamicResource SuccessBrush}" />
+                        </Grid>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
+        </DockPanel>
+
+        <Border Grid.Column="1"
+                Background="{DynamicResource SurfaceSunkenBrush}"
+                BorderBrush="{DynamicResource BorderSubtleBrush}"
+                BorderThickness="1,0,0,0">
+            <Panel>
+                <TextBlock Text="Select a mod to see its details." Margin="24" TextWrapping="Wrap"
+                           IsVisible="{Binding !HasSelection}"
+                           Foreground="{DynamicResource TextSecondaryBrush}" />
+
+                <DockPanel Margin="24,28,24,20" IsVisible="{Binding HasSelection}">
+                    <StackPanel DockPanel.Dock="Top" Spacing="12">
+                        <Grid ColumnDefinitions="Auto,*">
+                            <Border Width="72" Height="72" CornerRadius="8" ClipToBounds="True" Margin="0,0,14,0"
+                                    Background="{DynamicResource SurfaceRaisedBrush}">
+                                <Image Source="{Binding SelectedMod.Logo}" Stretch="UniformToFill" />
+                            </Border>
+                            <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+                                <TextBlock Text="{Binding SelectedMod.Name}" FontSize="18" FontWeight="SemiBold" TextWrapping="Wrap"
+                                           Foreground="{DynamicResource TextPrimaryBrush}" />
+                                <TextBlock Text="{Binding SelectedMod.AuthorsText}" TextWrapping="Wrap" FontSize="12"
+                                           Foreground="{DynamicResource TextSecondaryBrush}" />
+                                <TextBlock Text="{Binding SelectedMod.DownloadsText}" FontSize="12"
+                                           Foreground="{DynamicResource TextSecondaryBrush}" />
+                            </StackPanel>
+                        </Grid>
+
+                        <StackPanel Spacing="2">
+                            <TextBlock Text="{Binding SelectedMod.InstalledText}" IsVisible="{Binding SelectedMod.IsInstalled}"
+                                       Foreground="{DynamicResource SuccessBrush}" />
+                            <TextBlock Text="{Binding SelectedMod.LatestText}" TextWrapping="Wrap"
+                                       IsVisible="{Binding SelectedMod.LatestText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                                       Foreground="{DynamicResource TextPrimaryBrush}" />
+                            <TextBlock Text="{Binding SelectedMod.CompatibilityText}" TextWrapping="Wrap"
+                                       IsVisible="{Binding SelectedMod.CompatibilityText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                                       Foreground="{DynamicResource WarningBrush}" />
+                        </StackPanel>
+
+                        <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding !HasPendingPlan}">
+                            <Button Content="Install" Command="{Binding InstallCommand}" Classes="accent"
+                                    IsVisible="{Binding SelectedMod.CanBeRequested}" />
+                            <Button Content="Uninstall" Command="{Binding UninstallCommand}"
+                                    IsVisible="{Binding SelectedMod.IsInstalled}" />
+                        </StackPanel>
+
+                        <TextBlock Text="{Binding GameRunningText}" TextWrapping="Wrap"
+                                   IsVisible="{Binding IsGameRunning}"
+                                   Foreground="{DynamicResource WarningBrush}" />
+
+                        <!-- Every change is shown before it is made. -->
+                        <Border Padding="16,12" CornerRadius="8" BorderThickness="1" IsVisible="{Binding HasPendingPlan}"
+                                Background="{DynamicResource SurfaceRaisedBrush}"
+                                BorderBrush="{DynamicResource AccentBrush}">
+                            <StackPanel Spacing="8">
+                                <TextBlock Text="{Binding PlanTitle}" FontWeight="SemiBold" TextWrapping="Wrap"
+                                           Foreground="{DynamicResource TextPrimaryBrush}" />
+                                <ItemsControl ItemsSource="{Binding PlanLines}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="x:String">
+                                            <TextBlock Text="{Binding}" TextWrapping="Wrap" Margin="0,1"
+                                                       Foreground="{DynamicResource TextSecondaryBrush}" />
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <Button Content="Confirm" Classes="accent" Command="{Binding ConfirmCommand}" />
+                                    <Button Content="Cancel" Command="{Binding CancelCommand}" />
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+
+                        <TextBlock Text="{Binding ProgressText}" TextWrapping="Wrap"
+                                   IsVisible="{Binding ProgressText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                                   Foreground="{DynamicResource TextSecondaryBrush}" />
+                        <SelectableTextBlock Text="{Binding Notice}" TextWrapping="Wrap"
+                                             IsVisible="{Binding Notice, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                                             Foreground="{DynamicResource WarningBrush}" />
+
+                        <TextBlock Text="{Binding SelectedMod.TagsText}" TextWrapping="Wrap" FontSize="12"
+                                   IsVisible="{Binding SelectedMod.HasTags}"
+                                   Foreground="{DynamicResource AccentBrush}" />
+                        <Border Height="1" Background="{DynamicResource BorderSubtleBrush}" />
+                    </StackPanel>
+
+                    <ScrollViewer Margin="0,12,0,0">
+                        <SelectableTextBlock Text="{Binding SelectedMod.Description}" TextWrapping="Wrap"
+                                             Foreground="{DynamicResource TextPrimaryBrush}" />
+                    </ScrollViewer>
+                </DockPanel>
+            </Panel>
+        </Border>
+    </Grid>
+</UserControl>
