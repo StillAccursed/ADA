@@ -14,6 +14,7 @@
             <SolidColorBrush x:Key="TextSecondaryBrush" Color="#9AA1AD" />
             <SolidColorBrush x:Key="AccentBrush" Color="#F39C3C" />
             <SolidColorBrush x:Key="SuccessBrush" Color="#4CB782" />
+            <SolidColorBrush x:Key="WarningBrush" Color="#E8B44C" />
         </ResourceDictionary>
         <ResourceDictionary x:Key="Light">
             <SolidColorBrush x:Key="SurfaceBrush" Color="#F6F7F9" />
@@ -24,6 +25,7 @@
             <SolidColorBrush x:Key="TextSecondaryBrush" Color="#5B6270" />
             <SolidColorBrush x:Key="AccentBrush" Color="#C96A0A" />
             <SolidColorBrush x:Key="SuccessBrush" Color="#2E8B5E" />
+            <SolidColorBrush x:Key="WarningBrush" Color="#9A6400" />
         </ResourceDictionary>
     </ResourceDictionary.ThemeDictionaries>
 </ResourceDictionary>

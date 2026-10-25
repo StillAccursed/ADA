@@ -13,6 +13,24 @@
         <TextBlock DockPanel.Dock="Top" Text="{Binding StatusText}" TextWrapping="Wrap" Margin="0,0,0,20"
                    Foreground="{DynamicResource TextSecondaryBrush}" />
 
+        <!-- Mod catalogue: checked on launch and by the button. -->
+        <Border DockPanel.Dock="Top" Margin="0,0,0,20" Padding="20,16" CornerRadius="8" BorderThickness="1"
+                Background="{DynamicResource SurfaceRaisedBrush}"
+                BorderBrush="{DynamicResource BorderSubtleBrush}">
+            <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto">
+                <TextBlock Text="Mod catalogue" FontSize="16" FontWeight="SemiBold"
+                           Foreground="{DynamicResource TextPrimaryBrush}" />
+                <Button Grid.Column="1" Grid.RowSpan="2" VerticalAlignment="Center"
+                        Content="Check for Updates"
+                        Command="{Binding Catalog.CheckForUpdatesCommand}" />
+                <TextBlock Grid.Row="1" Text="{Binding Catalog.SummaryText}" Margin="0,6,0,0" TextWrapping="Wrap"
+                           Foreground="{DynamicResource TextSecondaryBrush}" />
+                <TextBlock Grid.Row="2" Grid.ColumnSpan="2" Text="{Binding Catalog.ErrorText}" Margin="0,8,0,0"
+                           TextWrapping="Wrap" IsVisible="{Binding Catalog.ErrorText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                           Foreground="{DynamicResource WarningBrush}" />
+            </Grid>
+        </Border>
+
         <ScrollViewer>
             <ItemsControl ItemsSource="{Binding Installs}">
                 <ItemsControl.ItemsPanel>

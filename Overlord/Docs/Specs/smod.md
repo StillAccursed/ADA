@@ -19,7 +19,16 @@ Status: draft, from black-box observation. Clean-room: written from inspecting s
 
 ## Layout
 
-Top-level folders are **target platforms**. Each one holds a complete, self-contained copy of the mod for that platform.
+Two layouts exist, and Overlord must accept both:
+
+| Layout | Seen in | Archive root |
+| --- | --- | --- |
+| **Single target (flat)** | Every download from the ficsit.app API (`/v1/version/{id}/{target}/download`), confirmed 2026-10-25 | The mod itself: `<Reference>.uplugin`, `Binaries/`, `Content/`, `Resources/` |
+| **Multi-target** | The reference sample in `Docs/.refs` (a locally supplied `.smod`, likely the author's upload) | One folder per platform: `Windows/`, and presumably `WindowsServer/`, `LinuxServer/` |
+
+Detection rule: if a `.uplugin` sits at the archive root, it is flat and the target is the one it was downloaded for. Otherwise, use the top-level folder named after the target platform. An archive with neither is rejected.
+
+The multi-target sample is laid out as follows. Top-level folders are **target platforms**, and each one holds a complete, self-contained copy of the mod for that platform.
 
 ```
 Windows/
@@ -84,10 +93,11 @@ Install location, per the ficsit.app manual install directions:
 
 Steps:
 
-1. Pick the platform folder for the target: `Windows` for clients, `WindowsServer` / `LinuxServer` for servers. Never copy a client's mods to a server; the docs warn this does not work.
-2. Read `GameFeature` from that folder's `.uplugin` and compute the destination above.
-3. Stage its contents and commit through the transaction engine (staging folder → journal → rename). The staging folder sits on the same volume as `FactoryGame/Mods`.
-4. Optionally skip `*.pdb` files (debug symbols, not needed to run) to save ~99% of disk space and copy time. Keep them behind a "keep debug symbols" setting, since mod authors ask for them in crash reports.
+1. Verify the download's size and SHA-256 against the API target before opening it.
+2. Find the mod root (see Layout): the archive root if flat, otherwise the folder for the target platform (`Windows` for clients, `WindowsServer` / `LinuxServer` for servers). Never copy a client's mods to a server; the docs warn this does not work.
+3. Read `GameFeature` from that folder's `.uplugin` and compute the destination above.
+4. Extract, verify and commit through the install engine: archive in `Staging/Archives/`, extraction into the hidden `FactoryGame/.overlord/` folder, then a single rename into `Mods` (see `install-engine.md`).
+5. Optionally skip `*.pdb` files (debug symbols, not needed to run) to save ~99% of disk space and copy time. Keep them behind a "keep debug symbols" setting, since mod authors ask for them in crash reports.
 
 On servers, refuse to install while the server is running: a running server locks mod files (dedicated server docs).
 
@@ -98,8 +108,8 @@ On servers, refuse to install while the server is running: a running server lock
 Reject an archive (before staging) if:
 
 - it is not a valid ZIP, or any entry path is absolute or contains `..` (zip-slip);
-- the chosen platform folder is missing;
-- the platform folder has no `.uplugin` at its root, or it has more than one;
+- it has neither a root `.uplugin` nor a folder for the target platform;
+- the mod root has more than one `.uplugin`;
 - the `.uplugin` name does not match the mod reference the catalogue says this file belongs to;
 - the `.uplugin` is not valid JSON or has no `SemVersion`;
 - the uncompressed size exceeds a sanity limit (proposed 2 GB) — guards against zip bombs.

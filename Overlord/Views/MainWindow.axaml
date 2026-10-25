@@ -11,10 +11,6 @@
         Width="1100" Height="700" MinWidth="760" MinHeight="480"
         Background="{DynamicResource SurfaceBrush}">
 
-    <Design.DataContext>
-        <vm:MainViewModel />
-    </Design.DataContext>
-
     <!-- Skyve-style shell: navigation rail | page. The details pane arrives with the Mods page. -->
     <Grid ColumnDefinitions="200,*">
         <Border Grid.Column="0"

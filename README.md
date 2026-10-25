@@ -35,6 +35,7 @@ dotnet run --project Overlord
 | `Overlord` | Avalonia desktop app (views, view models, themes) |
 | `Overlord.Core` | Domain model and logic, no OS or file-format specifics |
 | `Overlord.Platform` | Game detection, launcher and Wine file formats, OS integration |
+| `Overlord.Infrastructure` | ficsit.app API client, local SQLite catalogue and search |
 | `Overlord.Tests` | xUnit tests with on-disk fixture installs |
 
 ## Running unsigned builds

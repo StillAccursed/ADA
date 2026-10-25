@@ -6,8 +6,10 @@ using Overlord.Core.Games;
 
 namespace Overlord.ViewModels;
 
-public partial class DashboardViewModel(IGameDetector detector) : ViewModelBase
+public partial class DashboardViewModel(IGameDetector detector, CatalogStatusViewModel catalog) : ViewModelBase
 {
+    public CatalogStatusViewModel Catalog { get; } = catalog;
+
     public ObservableCollection<GameInstall> Installs { get; } = [];
 
     [ObservableProperty]

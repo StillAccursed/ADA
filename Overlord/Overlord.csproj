@@ -25,5 +25,6 @@
     <ItemGroup>
       <ProjectReference Include="..\Overlord.Core\Overlord.Core.csproj" />
       <ProjectReference Include="..\Overlord.Platform\Overlord.Platform.csproj" />
+      <ProjectReference Include="..\Overlord.Infrastructure\Overlord.Infrastructure.csproj" />
     </ItemGroup>
 </Project>
