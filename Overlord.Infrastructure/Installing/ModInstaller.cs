@@ -1,4 +1,6 @@
 using System.Security.Cryptography;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Overlord.Core.Catalog;
 using Overlord.Infrastructure.IO;
 
@@ -91,6 +93,7 @@ public sealed class ModInstaller
     private readonly InstalledModsStore _records;
     private readonly JournalStore _journal;
     private readonly RequestedModsStore _requested;
+    private readonly ILogger _log;
 
     /// <param name="gameRoot">The folder containing <c>FactoryGame</c>.</param>
     /// <param name="isGameRunning">Checked before every transaction, on the thread running it.</param>
@@ -99,7 +102,8 @@ public sealed class ModInstaller
     }
 
     /// <param name="checkpoint">Called at every step; crash tests throw from it.</param>
-    internal ModInstaller(string gameRoot, Func<bool> isGameRunning, Action<string>? checkpoint)
+    /// <param name="log">Receives cleanup failures after an installation has already committed.</param>
+    internal ModInstaller(string gameRoot, Func<bool> isGameRunning, Action<string>? checkpoint, ILogger? log = null)
     {
         _folders = new GameModFolders(gameRoot);
         _isGameRunning = isGameRunning;
@@ -107,8 +111,10 @@ public sealed class ModInstaller
         _records = new InstalledModsStore(_folders.InstalledRecord);
         _journal = new JournalStore(_folders.Journal);
         _requested = new RequestedModsStore(_folders.RequestedRecord);
+        _log = log ?? NullLogger.Instance;
     }
 
+    /// <summary>A journal remains for interrupted changes or committed changes awaiting cleanup.</summary>
     public bool HasInterruptedTransaction => _journal.Exists;
 
     public IReadOnlyDictionary<string, InstalledMod> Installed => _records.Load();
@@ -140,11 +146,12 @@ public sealed class ModInstaller
 
     /// <summary>
     /// Applies the changes in order (callers put dependencies first). Each mod goes live as soon as
-    /// it is verified. If anything fails, every change in the transaction is undone.
+    /// it is verified. Failures before commitment undo every change. After commitment, cleanup
+    /// failures are logged and retried by recovery without undoing the installed changes.
     /// </summary>
     /// <exception cref="GameRunningException">The game is running.</exception>
     /// <exception cref="InvalidModArchiveException">An archive fails validation; nothing was changed.</exception>
-    /// <exception cref="InstallException">Something failed; all changes were rolled back.</exception>
+    /// <exception cref="InstallException">A change failed before commitment and was rolled back.</exception>
     public TransactionResult Apply(IReadOnlyList<ModChange> changes, IProgress<InstallProgress>? progress = null,
         CancellationToken ct = default)
     {
@@ -192,10 +199,8 @@ public sealed class ModInstaller
                     _checkpoint($"done:{step.Reference}");
                 }
 
-                Finish(txn);
-                return new TransactionResult(
-                    journal.Steps.Where(s => s.NewRecord is not null).Select(s => s.NewRecord!).ToList(),
-                    journal.Steps.Where(s => s.NewLocation is null).Select(s => s.Reference).ToList());
+                // Persist the final outcome while every old version is still available for rollback.
+                _journal.Save(journal with { Committed = true });
             }
             catch (Exception e) when (e is not SimulatedCrashException)
             {
@@ -204,6 +209,21 @@ public sealed class ModInstaller
                     ? new InstallException("Cancelled; no mods were changed.", e)
                     : new InstallException($"Install failed and every change was undone: {e.Message}", e);
             }
+
+            // Cleanup can delete the old versions, so it must never enter the rollback handler.
+            try
+            {
+                _checkpoint("transaction-committed");
+                Finish(txn);
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+                _log.LogWarning(e, "Transaction {Transaction} committed; cleanup will be retried during recovery", txn);
+            }
+
+            return new TransactionResult(
+                journal.Steps.Where(s => s.NewRecord is not null).Select(s => s.NewRecord!).ToList(),
+                journal.Steps.Where(s => s.NewLocation is null).Select(s => s.Reference).ToList());
         }
         finally
         {
@@ -214,7 +234,8 @@ public sealed class ModInstaller
 
     /// <summary>
     /// Finishes or undoes a transaction a crash interrupted. Run on launch, before anything else
-    /// touches the game's mods.
+    /// touches the game's mods. A committed journal only retries cleanup; cleanup failures leave
+    /// the journal for a later retry and do not change live mod folders or installed records.
     /// </summary>
     public RecoveryResult Recover()
     {
@@ -592,6 +613,16 @@ public sealed class ModInstaller
             return RecoveryResult.Clean;
         }
 
+        if (journal.Committed)
+        {
+            // Old versions may already be deleted. The live folders and records are final.
+            Finish(journal.TransactionId);
+            return new RecoveryResult(true,
+                journal.Steps.Where(s => s.NewLocation is null || s.State != StepState.Planned).Select(s => s.Reference).ToList(),
+                journal.Steps.Where(s => s.NewLocation is not null && s.State == StepState.Planned).Select(s => s.Reference).ToList(),
+                []);
+        }
+
         var installed = _records.Load();
         if (journal.RollingBack)
             return RollBack(journal, installed);
@@ -612,13 +643,20 @@ public sealed class ModInstaller
             rolledForward.Add(step.Reference);
         }
 
+        // Preserve the existing per-mod recovery outcome before discarding any old versions.
+        _journal.Save(journal with { Committed = true });
+        _checkpoint("transaction-committed");
         Finish(journal.TransactionId);
         return new RecoveryResult(true, rolledForward, discarded, []);
     }
 
-    /// <summary>Removes the transaction's work folder (old versions, partial extractions), then the journal.</summary>
+    /// <summary>
+    /// Removes the working folder before deleting the journal, so failed cleanup can be retried.
+    /// Callers must finalize the installation or rollback before discarding its staged files.
+    /// </summary>
     private void Finish(string txn)
     {
+        _checkpoint("cleanup-started");
         var folder = _folders.Transaction(txn);
         if (Directory.Exists(folder))
             DeleteTree(folder);

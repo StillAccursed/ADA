@@ -90,7 +90,12 @@ internal sealed record JournalStep(
     InstalledMod? NewRecord);
 
 /// <summary>Write-ahead journal: written and flushed before each change it describes.</summary>
-internal sealed record Journal(string TransactionId, DateTimeOffset StartedAt, bool RollingBack, List<JournalStep> Steps);
+/// <param name="Committed">
+/// The installation and records are final; only working-folder and journal cleanup may be retried.
+/// Defaults to false for journals written before this marker existed.
+/// </param>
+internal sealed record Journal(string TransactionId, DateTimeOffset StartedAt, bool RollingBack, List<JournalStep> Steps,
+    bool Committed = false);
 
 internal sealed class JournalStore(string path)
 {

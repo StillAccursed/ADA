@@ -48,7 +48,7 @@ public sealed class ModInstallService(
     // The installer re-checks just before it changes anything. It only ever runs inside Task.Run,
     // so waiting on the async check there blocks a pool thread, never the UI.
     public ModInstaller InstallerFor(GameInstall game) =>
-        new(game.GamePath, () => isGameRunning(CancellationToken.None).GetAwaiter().GetResult());
+        new(game.GamePath, () => isGameRunning(CancellationToken.None).GetAwaiter().GetResult(), checkpoint: null, log: _log);
 
     /// <summary>
     /// Run on launch for each detected game: finish or undo an interrupted transaction, then the
