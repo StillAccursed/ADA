@@ -174,8 +174,8 @@ public sealed class ModInstallerTests : IDisposable
         var reports = new List<InstallProgress>();
         Installer().Apply([Install(Smod("A", "1.0.0"))], new SyncProgress<InstallProgress>(reports.Add));
 
-        Assert.Equal(Enumerable.Range(1, 5), reports.Where(r => r.Stage == "Extracting").Select(r => r.FilesDone));
-        Assert.Equal("Committing", reports[^1].Stage);
+        Assert.Equal(Enumerable.Range(1, 5), reports.Where(r => r.Stage == InstallStage.Extracting).Select(r => r.FilesDone));
+        Assert.Equal(InstallStage.Committing, reports[^1].Stage);
     }
 
     [Fact]

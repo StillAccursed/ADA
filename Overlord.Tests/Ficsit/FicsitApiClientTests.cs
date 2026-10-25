@@ -38,12 +38,11 @@ public class FicsitApiClientTests
         ] } } }
         """;
 
-    private static (FicsitApiClient Client, FakeHttpHandler Handler, List<TimeSpan> Delays) Create()
+    private static (FicsitApiClient Client, FakeHttpHandler Handler, InstantTimeProvider Time) Create()
     {
         var handler = new FakeHttpHandler();
-        var delays = new List<TimeSpan>();
-        var client = new FicsitApiClient(new HttpClient(handler), (d, _) => { delays.Add(d); return Task.CompletedTask; });
-        return (client, handler, delays);
+        var time = new InstantTimeProvider();
+        return (new FicsitApiClient(new HttpClient(handler), time), handler, time);
     }
 
     [Fact]
@@ -66,7 +65,9 @@ public class FicsitApiClientTests
         var sml = page.Mods[1];
         Assert.Null(sml.LogoUrl);
         Assert.Equal(CompatibilityState.Unknown, sml.CompatibilityRelease);
-        Assert.Contains("order_by: created_at, order: asc", handler.RequestBodies.Single());
+        var body = handler.RequestBodies.Single();
+        Assert.Contains("order_by: created_at, order: asc", body);
+        Assert.Contains("\"variables\":{\"offset\":0,\"limit\":100}", body);
     }
 
     [Fact]
@@ -101,19 +102,19 @@ public class FicsitApiClientTests
         var versions = await client.GetVersionsAsync("BigMod");
 
         Assert.Equal(101, versions.Count);
-        Assert.Contains("offset: 100", handler.RequestBodies[1]);
+        Assert.Contains("\"offset\":100", handler.RequestBodies[1]);
     }
 
     [Fact]
     public async Task Retries_rate_limits_and_server_errors_with_backoff()
     {
-        var (client, handler, delays) = Create();
+        var (client, handler, time) = Create();
         handler.Fail(HttpStatusCode.TooManyRequests).Fail(HttpStatusCode.BadGateway).Respond(ModsPage);
 
         var page = await client.GetModsAsync(0, 100, CatalogOrder.CreatedAscending);
 
         Assert.Equal(2, page.Mods.Count);
-        Assert.Equal([TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(2)], delays);
+        Assert.Equal([TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(2)], time.Delays);
     }
 
     [Fact]

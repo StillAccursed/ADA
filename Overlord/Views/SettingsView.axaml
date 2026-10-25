@@ -58,6 +58,10 @@
                         </Grid>
                     </StackPanel>
                 </Border>
+
+                <TextBlock Text="{Binding ErrorText}" TextWrapping="Wrap"
+                           IsVisible="{Binding ErrorText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                           Foreground="{DynamicResource WarningBrush}" />
             </StackPanel>
         </StackPanel>
     </ScrollViewer>

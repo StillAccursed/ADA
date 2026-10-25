@@ -1,24 +1,32 @@
-using System;
-using System.Collections.Generic;
 using System.Collections.ObjectModel;
-using System.Threading;
-using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Microsoft.Extensions.Logging;
 using Overlord.Core.Games;
-using Overlord.Infrastructure.Installing;
 using Overlord.Platform.Detection;
 
 namespace Overlord.ViewModels;
 
-public partial class DashboardViewModel(IGameDetector detector, CatalogStatusViewModel catalog, ModInstallService installs)
+public partial class DashboardViewModel(
+    IGameDetector detector,
+    CatalogStatusViewModel catalog,
+    Func<GameInstall, GameInstallViewModel> installViewModel,
+    ILogger<DashboardViewModel> log,
+    Func<CancellationToken, Task<IReadOnlyList<GameProcess>>>? findRunning = null,
+    TimeSpan? watchInterval = null)
     : ViewModelBase
 {
     // Cheap (one `ps` call), and quick enough that the banner feels live.
-    private static readonly TimeSpan GameWatchInterval = TimeSpan.FromSeconds(3);
+    private readonly TimeSpan _watchInterval = watchInterval ?? TimeSpan.FromSeconds(3);
 
     // Long enough for the game to save and quit on its own before it is forced.
     private static readonly TimeSpan CloseGracePeriod = TimeSpan.FromSeconds(15);
+
+    private readonly Func<CancellationToken, Task<IReadOnlyList<GameProcess>>> _findRunning =
+        findRunning ?? GameProcesses.FindRunningAsync;
+
+    // The watcher and "Close Satisfactory" both refresh; one at a time keeps the state consistent.
+    private readonly SemaphoreSlim _refreshGate = new(1, 1);
 
     private IReadOnlyList<GameProcess> _gameProcesses = [];
 
@@ -67,7 +75,17 @@ public partial class DashboardViewModel(IGameDetector detector, CatalogStatusVie
             var found = await Task.Run(detector.Detect);
             Installs.Clear();
             foreach (var install in found)
-                Installs.Add(new GameInstallViewModel(install, installs) { IsGameRunning = IsGameRunning });
+            {
+                var vm = installViewModel(install);
+                vm.IsGameRunning = IsGameRunning;
+                Installs.Add(vm);
+            }
+            log.LogInformation("Found {Count} Satisfactory install(s): {Paths}", found.Count, found.Select(f => f.GamePath));
+        }
+        catch (Exception e)
+        {
+            // Detectors shouldn't throw, but a failed scan must never take the app down.
+            log.LogError(e, "Game detection failed");
         }
         finally
         {
@@ -79,13 +97,28 @@ public partial class DashboardViewModel(IGameDetector detector, CatalogStatusVie
             _ = install.CheckAsync();
     }
 
-    /// <summary>Watches for Satisfactory starting and stopping for as long as the app runs.</summary>
+    /// <summary>
+    /// Watches for Satisfactory starting and stopping for as long as the app runs. A failed check is
+    /// logged and retried on the next tick, so the banner (which guards installs) never goes stale.
+    /// </summary>
     public async Task WatchGameAsync(CancellationToken ct = default)
     {
-        using var timer = new PeriodicTimer(GameWatchInterval);
+        using var timer = new PeriodicTimer(_watchInterval);
+        var failing = false;
         do
         {
-            await RefreshGameStateAsync();
+            try
+            {
+                await RefreshGameStateAsync(ct);
+                failing = false;
+            }
+            catch (Exception e) when (e is not OperationCanceledException)
+            {
+                // Log once per outage, not every 3 seconds.
+                if (!failing)
+                    log.LogWarning(e, "Couldn't check whether Satisfactory is running");
+                failing = true;
+            }
         } while (await timer.WaitForNextTickAsync(ct));
     }
 
@@ -108,8 +141,16 @@ public partial class DashboardViewModel(IGameDetector detector, CatalogStatusVie
         {
             var closed = await GameProcesses.CloseAsync(_gameProcesses, CloseGracePeriod);
             if (!closed)
+            {
+                log.LogWarning("Satisfactory didn't close within {Grace}", CloseGracePeriod);
                 CloseError = "Satisfactory didn't close. Quit it from the game's menu, then try again.";
+            }
             await RefreshGameStateAsync();
+        }
+        catch (Exception e)
+        {
+            log.LogError(e, "Closing Satisfactory failed");
+            CloseError = $"Couldn't close Satisfactory: {e.Message}";
         }
         finally
         {
@@ -117,23 +158,32 @@ public partial class DashboardViewModel(IGameDetector detector, CatalogStatusVie
         }
     }
 
-    private async Task RefreshGameStateAsync()
+    private async Task RefreshGameStateAsync(CancellationToken ct = default)
     {
-        _gameProcesses = await Task.Run(GameProcesses.FindRunning);
-        var running = _gameProcesses.Count > 0;
-        if (running == IsGameRunning)
-            return;
-
-        IsGameRunning = running;
-        if (!running)
-            ConfirmingClose = false;
-
-        foreach (var install in Installs)
+        await _refreshGate.WaitAsync(ct);
+        try
         {
-            install.IsGameRunning = running;
-            // Just closed: finish any recovery that was waiting, and re-check.
+            _gameProcesses = await _findRunning(ct);
+            var running = _gameProcesses.Count > 0;
+            if (running == IsGameRunning)
+                return;
+
+            log.LogInformation(running ? "Satisfactory started" : "Satisfactory closed");
+            IsGameRunning = running;
             if (!running)
-                _ = install.CheckAsync();
+                ConfirmingClose = false;
+
+            foreach (var install in Installs)
+            {
+                install.IsGameRunning = running;
+                // Just closed: finish any recovery that was waiting, and re-check.
+                if (!running)
+                    _ = install.CheckAsync();
+            }
+        }
+        finally
+        {
+            _refreshGate.Release();
         }
     }
 }

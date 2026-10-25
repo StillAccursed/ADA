@@ -112,4 +112,4 @@ Reject an archive (before staging) if:
 - the mod root has more than one `.uplugin`;
 - the `.uplugin` name does not match the mod reference the catalogue says this file belongs to;
 - the `.uplugin` is not valid JSON or has no `SemVersion`;
-- the uncompressed size exceeds a sanity limit (proposed 2 GB) — guards against zip bombs.
+- an entry compresses more than 200:1 (16 MB and larger), or extracts to more than its declared size, or the mod exceeds a 64 GB sanity ceiling — guards against zip bombs without capping real mods, which can be several GB. A whole profile can reach tens of GB; free space is checked before downloading and before extracting.

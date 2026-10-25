@@ -1,13 +1,13 @@
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using System.Text.RegularExpressions;
+using Overlord.Core.Catalog;
 using Overlord.Infrastructure.IO;
 
 namespace Overlord.Infrastructure.Profiles;
 
 /// <summary>Reads and writes <c>.smmprofile</c> files (see <c>smmprofile.md</c>).</summary>
-public static partial class SmmProfileFile
+public static class SmmProfileFile
 {
     public const string Extension = ".smmprofile";
     public const int LockfileVersion = 1;
@@ -50,15 +50,18 @@ public static partial class SmmProfileFile
     }
 
     /// <summary>Writes atomically; mods are sorted by reference, as in files other tools export.</summary>
-    public static void Write(string path, SmmProfileDocument doc)
+    public static void Write(string path, SmmProfileDocument doc) => AtomicFile.Write(path, Serializer(doc));
+
+    /// <summary>Validates and sorts the document, then returns what writes it.</summary>
+    internal static Action<Stream> Serializer(SmmProfileDocument doc)
     {
         Validate(doc);
         SortOrdinally(doc);
-        AtomicFile.Write(path, stream =>
+        return stream =>
         {
             JsonSerializer.Serialize(stream, doc, Writer.SmmProfileDocument);
             stream.WriteByte((byte)'\n'); // other tools end the file with a newline
-        });
+        };
     }
 
     /// <summary>
@@ -92,7 +95,7 @@ public static partial class SmmProfileFile
 
         foreach (var (reference, mod) in doc.Profile.Mods ?? [])
         {
-            if (!Reference().IsMatch(reference))
+            if (!ModIdentifiers.IsValidReference(reference))
                 throw new InvalidProfileException($"\"{reference}\" is not a valid mod reference.");
             if (string.IsNullOrWhiteSpace(mod?.Version))
                 throw new InvalidProfileException($"{reference} has no version range.");
@@ -100,18 +103,12 @@ public static partial class SmmProfileFile
 
         foreach (var (reference, mod) in doc.Lockfile.Mods ?? [])
         {
-            if (!Reference().IsMatch(reference))
+            if (!ModIdentifiers.IsValidReference(reference))
                 throw new InvalidProfileException($"\"{reference}\" is not a valid mod reference.");
-            if (mod?.Version is null || !ExactVersion().IsMatch(mod.Version))
+            if (!ModIdentifiers.IsExactVersion(mod?.Version))
                 throw new InvalidProfileException($"{reference} has an invalid locked version \"{mod?.Version}\".");
         }
     }
-
-    [GeneratedRegex("^[A-Za-z0-9_]{1,100}$")]
-    private static partial Regex Reference();
-
-    [GeneratedRegex(@"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$")]
-    private static partial Regex ExactVersion();
 }
 
 // Wire shapes, field for field as observed in the sample. Unknown fields at each level are kept

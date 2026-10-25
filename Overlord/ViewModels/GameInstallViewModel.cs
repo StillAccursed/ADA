@@ -1,16 +1,14 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Microsoft.Extensions.Logging;
 using Overlord.Core.Games;
 using Overlord.Infrastructure.Installing;
 
 namespace Overlord.ViewModels;
 
 /// <summary>One detected game on the Dashboard, with the state of the mods Overlord manages in it.</summary>
-public partial class GameInstallViewModel(GameInstall install, ModInstallService service) : ViewModelBase
+public partial class GameInstallViewModel(GameInstall install, ModInstallService service, ILogger<GameInstallViewModel> log)
+    : ViewModelBase
 {
     private CheckResult? _lastCheck;
 
@@ -46,7 +44,7 @@ public partial class GameInstallViewModel(GameInstall install, ModInstallService
 
     public bool CanRepair => HasRepairs && !IsBusy && !IsGameRunning;
 
-    /// <summary>Launch-time recovery and fast check.</summary>
+    /// <summary>Launch-time recovery and fast check. Never throws.</summary>
     public async Task CheckAsync()
     {
         IsBusy = true;
@@ -58,6 +56,7 @@ public partial class GameInstallViewModel(GameInstall install, ModInstallService
         }
         catch (Exception e)
         {
+            log.LogError(e, "Checking mods in {Game} failed", Install.GamePath);
             ModsSummary = "Couldn't check mods.";
             Notice = e.Message;
         }
@@ -79,9 +78,10 @@ public partial class GameInstallViewModel(GameInstall install, ModInstallService
         {
             var progress = new Progress<ModInstallProgress>(p => ProgressText = p.Stage switch
             {
-                "Downloading" when p.Total is > 0 => $"Downloading {p.Reference}: {100 * p.Done / p.Total.Value}%",
-                "Extracting" => $"Repairing {p.Reference}: {p.Done} of {p.Total} files",
-                _ => $"{p.Stage} {p.Reference}…",
+                InstallStage.Downloading when p.Total is > 0 => $"Downloading {p.Reference}: {100 * p.Done / p.Total.Value}%",
+                InstallStage.Downloading => $"Downloading {p.Reference}…",
+                InstallStage.Extracting => $"Repairing {p.Reference}: {p.Done} of {p.Total} files",
+                _ => $"Finishing {p.Reference}…",
             });
             var result = await service.RepairAsync(Install, _lastCheck, progress);
 
@@ -91,11 +91,14 @@ public partial class GameInstallViewModel(GameInstall install, ModInstallService
             parts.AddRange(result.Failed.Select(f => $"Couldn't repair {f.Key}: {f.Value}"));
             Notice = string.Join(" ", parts);
 
-            Show(await service.RecoverAndCheckAsync(Install).ContinueWith(t => t.Result.Check));
+            Show((await service.RecoverAndCheckAsync(Install)).Check);
         }
-        catch (GameRunningException e)
+        catch (Exception e)
         {
-            Notice = e.Message;
+            // Offline, the game started, a disk error: all shown here rather than crashing the app.
+            if (e is not GameRunningException)
+                log.LogError(e, "Repair in {Game} failed", Install.GamePath);
+            Notice = e is GameRunningException ? e.Message : $"Couldn't repair: {e.Message}";
         }
         finally
         {

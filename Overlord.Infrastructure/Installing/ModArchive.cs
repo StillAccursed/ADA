@@ -15,8 +15,21 @@ public sealed record ModArchiveEntry(string RelativePath, long Size, ZipArchiveE
 /// </summary>
 public sealed class ModArchive : IDisposable
 {
-    /// <summary>Guards against zip bombs: no Satisfactory mod comes close to this uncompressed.</summary>
-    public const long MaxUncompressedBytes = 2L * 1024 * 1024 * 1024;
+    /// <summary>
+    /// A sanity ceiling per mod, far above any real one (whole profiles reach tens of GB, single
+    /// mods a few). Zip bombs are caught by <see cref="MaxCompressionRatio"/>, by the free-space
+    /// check, and by extraction stopping at each entry's declared size.
+    /// </summary>
+    public const long MaxUncompressedBytes = 64L * 1024 * 1024 * 1024;
+
+    /// <summary>
+    /// Deflate tops out near 1032:1, which only a bomb's repeated bytes reach. Real mod files
+    /// (textures, paks, binaries) compress far less, so anything this dense is refused.
+    /// </summary>
+    public const int MaxCompressionRatio = 200;
+
+    // Small entries can legitimately compress well (an empty config, padding); only judge large ones.
+    private const long RatioCheckMinimumBytes = 16L * 1024 * 1024;
 
     private readonly ZipArchive _zip;
 
@@ -81,6 +94,9 @@ public sealed class ModArchive : IDisposable
                 // Two names that differ only by case would overwrite each other on macOS and Windows.
                 if (!seen.Add(relative))
                     throw new InvalidModArchiveException($"The archive contains '{relative}' more than once.");
+
+                if (entry.Length >= RatioCheckMinimumBytes && entry.Length > (long)MaxCompressionRatio * Math.Max(entry.CompressedLength, 1))
+                    throw new InvalidModArchiveException($"'{relative}' is compressed more than {MaxCompressionRatio}:1, which real mod files never are.");
 
                 entries.Add(new ModArchiveEntry(relative, entry.Length, entry));
             }

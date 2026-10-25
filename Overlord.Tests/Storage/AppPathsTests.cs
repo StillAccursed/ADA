@@ -14,6 +14,7 @@ public class AppPathsTests
         Assert.True(Directory.Exists(Path.Combine(dir.Path, "Databases")));
         Assert.True(Directory.Exists(Path.Combine(dir.Path, "Config")));
         Assert.True(Directory.Exists(Path.Combine(dir.Path, "Staging")));
+        Assert.True(Directory.Exists(Path.Combine(dir.Path, "Logs")));
         Assert.Equal(Path.Combine(dir.Path, "Databases", "catalog.db"), paths.CatalogDatabase);
     }
 

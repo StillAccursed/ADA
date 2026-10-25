@@ -104,6 +104,18 @@ public sealed class ProfileExporterTests : IDisposable
     }
 
     [Fact]
+    public async Task A_failed_write_of_the_second_file_leaves_the_first_unwritten()
+    {
+        // Something already sits where the .smmprofile's temporary file must go, so writing it fails.
+        Directory.CreateDirectory(_dir.Combine("Atria.smmprofile.tmp"));
+
+        await Assert.ThrowsAnyAsync<Exception>(() => Export(ProfileFormats.Both));
+
+        Assert.False(File.Exists(_dir.Combine("Atria.olp")));
+        Assert.False(File.Exists(_dir.Combine("Atria.olp.tmp")));
+    }
+
+    [Fact]
     public async Task A_version_missing_from_the_catalogue_writes_neither_file()
     {
         var profile = Atria with { Mods = [.. Atria.Mods, new ProfileMod("Gone", "1.0.0")] };

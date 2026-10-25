@@ -49,7 +49,7 @@ public class GameProcessesTests
         File.CreateSymbolicLink(fake, "/bin/sleep");
         using var process = System.Diagnostics.Process.Start(fake, "300");
 
-        var found = GameProcesses.FindRunning().Where(p => p.Id == process.Id).ToList();
+        var found = (await GameProcesses.FindRunningAsync()).Where(p => p.Id == process.Id).ToList();
         Assert.Single(found);
 
         Assert.True(await GameProcesses.CloseAsync(found, TimeSpan.FromSeconds(5)));

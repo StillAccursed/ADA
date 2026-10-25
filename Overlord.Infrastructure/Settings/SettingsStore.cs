@@ -8,7 +8,20 @@ namespace Overlord.Infrastructure.Settings;
 /// <summary>Reads and writes <see cref="AppSettings"/> as JSON.</summary>
 public sealed class SettingsStore(string settingsPath)
 {
+    private readonly Lock _gate = new();
+    private AppSettings? _current;
+
     public string SettingsPath { get; } = settingsPath;
+
+    /// <summary>The settings in effect: read from disk once, then kept in memory and updated by <see cref="Save"/>.</summary>
+    public AppSettings Current
+    {
+        get
+        {
+            lock (_gate)
+                return _current ??= Load();
+        }
+    }
 
     /// <summary>
     /// The saved settings, or defaults if the file is missing or unreadable. A damaged file never
@@ -34,9 +47,16 @@ public sealed class SettingsStore(string settingsPath)
     /// Writes to a temporary file, flushes it to disk, then renames it over the old file, so a
     /// crash mid-save leaves the previous settings intact rather than a half-written file.
     /// </summary>
-    public void Save(AppSettings settings) =>
-        AtomicFile.Write(SettingsPath,
-            stream => JsonSerializer.Serialize(stream, settings.Normalized(), SettingsJsonContext.Default.AppSettings));
+    public void Save(AppSettings settings)
+    {
+        var normalized = settings.Normalized();
+        lock (_gate)
+        {
+            _current = normalized;
+            AtomicFile.Write(SettingsPath,
+                stream => JsonSerializer.Serialize(stream, normalized, SettingsJsonContext.Default.AppSettings));
+        }
+    }
 }
 
 [JsonSourceGenerationOptions(JsonSerializerDefaults.Web, WriteIndented = true)]

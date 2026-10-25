@@ -1,3 +1,5 @@
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Overlord.Core.Catalog;
 
 namespace Overlord.Infrastructure.Catalog;
@@ -9,7 +11,8 @@ public sealed record SyncResult(bool WasFullSync, int ModsUpdated, int ModsRemov
 /// full pass at most once a day (picks up description edits and drops deleted mods), otherwise only
 /// the mods that released a version since the last sync.
 /// </summary>
-public sealed class CatalogSync(IModCatalogSource source, ModCatalogStore store, TimeProvider? clock = null)
+public sealed class CatalogSync(IModCatalogSource source, ModCatalogStore store, TimeProvider? clock = null,
+    ILogger<CatalogSync>? log = null)
 {
     public const int PageSize = 100;
 
@@ -26,6 +29,7 @@ public sealed class CatalogSync(IModCatalogSource source, ModCatalogStore store,
     private static readonly TimeSpan VersionCacheLifetime = TimeSpan.FromHours(6);
 
     private readonly TimeProvider _clock = clock ?? TimeProvider.System;
+    private readonly ILogger _log = log ?? NullLogger<CatalogSync>.Instance;
 
     public async Task<SyncResult> SyncAsync(CancellationToken ct = default)
     {
@@ -39,6 +43,8 @@ public sealed class CatalogSync(IModCatalogSource source, ModCatalogStore store,
 
         // Only recorded on success, so a failed check never claims the catalogue is current.
         store.SetState(LastCheckedKey, now);
+        _log.LogInformation("Catalogue {Kind} sync: {Updated} mods updated, {Removed} removed",
+            result.WasFullSync ? "full" : "incremental", result.ModsUpdated, result.ModsRemoved);
         return result;
     }
 

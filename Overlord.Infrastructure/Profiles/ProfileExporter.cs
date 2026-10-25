@@ -1,5 +1,8 @@
 using Overlord.Core.Catalog;
 using Overlord.Core.Profiles;
+using Overlord.Infrastructure.Ficsit;
+using Overlord.Infrastructure.IO;
+using Overlord.Infrastructure.Threading;
 
 namespace Overlord.Infrastructure.Profiles;
 
@@ -22,7 +25,7 @@ public enum ProfileFormats
 /// </summary>
 public sealed class ProfileExporter(Func<string, CancellationToken, Task<IReadOnlyList<CatalogVersion>>> getVersions)
 {
-    private const string ApiHost = "https://api.ficsit.app";
+    private const int ParallelLookups = 4;
 
     /// <param name="basePath">Path without extension; each format adds its own.</param>
     /// <param name="gameChangelist">The game build the profile is for, written to <c>metadata.gameVersion</c>.</param>
@@ -37,20 +40,14 @@ public sealed class ProfileExporter(Func<string, CancellationToken, Task<IReadOn
             ? await ToSmmProfileAsync(profile, gameChangelist, requiredTarget, ct)
             : null;
 
-        var written = new List<string>();
+        var files = new List<(string Path, Action<Stream> Write)>();
         if (formats.HasFlag(ProfileFormats.Olp))
-        {
-            var path = basePath + OlpFile.Extension;
-            OlpFile.Write(path, profile);
-            written.Add(path);
-        }
+            files.Add((basePath + OlpFile.Extension, OlpFile.Serializer(profile)));
         if (smm is not null)
-        {
-            var path = basePath + SmmProfileFile.Extension;
-            SmmProfileFile.Write(path, smm);
-            written.Add(path);
-        }
-        return written;
+            files.Add((basePath + SmmProfileFile.Extension, SmmProfileFile.Serializer(smm)));
+
+        await Task.Run(() => AtomicFile.WriteAll(files), ct);
+        return files.Select(f => f.Path).ToList();
     }
 
     /// <summary>
@@ -65,10 +62,13 @@ public sealed class ProfileExporter(Func<string, CancellationToken, Task<IReadOn
         var locked = new SortedDictionary<string, SmmLockedMod>(StringComparer.Ordinal);
         var problems = new List<string>();
 
-        foreach (var mod in profile.Mods)
+        var found = await Concurrently.MapAsync(profile.Mods, ParallelLookups, async (mod, token) =>
+            (await getVersions(mod.Name, token)).FirstOrDefault(v => v.Version == mod.Version), ct);
+
+        for (var i = 0; i < profile.Mods.Count; i++)
         {
-            var versions = await getVersions(mod.Name, ct);
-            var version = versions.FirstOrDefault(v => v.Version == mod.Version);
+            var mod = profile.Mods[i];
+            var version = found[i];
             if (version is null)
             {
                 problems.Add($"{mod.Name} {mod.Version} is not listed on ficsit.app.");
@@ -88,7 +88,7 @@ public sealed class ProfileExporter(Func<string, CancellationToken, Task<IReadOn
                 Targets = new SortedDictionary<string, SmmTarget>(
                     version.Targets.ToDictionary(t => t.Platform.ToString(), t => new SmmTarget
                     {
-                        Link = ApiHost + t.DownloadPath,
+                        Link = FicsitApi.AbsoluteLink(t.DownloadPath),
                         Hash = t.Hash,
                     }),
                     StringComparer.Ordinal),

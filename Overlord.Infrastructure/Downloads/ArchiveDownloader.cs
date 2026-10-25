@@ -1,7 +1,13 @@
 using System.Net;
 using System.Security.Cryptography;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Overlord.Core.Catalog;
 using Overlord.Core.Settings;
+using Overlord.Infrastructure.Ficsit;
+using Overlord.Infrastructure.Net;
+using Polly;
+using Polly.Retry;
 
 namespace Overlord.Infrastructure.Downloads;
 
@@ -25,23 +31,35 @@ public sealed class ArchiveDownloadException(string message, IReadOnlyList<strin
 /// </remarks>
 public sealed class ArchiveDownloader
 {
-    private static readonly Uri DefaultBaseAddress = new("https://api.ficsit.app/");
+    private const int BufferSize = 81920;
     private static readonly TimeSpan MaxBackoff = TimeSpan.FromSeconds(30);
+
+    // No total time limit (a multi-GB mod on a slow line takes as long as it takes), but a
+    // connection that sends nothing for this long is dead and the attempt is retried.
+    public static readonly TimeSpan DefaultStallTimeout = TimeSpan.FromSeconds(60);
+
+    // Often enough for a smooth progress bar, rarely enough not to flood the UI thread.
+    private static readonly TimeSpan ProgressInterval = TimeSpan.FromMilliseconds(100);
 
     private readonly HttpClient _http;
     private readonly Uri _baseAddress;
-    private readonly Func<TimeSpan, CancellationToken, Task> _delay;
+    private readonly TimeProvider _time;
+    private readonly ILogger _log;
 
     public string ArchivesFolder { get; }
 
-    /// <param name="delay">Backoff wait; replaced in tests so retries don't sleep.</param>
-    public ArchiveDownloader(HttpClient http, string archivesFolder, Uri? baseAddress = null,
-        Func<TimeSpan, CancellationToken, Task>? delay = null)
+    /// <summary>How long a download may go without receiving any data before the attempt fails.</summary>
+    public TimeSpan StallTimeout { get; init; } = DefaultStallTimeout;
+
+    /// <param name="time">Drives retry waits; tests pass one that doesn't sleep.</param>
+    public ArchiveDownloader(HttpClient http, string archivesFolder, Uri? baseAddress = null, TimeProvider? time = null,
+        ILogger<ArchiveDownloader>? log = null)
     {
         _http = http;
         ArchivesFolder = archivesFolder;
-        _baseAddress = baseAddress ?? DefaultBaseAddress;
-        _delay = delay ?? Task.Delay;
+        _baseAddress = baseAddress ?? FicsitApi.BaseAddress;
+        _time = time ?? TimeProvider.System;
+        _log = log ?? NullLogger<ArchiveDownloader>.Instance;
     }
 
     public string PathFor(string modReference, string version, TargetPlatform platform) =>
@@ -63,51 +81,68 @@ public sealed class ArchiveDownloader
             File.Delete(path);
         }
 
-        var maxAttempts = 1 + Math.Clamp(retries, AppSettings.MinDownloadRetries, AppSettings.MaxDownloadRetries);
+        retries = Math.Clamp(retries, AppSettings.MinDownloadRetries, AppSettings.MaxDownloadRetries);
+        var maxAttempts = 1 + retries;
         var failures = new List<string>();
-        for (var attempt = 1; attempt <= maxAttempts; attempt++)
+        try
         {
-            TimeSpan? retryAfter = null;
-            try
+            await BuildPipeline(retries).ExecuteAsync(async token =>
             {
-                retryAfter = await DownloadOnceAsync(path, target, attempt, maxAttempts, progress, ct);
-                if (retryAfter is null)
-                    return path;
-                failures.Add($"Attempt {attempt}: server busy.");
-            }
-            catch (AttemptFailedException e)
-            {
-                failures.Add($"Attempt {attempt}: {e.Message}");
-                if (e.Permanent)
-                    break;
-            }
-            catch (Exception e) when (e is HttpRequestException or IOException
-                                          || (e is TaskCanceledException && !ct.IsCancellationRequested))
-            {
-                failures.Add($"Attempt {attempt}: {(e is TaskCanceledException ? "timed out" : e.Message)}.");
-            }
-
-            if (attempt < maxAttempts)
-                await _delay(Backoff(attempt, retryAfter), ct);
+                var attempt = failures.Count + 1;
+                try
+                {
+                    await DownloadOnceAsync(path, target, attempt, maxAttempts, progress, token);
+                }
+                catch (Exception e) when (!token.IsCancellationRequested)
+                {
+                    failures.Add($"Attempt {attempt}: {Describe(e)}");
+                    _log.LogWarning("Download of {Mod} {Version} failed, attempt {Attempt} of {Max}: {Reason}",
+                        modReference, version, attempt, maxAttempts, Describe(e));
+                    throw;
+                }
+            }, ct);
+            return path;
         }
-
-        throw new ArchiveDownloadException(
-            $"Could not download {modReference} {version} ({target.Platform}) after {failures.Count} attempt(s).",
-            failures);
+        catch (Exception e) when (IsAttemptFailure(e, ct))
+        {
+            throw new ArchiveDownloadException(
+                $"Could not download {modReference} {version} ({target.Platform}) after {failures.Count} attempt(s).",
+                failures);
+        }
     }
 
-    /// <returns>Null on success; a delay to wait when the server asked us to slow down.</returns>
-    private async Task<TimeSpan?> DownloadOnceAsync(string path, VersionTarget target, int attempt, int maxAttempts,
+    private ResiliencePipeline BuildPipeline(int retries)
+    {
+        var builder = new ResiliencePipelineBuilder { TimeProvider = _time };
+        if (retries > 0)
+        {
+            builder.AddRetry(new RetryStrategyOptions
+            {
+                MaxRetryAttempts = retries,
+                ShouldHandle = args => ValueTask.FromResult(
+                    args.Outcome.Exception is AttemptFailedException { Permanent: false }
+                    || Retry.IsTransientException(args.Outcome.Exception, args.Context)
+                    || args.Outcome.Exception is IOException),
+                DelayGenerator = args => ValueTask.FromResult<TimeSpan?>(Retry.Backoff(args.AttemptNumber,
+                    (args.Outcome.Exception as AttemptFailedException)?.RetryAfter, MaxBackoff)),
+            });
+        }
+        return builder.Build();
+    }
+
+    private async Task DownloadOnceAsync(string path, VersionTarget target, int attempt, int maxAttempts,
         IProgress<DownloadProgress>? progress, CancellationToken ct)
     {
         var part = path + ".part";
+        using var stall = CancellationTokenSource.CreateLinkedTokenSource(ct);
         try
         {
+            stall.CancelAfter(StallTimeout);
             using var response = await _http.GetAsync(new Uri(_baseAddress, target.DownloadPath),
-                HttpCompletionOption.ResponseHeadersRead, ct);
+                HttpCompletionOption.ResponseHeadersRead, stall.Token);
 
             if (response.StatusCode == HttpStatusCode.TooManyRequests)
-                return response.Headers.RetryAfter?.Delta ?? TimeSpan.Zero;
+                throw new AttemptFailedException("server busy.", retryAfter: response.Headers.RetryAfter?.Delta ?? TimeSpan.Zero);
 
             if (!response.IsSuccessStatusCode)
             {
@@ -118,26 +153,36 @@ public sealed class ArchiveDownloader
             }
 
             long received = 0;
+            var lastReport = _time.GetTimestamp();
             using (var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256))
             {
                 await using (var source = await response.Content.ReadAsStreamAsync(ct))
-                await using (var file = new FileStream(part, FileMode.Create, FileAccess.Write, FileShare.None, 81920, useAsync: true))
+                await using (var file = new FileStream(part, FileMode.Create, FileAccess.Write, FileShare.None, BufferSize, useAsync: true))
                 {
-                    var buffer = new byte[81920];
+                    var buffer = new byte[BufferSize];
                     int read;
-                    while ((read = await source.ReadAsync(buffer, ct)) > 0)
+                    while (true)
                     {
+                        stall.CancelAfter(StallTimeout);
+                        if ((read = await source.ReadAsync(buffer, stall.Token)) == 0)
+                            break;
+
                         received += read;
                         if (target.Size is { } expected && received > expected)
                             throw new AttemptFailedException($"size mismatch (more than the expected {expected:N0} bytes).");
 
                         hash.AppendData(buffer, 0, read);
                         await file.WriteAsync(buffer.AsMemory(0, read), ct);
-                        progress?.Report(new DownloadProgress(attempt, maxAttempts, received, target.Size));
+                        if (progress is not null && _time.GetElapsedTime(lastReport) >= ProgressInterval)
+                        {
+                            progress.Report(new DownloadProgress(attempt, maxAttempts, received, target.Size));
+                            lastReport = _time.GetTimestamp();
+                        }
                     }
                     await file.FlushAsync(ct);
                     file.Flush(flushToDisk: true);
                 }
+                progress?.Report(new DownloadProgress(attempt, maxAttempts, received, target.Size));
 
                 if (target.Size is { } size && received != size)
                     throw new AttemptFailedException($"size mismatch ({received:N0} of {size:N0} bytes).");
@@ -148,7 +193,10 @@ public sealed class ArchiveDownloader
             }
 
             File.Move(part, path, overwrite: true);
-            return null;
+        }
+        catch (OperationCanceledException) when (stall.IsCancellationRequested && !ct.IsCancellationRequested)
+        {
+            throw new AttemptFailedException($"no data for {StallTimeout.TotalSeconds:N0} seconds.");
         }
         finally
         {
@@ -167,17 +215,21 @@ public sealed class ArchiveDownloader
         if (target.Hash is null)
             return null;
 
-        await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 81920, useAsync: true);
+        await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, BufferSize, useAsync: true);
         var actual = Convert.ToHexStringLower(await SHA256.HashDataAsync(stream, ct));
         return string.Equals(actual, target.Hash, StringComparison.OrdinalIgnoreCase) ? null : "hash mismatch";
     }
 
-    private static TimeSpan Backoff(int attempt, TimeSpan? retryAfter)
+    private static bool IsAttemptFailure(Exception e, CancellationToken ct) =>
+        e is AttemptFailedException or HttpRequestException or IOException
+        || (e is TaskCanceledException && !ct.IsCancellationRequested);
+
+    private static string Describe(Exception e) => e switch
     {
-        var exponential = TimeSpan.FromSeconds(Math.Pow(2, attempt - 1));
-        var wait = retryAfter is { } ra && ra > exponential ? ra : exponential;
-        return wait < MaxBackoff ? wait : MaxBackoff;
-    }
+        AttemptFailedException => e.Message,
+        TaskCanceledException => "timed out.",
+        _ => e.Message.EndsWith('.') ? e.Message : e.Message + ".",
+    };
 
     // Mod references and versions come from the API; refuse anything that could escape the folder.
     private static string SafeName(string value)
@@ -190,8 +242,11 @@ public sealed class ArchiveDownloader
         return value;
     }
 
-    private sealed class AttemptFailedException(string message, bool permanent = false) : Exception(message)
+    private sealed class AttemptFailedException(string message, bool permanent = false, TimeSpan? retryAfter = null)
+        : Exception(message)
     {
         public bool Permanent { get; } = permanent;
+
+        public TimeSpan? RetryAfter { get; } = retryAfter;
     }
 }

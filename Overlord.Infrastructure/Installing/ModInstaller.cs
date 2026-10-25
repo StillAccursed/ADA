@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using Overlord.Core.Catalog;
+using Overlord.Infrastructure.IO;
 
 namespace Overlord.Infrastructure.Installing;
 
@@ -12,7 +13,14 @@ public abstract record ModChange
     public sealed record Uninstall(string Reference) : ModChange;
 }
 
-public sealed record InstallProgress(string Reference, string Stage, int FilesDone, int FilesTotal);
+public enum InstallStage
+{
+    Downloading,
+    Extracting,
+    Committing,
+}
+
+public sealed record InstallProgress(string Reference, InstallStage Stage, int FilesDone, int FilesTotal);
 
 public class InstallException(string message, Exception? inner = null) : Exception(message, inner);
 
@@ -72,7 +80,7 @@ public sealed class ModInstaller
     private readonly JournalStore _journal;
 
     /// <param name="gameRoot">The folder containing <c>FactoryGame</c>.</param>
-    /// <param name="isGameRunning">Checked before every transaction.</param>
+    /// <param name="isGameRunning">Checked before every transaction, on the thread running it.</param>
     public ModInstaller(string gameRoot, Func<bool> isGameRunning) : this(gameRoot, isGameRunning, null)
     {
     }
@@ -138,7 +146,7 @@ public sealed class ModInstaller
                         _checkpoint($"ready:{step.Reference}");
                     }
 
-                    progress?.Report(new InstallProgress(step.Reference, "Committing", 0, 0));
+                    progress?.Report(new InstallProgress(step.Reference, InstallStage.Committing, 0, 0));
                     Commit(txn, step, installed);
                     journal.Steps[i] = step with { State = StepState.Done };
                     _journal.Save(journal);
@@ -305,6 +313,10 @@ public sealed class ModInstaller
                     int read;
                     while ((read = source.Read(buffer)) > 0)
                     {
+                        // The archive's declared sizes are what the free-space and size checks used;
+                        // an entry that inflates past its own is a zip bomb or corrupt, so stop at once.
+                        if (written + read > entry.Size)
+                            throw new InvalidModArchiveException($"{entry.RelativePath} extracts to more than its declared {entry.Size:N0} bytes.");
                         hash.AppendData(buffer, 0, read);
                         file.Write(buffer, 0, read);
                         written += read;
@@ -321,7 +333,7 @@ public sealed class ModInstaller
 
             var info = new FileInfo(target);
             files.Add(new InstalledFile(entry.RelativePath, info.Length, expected, info.LastWriteTimeUtc));
-            progress?.Report(new InstallProgress(reference, "Extracting", i + 1, archive.Entries.Count));
+            progress?.Report(new InstallProgress(reference, InstallStage.Extracting, i + 1, archive.Entries.Count));
             _checkpoint($"extracted:{reference}:{i}");
         }
         return files;
@@ -472,15 +484,13 @@ public sealed class ModInstaller
 
     private void CheckFreeSpace(IReadOnlyList<ModArchive> archives)
     {
-        var needed = archives.Sum(a => a.UncompressedBytes) + FreeSpaceMargin;
-        var full = Path.GetFullPath(_folders.FactoryGame);
-        var drive = DriveInfo.GetDrives()
-            .Where(d => d.IsReady && full.StartsWith(d.RootDirectory.FullName, StringComparison.OrdinalIgnoreCase))
-            .MaxBy(d => d.RootDirectory.FullName.Length);
-        if (drive is not null && drive.AvailableFreeSpace < needed)
+        try
         {
-            throw new InstallException(
-                $"Not enough free space: these mods need {needed / 1048576:N0} MB on {drive.Name}, which has {drive.AvailableFreeSpace / 1048576:N0} MB free.");
+            DiskSpace.Require(_folders.FactoryGame, archives.Sum(a => a.UncompressedBytes) + FreeSpaceMargin, "these mods");
+        }
+        catch (InsufficientSpaceException e)
+        {
+            throw new InstallException(e.Message, e);
         }
     }
 

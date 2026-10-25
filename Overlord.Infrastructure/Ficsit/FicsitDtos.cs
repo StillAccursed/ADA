@@ -6,7 +6,18 @@ namespace Overlord.Infrastructure.Ficsit;
 // Wire shapes for the ficsit.app GraphQL API. Kept internal and separate from the Core catalogue
 // types so an API change only touches this file and the mapping in FicsitApiClient.
 
-internal sealed record GraphQlRequest([property: JsonPropertyName("query")] string Query);
+internal sealed record GraphQlRequest<TVariables>(
+    [property: JsonPropertyName("query")] string Query,
+    [property: JsonPropertyName("variables")] TVariables Variables);
+
+internal sealed record PageVariables(
+    [property: JsonPropertyName("offset")] int Offset,
+    [property: JsonPropertyName("limit")] int Limit);
+
+internal sealed record VersionVariables(
+    [property: JsonPropertyName("modReference")] string ModReference,
+    [property: JsonPropertyName("offset")] int Offset,
+    [property: JsonPropertyName("limit")] int Limit);
 
 internal sealed record GraphQlResponse<T>(
     [property: JsonPropertyName("data")] T? Data,
@@ -75,7 +86,8 @@ internal sealed record DependencyDto(
 
 // Source-generated serializers: no runtime reflection, so this works under trimming and Native AOT.
 [JsonSourceGenerationOptions(JsonSerializerDefaults.Web)]
-[JsonSerializable(typeof(GraphQlRequest))]
+[JsonSerializable(typeof(GraphQlRequest<PageVariables>))]
+[JsonSerializable(typeof(GraphQlRequest<VersionVariables>))]
 [JsonSerializable(typeof(GraphQlResponse<ModsData>))]
 [JsonSerializable(typeof(GraphQlResponse<ModVersionsData>))]
 internal sealed partial class FicsitJsonContext : JsonSerializerContext;

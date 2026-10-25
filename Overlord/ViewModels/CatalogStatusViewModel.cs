@@ -1,8 +1,7 @@
-using System;
 using System.Globalization;
-using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Microsoft.Extensions.Logging;
 using Overlord.Infrastructure.Catalog;
 
 namespace Overlord.ViewModels;
@@ -11,7 +10,7 @@ namespace Overlord.ViewModels;
 /// State of the local mod catalogue: how many mods it holds, when it last checked ficsit.app,
 /// and the "Check for Updates" action. Checked once on launch, then whenever the user asks.
 /// </summary>
-public partial class CatalogStatusViewModel(CatalogSync sync) : ViewModelBase
+public partial class CatalogStatusViewModel(CatalogSync sync, ILogger<CatalogStatusViewModel> log) : ViewModelBase
 {
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(SummaryText))]
@@ -36,10 +35,18 @@ public partial class CatalogStatusViewModel(CatalogSync sync) : ViewModelBase
         (false, { } at) => $"{ModCount.ToString("N0", CultureInfo.CurrentCulture)} mods · Mods updated {FormatWhen(at)}",
     };
 
-    /// <summary>Shows what is already on disk straight away, without waiting for the network.</summary>
+    /// <summary>Shows what is already on disk straight away, without waiting for the network. Never throws.</summary>
     public async Task LoadAsync()
     {
-        (ModCount, LastChecked) = await Task.Run(() => (sync.ModCount, sync.LastChecked));
+        try
+        {
+            (ModCount, LastChecked) = await Task.Run(() => (sync.ModCount, sync.LastChecked));
+        }
+        catch (Exception e)
+        {
+            log.LogError(e, "Couldn't read the mod catalogue");
+            ErrorText = $"Couldn't read the saved mod list: {e.Message}";
+        }
     }
 
     [RelayCommand]
@@ -53,6 +60,7 @@ public partial class CatalogStatusViewModel(CatalogSync sync) : ViewModelBase
         }
         catch (Exception e)
         {
+            log.LogWarning(e, "Catalogue check failed");
             ErrorText = LastChecked is null
                 ? $"Couldn't download the mod list: {e.Message}"
                 : $"Couldn't check for updates: {e.Message} Showing the mod list from {FormatWhen(LastChecked.Value)}.";

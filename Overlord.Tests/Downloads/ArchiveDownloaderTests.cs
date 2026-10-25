@@ -17,12 +17,11 @@ public sealed class ArchiveDownloaderTests : IDisposable
 
     private readonly TempDir _dir = new();
     private readonly FakeHttpHandler _handler = new();
-    private readonly List<TimeSpan> _delays = [];
+    private readonly InstantTimeProvider _time = new();
     private readonly ArchiveDownloader _downloader;
 
     public ArchiveDownloaderTests() =>
-        _downloader = new ArchiveDownloader(new HttpClient(_handler), _dir.Combine("Archives"),
-            delay: (d, _) => { _delays.Add(d); return Task.CompletedTask; });
+        _downloader = new ArchiveDownloader(new HttpClient(_handler), _dir.Combine("Archives"), time: _time);
 
     public void Dispose() => _dir.Dispose();
 
@@ -53,7 +52,7 @@ public sealed class ArchiveDownloaderTests : IDisposable
         var path = await Get();
 
         Assert.Equal(Good, await File.ReadAllBytesAsync(path));
-        Assert.Single(_delays);
+        Assert.Single(_time.Delays);
     }
 
     [Fact]
@@ -64,7 +63,7 @@ public sealed class ArchiveDownloaderTests : IDisposable
         var path = await Get();
 
         Assert.Equal(Good, await File.ReadAllBytesAsync(path));
-        Assert.Equal(2, _delays.Count);
+        Assert.Equal(2, _time.Delays.Count);
     }
 
     [Fact]
@@ -77,7 +76,7 @@ public sealed class ArchiveDownloaderTests : IDisposable
 
         await Get();
 
-        Assert.Equal([TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(4)], _delays);
+        Assert.Equal([TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(4)], _time.Delays);
     }
 
     [Fact]
@@ -118,7 +117,7 @@ public sealed class ArchiveDownloaderTests : IDisposable
         var e = await Assert.ThrowsAsync<ArchiveDownloadException>(() => Get());
 
         Assert.Single(e.Attempts);
-        Assert.Empty(_delays);
+        Assert.Empty(_time.Delays);
     }
 
     [Fact]
@@ -154,5 +153,74 @@ public sealed class ArchiveDownloaderTests : IDisposable
     public async Task Rejects_names_that_could_escape_the_archive_folder(string reference, string version)
     {
         await Assert.ThrowsAsync<ArgumentException>(() => _downloader.GetAsync(reference, version, Target, 0));
+    }
+
+    [Fact]
+    public async Task Progress_is_throttled_but_always_ends_with_the_full_size()
+    {
+        var big = new byte[4 * 1024 * 1024];
+        Random.Shared.NextBytes(big);
+        var target = new VersionTarget(TargetPlatform.Windows, "/big", big.Length, Convert.ToHexStringLower(SHA256.HashData(big)));
+        _handler.RespondBytes(big);
+        var reports = new List<DownloadProgress>();
+
+        await _downloader.GetAsync("Big", "1.0.0", target, 0, new SyncProgress<DownloadProgress>(reports.Add));
+
+        // 4 MB arrives in about 50 buffers; reporting each one would flood the UI thread.
+        Assert.InRange(reports.Count, 1, 10);
+        Assert.Equal(big.Length, reports[^1].BytesReceived);
+    }
+
+    private sealed class SyncProgress<T>(Action<T> report) : IProgress<T>
+    {
+        public void Report(T value) => report(value);
+    }
+
+    [Fact]
+    public async Task A_download_that_stops_sending_data_is_retried()
+    {
+        var handler = new StallingThenGoodHandler(Good);
+        var downloader = new ArchiveDownloader(new HttpClient(handler), _dir.Combine("Archives"), time: _time)
+        {
+            StallTimeout = TimeSpan.FromMilliseconds(200),
+        };
+
+        var path = await downloader.GetAsync("WeatherExtended", "1.1.0", Target, 1);
+
+        Assert.Equal(Good, await File.ReadAllBytesAsync(path));
+        Assert.Equal(2, handler.Requests);
+    }
+
+    /// <summary>First response sends headers and then nothing, like a dead connection; the second is fine.</summary>
+    private sealed class StallingThenGoodHandler(byte[] good) : HttpMessageHandler
+    {
+        public int Requests { get; private set; }
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
+        {
+            Requests++;
+            HttpContent content = Requests == 1 ? new StreamContent(new NeverEndingStream()) : new ByteArrayContent(good);
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = content });
+        }
+    }
+
+    private sealed class NeverEndingStream : Stream
+    {
+        public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken ct = default)
+        {
+            await Task.Delay(Timeout.Infinite, ct);
+            return 0;
+        }
+
+        public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException();
+        public override long Position { get => 0; set => throw new NotSupportedException(); }
+        public override void Flush() { }
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
     }
 }

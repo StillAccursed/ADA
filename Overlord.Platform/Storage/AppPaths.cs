@@ -9,6 +9,7 @@ namespace Overlord.Platform.Storage;
 ///   Databases/   SQLite files (mod catalogue)
 ///   Config/      settings
 ///   Staging/     downloaded archives (Staging/Archives)
+///   Logs/        daily log files, the last week kept
 /// </code>
 /// </summary>
 public sealed class AppPaths
@@ -24,6 +25,8 @@ public sealed class AppPaths
     public string Staging => Path.Combine(Root, "Staging");
 
     public string Archives => Path.Combine(Staging, "Archives");
+
+    public string Logs => Path.Combine(Root, "Logs");
 
     public string CatalogDatabase => Path.Combine(Databases, "catalog.db");
 
@@ -41,6 +44,7 @@ public sealed class AppPaths
         Directory.CreateDirectory(Config);
         Directory.CreateDirectory(Staging);
         Directory.CreateDirectory(Archives);
+        Directory.CreateDirectory(Logs);
         return this;
     }
 

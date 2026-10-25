@@ -127,4 +127,22 @@ public sealed class ModArchiveTests : IDisposable
 
         Assert.Throws<InvalidModArchiveException>(() => ModArchive.Open(path, TargetPlatform.Windows));
     }
+
+    [Fact]
+    public void Refuses_an_entry_compressed_like_a_zip_bomb()
+    {
+        // 32 MB of one repeated byte deflates about 1000:1; no real mod file comes close.
+        var path = new SmodBuilder("Bomb", "1.0.0").File("Content/Paks/Bomb.pak", new string('0', 32 * 1024 * 1024))
+            .WriteTo(_dir.Combine("bomb"));
+
+        var e = Assert.Throws<InvalidModArchiveException>(() => ModArchive.Open(path, TargetPlatform.Windows));
+        Assert.Contains("compressed more than", e.Message);
+    }
+
+    [Fact]
+    public void The_size_ceiling_allows_large_mods()
+    {
+        // Whole profiles reach tens of GB; one mod must not be capped anywhere near a few GB.
+        Assert.True(ModArchive.MaxUncompressedBytes >= 32L * 1024 * 1024 * 1024);
+    }
 }

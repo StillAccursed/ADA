@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
+using Dapper;
 using Microsoft.Data.Sqlite;
 using Overlord.Core.Catalog;
 
@@ -11,6 +12,7 @@ namespace Overlord.Infrastructure.Catalog;
 /// Local SQLite copy of the ficsit.app catalogue with an FTS5 index, so search is instant, works
 /// offline, and doesn't send a request per keystroke.
 /// </summary>
+[DapperAot]
 public sealed partial class ModCatalogStore
 {
     private readonly string _connectionString;
@@ -20,7 +22,7 @@ public sealed partial class ModCatalogStore
         Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(databasePath))!);
         _connectionString = new SqliteConnectionStringBuilder { DataSource = databasePath, Pooling = true }.ToString();
         using var db = Open();
-        Execute(db, Schema);
+        db.Execute(Schema);
     }
 
     private const string Schema = """
@@ -62,9 +64,7 @@ public sealed partial class ModCatalogStore
     public int Count()
     {
         using var db = Open();
-        using var cmd = db.CreateCommand();
-        cmd.CommandText = "SELECT COUNT(*) FROM mods";
-        return Convert.ToInt32(cmd.ExecuteScalar(), CultureInfo.InvariantCulture);
+        return db.ExecuteScalar<int>("SELECT COUNT(*) FROM mods");
     }
 
     /// <summary>Inserts or updates mods and their search entries in one transaction.</summary>
@@ -72,30 +72,43 @@ public sealed partial class ModCatalogStore
     {
         using var db = Open();
         using var tx = db.BeginTransaction();
+        var seen = Format(seenAt);
 
         foreach (var mod in mods)
         {
+            var row = new
+            {
+                mod.Id,
+                mod.Reference,
+                mod.Name,
+                Short = mod.ShortDescription,
+                Full = mod.FullDescription,
+                Logo = mod.LogoUrl,
+                Authors = JsonSerializer.Serialize(mod.Authors, CatalogJsonContext.Default.IReadOnlyListString),
+                Tags = JsonSerializer.Serialize(mod.Tags, CatalogJsonContext.Default.IReadOnlyListString),
+                mod.Downloads,
+                mod.Popularity,
+                mod.Hotness,
+                Updated = Format(mod.UpdatedAt),
+                LastVersion = mod.LastVersionDate is { } lv ? Format(lv) : null,
+                CompatRelease = (int)mod.CompatibilityRelease,
+                CompatExp = (int)mod.CompatibilityExperimental,
+                Seen = seen,
+            };
+
             // A new release means the cached version list is stale. Compare against the stored row
             // before overwriting it; other fields (even updated_at) change without new versions.
-            using (var invalidate = db.CreateCommand())
-            {
-                invalidate.CommandText = """
-                    DELETE FROM mod_versions WHERE reference = $reference AND EXISTS (
-                        SELECT 1 FROM mods WHERE id = $id AND COALESCE(last_version_date, '') <> COALESCE($lastVersion, ''))
-                    """;
-                invalidate.Parameters.AddWithValue("$reference", mod.Reference);
-                invalidate.Parameters.AddWithValue("$id", mod.Id);
-                invalidate.Parameters.AddWithValue("$lastVersion", mod.LastVersionDate is { } lvd ? Format(lvd) : DBNull.Value);
-                invalidate.ExecuteNonQuery();
-            }
+            db.Execute("""
+                DELETE FROM mod_versions WHERE reference = $Reference AND EXISTS (
+                    SELECT 1 FROM mods WHERE id = $Id AND COALESCE(last_version_date, '') <> COALESCE($LastVersion, ''))
+                """, row, tx);
 
-            using var upsert = db.CreateCommand();
-            upsert.CommandText = """
+            var rowId = db.ExecuteScalar<long>("""
                 INSERT INTO mods (id, reference, name, short_description, full_description, logo, authors, tags,
                                   downloads, popularity, hotness, updated_at, last_version_date,
                                   compat_release, compat_experimental, seen_at)
-                VALUES ($id, $reference, $name, $short, $full, $logo, $authors, $tags,
-                        $downloads, $popularity, $hotness, $updated, $lastVersion, $compatRelease, $compatExp, $seen)
+                VALUES ($Id, $Reference, $Name, $Short, $Full, $Logo, $Authors, $Tags,
+                        $Downloads, $Popularity, $Hotness, $Updated, $LastVersion, $CompatRelease, $CompatExp, $Seen)
                 ON CONFLICT(id) DO UPDATE SET
                     reference = excluded.reference, name = excluded.name,
                     short_description = excluded.short_description, full_description = excluded.full_description,
@@ -105,41 +118,24 @@ public sealed partial class ModCatalogStore
                     compat_release = excluded.compat_release, compat_experimental = excluded.compat_experimental,
                     seen_at = excluded.seen_at
                 RETURNING rowid
-                """;
-            upsert.Parameters.AddWithValue("$id", mod.Id);
-            upsert.Parameters.AddWithValue("$reference", mod.Reference);
-            upsert.Parameters.AddWithValue("$name", mod.Name);
-            upsert.Parameters.AddWithValue("$short", mod.ShortDescription);
-            upsert.Parameters.AddWithValue("$full", (object?)mod.FullDescription ?? DBNull.Value);
-            upsert.Parameters.AddWithValue("$logo", (object?)mod.LogoUrl ?? DBNull.Value);
-            upsert.Parameters.AddWithValue("$authors", JsonSerializer.Serialize(mod.Authors, CatalogJsonContext.Default.IReadOnlyListString));
-            upsert.Parameters.AddWithValue("$tags", JsonSerializer.Serialize(mod.Tags, CatalogJsonContext.Default.IReadOnlyListString));
-            upsert.Parameters.AddWithValue("$downloads", mod.Downloads);
-            upsert.Parameters.AddWithValue("$popularity", mod.Popularity);
-            upsert.Parameters.AddWithValue("$hotness", mod.Hotness);
-            upsert.Parameters.AddWithValue("$updated", Format(mod.UpdatedAt));
-            upsert.Parameters.AddWithValue("$lastVersion", mod.LastVersionDate is { } lv ? Format(lv) : DBNull.Value);
-            upsert.Parameters.AddWithValue("$compatRelease", (int)mod.CompatibilityRelease);
-            upsert.Parameters.AddWithValue("$compatExp", (int)mod.CompatibilityExperimental);
-            upsert.Parameters.AddWithValue("$seen", Format(seenAt));
-            var rowId = Convert.ToInt64(upsert.ExecuteScalar(), CultureInfo.InvariantCulture);
+                """, row, tx);
 
-            using var fts = db.CreateCommand();
-            fts.CommandText = """
-                DELETE FROM mods_fts WHERE rowid = $rowid;
+            db.Execute("""
+                DELETE FROM mods_fts WHERE rowid = $RowId;
                 INSERT INTO mods_fts (rowid, name, reference, short_description, full_description, authors, tags, image_text)
-                VALUES ($rowid, $name, $reference, $short, $full, $authors, $tags, $images);
-                """;
-            fts.Parameters.AddWithValue("$rowid", rowId);
-            fts.Parameters.AddWithValue("$name", mod.Name);
-            fts.Parameters.AddWithValue("$reference", SplitIdentifier(mod.Reference));
-            fts.Parameters.AddWithValue("$short", mod.ShortDescription);
-            fts.Parameters.AddWithValue("$full", SearchText.Plain(mod.FullDescription));
-            fts.Parameters.AddWithValue("$authors", string.Join(' ', mod.Authors));
-            fts.Parameters.AddWithValue("$tags", string.Join(' ', mod.Tags));
-            fts.Parameters.AddWithValue("$images", SearchText.ImageText(mod.FullDescription));
-            fts.ExecuteNonQuery();
-
+                VALUES ($RowId, $Name, $Reference, $Short, $Full, $Authors, $Tags, $Images);
+                """,
+                new
+                {
+                    RowId = rowId,
+                    mod.Name,
+                    Reference = SplitIdentifier(mod.Reference),
+                    Short = mod.ShortDescription,
+                    Full = SearchText.Plain(mod.FullDescription),
+                    Authors = string.Join(' ', mod.Authors),
+                    Tags = string.Join(' ', mod.Tags),
+                    Images = SearchText.ImageText(mod.FullDescription),
+                }, tx);
         }
 
         tx.Commit();
@@ -150,14 +146,9 @@ public sealed partial class ModCatalogStore
     {
         using var db = Open();
         using var tx = db.BeginTransaction();
-        using var cmd = db.CreateCommand();
-        cmd.CommandText = """
-            DELETE FROM mods_fts WHERE rowid IN (SELECT rowid FROM mods WHERE seen_at < $since);
-            DELETE FROM mods WHERE seen_at < $since;
-            SELECT changes();
-            """;
-        cmd.Parameters.AddWithValue("$since", Format(since));
-        var removed = Convert.ToInt32(cmd.ExecuteScalar(), CultureInfo.InvariantCulture);
+        var args = new { Since = Format(since) };
+        db.Execute("DELETE FROM mods_fts WHERE rowid IN (SELECT rowid FROM mods WHERE seen_at < $Since)", args, tx);
+        var removed = db.Execute("DELETE FROM mods WHERE seen_at < $Since", args, tx);
         tx.Commit();
         return removed;
     }
@@ -165,11 +156,8 @@ public sealed partial class ModCatalogStore
     public CatalogMod? Get(string reference)
     {
         using var db = Open();
-        using var cmd = db.CreateCommand();
-        cmd.CommandText = $"SELECT {ModColumns} FROM mods m WHERE m.reference = $reference";
-        cmd.Parameters.AddWithValue("$reference", reference);
-        using var reader = cmd.ExecuteReader();
-        return reader.Read() ? ReadMod(reader) : null;
+        return db.QuerySingleOrDefault<ModRow>($"SELECT {ModColumns} FROM mods m WHERE m.reference = $Reference",
+            new { Reference = reference })?.ToMod();
     }
 
     /// <summary>
@@ -182,102 +170,98 @@ public sealed partial class ModCatalogStore
         var words = SearchWord().Matches(query).Select(m => m.Value).ToList();
 
         using var db = Open();
-        using var cmd = db.CreateCommand();
-        if (words.Count == 0)
-        {
-            cmd.CommandText = $"SELECT {ModColumns} FROM mods m ORDER BY m.popularity DESC LIMIT $limit";
-        }
-        else
-        {
+        var rows = words.Count == 0
+            ? db.Query<ModRow>($"SELECT {ModColumns} FROM mods m ORDER BY m.popularity DESC LIMIT $Limit", new { Limit = limit })
             // Words are letters and digits only, so quoting them cannot break FTS5 syntax.
-            cmd.CommandText = $"""
+            : db.Query<ModRow>($"""
                 SELECT {ModColumns}
                 FROM mods_fts JOIN mods m ON m.rowid = mods_fts.rowid
-                WHERE mods_fts MATCH $match
-                ORDER BY (m.name = $raw COLLATE NOCASE OR m.reference = $raw COLLATE NOCASE) DESC,
+                WHERE mods_fts MATCH $Match
+                ORDER BY (m.name = $Raw COLLATE NOCASE OR m.reference = $Raw COLLATE NOCASE) DESC,
                          {Bm25}, m.popularity DESC
-                LIMIT $limit
-                """;
-            cmd.Parameters.AddWithValue("$match", string.Join(' ', words.Select(w => $"\"{w}\"*")));
-            cmd.Parameters.AddWithValue("$raw", query.Trim());
-        }
-        cmd.Parameters.AddWithValue("$limit", limit);
-
-        var results = new List<CatalogMod>();
-        using var reader = cmd.ExecuteReader();
-        while (reader.Read())
-            results.Add(ReadMod(reader));
-        return results;
+                LIMIT $Limit
+                """,
+                new { Match = string.Join(' ', words.Select(w => $"\"{w}\"*")), Raw = query.Trim(), Limit = limit });
+        return rows.Select(r => r.ToMod()).ToList();
     }
 
     public void SaveVersions(string reference, IReadOnlyList<CatalogVersion> versions, DateTimeOffset fetchedAt)
     {
         using var db = Open();
-        using var cmd = db.CreateCommand();
-        cmd.CommandText = """
-            INSERT INTO mod_versions (reference, json, fetched_at) VALUES ($reference, $json, $fetched)
+        db.Execute("""
+            INSERT INTO mod_versions (reference, json, fetched_at) VALUES ($Reference, $Json, $Fetched)
             ON CONFLICT(reference) DO UPDATE SET json = excluded.json, fetched_at = excluded.fetched_at
-            """;
-        cmd.Parameters.AddWithValue("$reference", reference);
-        cmd.Parameters.AddWithValue("$json", JsonSerializer.Serialize(versions, CatalogJsonContext.Default.IReadOnlyListCatalogVersion));
-        cmd.Parameters.AddWithValue("$fetched", Format(fetchedAt));
-        cmd.ExecuteNonQuery();
+            """,
+            new
+            {
+                Reference = reference,
+                Json = JsonSerializer.Serialize(versions, CatalogJsonContext.Default.IReadOnlyListCatalogVersion),
+                Fetched = Format(fetchedAt),
+            });
     }
 
     /// <returns>Cached versions fetched at or after <paramref name="notBefore"/>, else null.</returns>
     public IReadOnlyList<CatalogVersion>? GetVersions(string reference, DateTimeOffset notBefore)
     {
         using var db = Open();
-        using var cmd = db.CreateCommand();
-        cmd.CommandText = "SELECT json FROM mod_versions WHERE reference = $reference AND fetched_at >= $notBefore";
-        cmd.Parameters.AddWithValue("$reference", reference);
-        cmd.Parameters.AddWithValue("$notBefore", Format(notBefore));
-        return cmd.ExecuteScalar() is string json ? JsonSerializer.Deserialize(json, CatalogJsonContext.Default.ListCatalogVersion) : null;
+        var json = db.ExecuteScalar<string?>("SELECT json FROM mod_versions WHERE reference = $Reference AND fetched_at >= $NotBefore",
+            new { Reference = reference, NotBefore = Format(notBefore) });
+        return json is null ? null : JsonSerializer.Deserialize(json, CatalogJsonContext.Default.ListCatalogVersion);
     }
 
     public DateTimeOffset? GetState(string key)
     {
         using var db = Open();
-        using var cmd = db.CreateCommand();
-        cmd.CommandText = "SELECT value FROM sync_state WHERE key = $key";
-        cmd.Parameters.AddWithValue("$key", key);
-        return cmd.ExecuteScalar() is string s ? Parse(s) : null;
+        var value = db.ExecuteScalar<string?>("SELECT value FROM sync_state WHERE key = $Key", new { Key = key });
+        return value is null ? null : Parse(value);
     }
 
     public void SetState(string key, DateTimeOffset value)
     {
         using var db = Open();
-        using var cmd = db.CreateCommand();
-        cmd.CommandText = """
-            INSERT INTO sync_state (key, value) VALUES ($key, $value)
+        db.Execute("""
+            INSERT INTO sync_state (key, value) VALUES ($Key, $Value)
             ON CONFLICT(key) DO UPDATE SET value = excluded.value
-            """;
-        cmd.Parameters.AddWithValue("$key", key);
-        cmd.Parameters.AddWithValue("$value", Format(value));
-        cmd.ExecuteNonQuery();
+            """, new { Key = key, Value = Format(value) });
     }
 
+    // Aliased to ModRow's property names.
     private const string ModColumns = """
-        m.id, m.reference, m.name, m.short_description, m.full_description, m.logo, m.authors, m.tags,
-        m.downloads, m.popularity, m.hotness, m.updated_at, m.last_version_date, m.compat_release, m.compat_experimental
+        m.id AS Id, m.reference AS Reference, m.name AS Name, m.short_description AS ShortDescription,
+        m.full_description AS FullDescription, m.logo AS Logo, m.authors AS Authors, m.tags AS Tags,
+        m.downloads AS Downloads, m.popularity AS Popularity, m.hotness AS Hotness, m.updated_at AS UpdatedAt,
+        m.last_version_date AS LastVersionDate, m.compat_release AS CompatRelease, m.compat_experimental AS CompatExperimental
         """;
 
-    private static CatalogMod ReadMod(SqliteDataReader r) => new(
-        r.GetString(0),
-        r.GetString(1),
-        r.GetString(2),
-        r.GetString(3),
-        r.IsDBNull(4) ? null : r.GetString(4),
-        r.IsDBNull(5) ? null : r.GetString(5),
-        JsonSerializer.Deserialize(r.GetString(6), CatalogJsonContext.Default.ListString) ?? [],
-        JsonSerializer.Deserialize(r.GetString(7), CatalogJsonContext.Default.ListString) ?? [],
-        r.GetInt32(8),
-        r.GetInt32(9),
-        r.GetInt32(10),
-        Parse(r.GetString(11)),
-        r.IsDBNull(12) ? null : Parse(r.GetString(12)),
-        (CompatibilityState)r.GetInt32(13),
-        (CompatibilityState)r.GetInt32(14));
+    /// <summary>A <c>mods</c> row as stored: lists as JSON, dates as text.</summary>
+    private sealed class ModRow
+    {
+        public string Id { get; set; } = "";
+        public string Reference { get; set; } = "";
+        public string Name { get; set; } = "";
+        public string ShortDescription { get; set; } = "";
+        public string? FullDescription { get; set; }
+        public string? Logo { get; set; }
+        public string Authors { get; set; } = "[]";
+        public string Tags { get; set; } = "[]";
+        public int Downloads { get; set; }
+        public int Popularity { get; set; }
+        public int Hotness { get; set; }
+        public string UpdatedAt { get; set; } = "";
+        public string? LastVersionDate { get; set; }
+        public int CompatRelease { get; set; }
+        public int CompatExperimental { get; set; }
+
+        public CatalogMod ToMod() => new(
+            Id, Reference, Name, ShortDescription, FullDescription, Logo,
+            JsonSerializer.Deserialize(Authors, CatalogJsonContext.Default.ListString) ?? [],
+            JsonSerializer.Deserialize(Tags, CatalogJsonContext.Default.ListString) ?? [],
+            Downloads, Popularity, Hotness,
+            Parse(UpdatedAt),
+            LastVersionDate is null ? null : Parse(LastVersionDate),
+            (CompatibilityState)CompatRelease,
+            (CompatibilityState)CompatExperimental);
+    }
 
     // "WeatherExtended" → "WeatherExtended Weather Extended", so a search for "weather" matches
     // the reference as well as the display name.
@@ -296,13 +280,6 @@ public sealed partial class ModCatalogStore
         var db = new SqliteConnection(_connectionString);
         db.Open();
         return db;
-    }
-
-    private static void Execute(SqliteConnection db, string sql)
-    {
-        using var cmd = db.CreateCommand();
-        cmd.CommandText = sql;
-        cmd.ExecuteNonQuery();
     }
 
     [GeneratedRegex(@"[\p{L}\p{N}]+")]

@@ -34,9 +34,9 @@ public sealed class ModInstallServiceTests : IDisposable
 
     private ModInstallService Service() => new(
         _settings,
-        new ArchiveDownloader(new HttpClient(_http), _archives, delay: (_, _) => Task.CompletedTask),
+        new ArchiveDownloader(new HttpClient(_http), _archives, time: new InstantTimeProvider()),
         (reference, _) => Task.FromResult<IReadOnlyList<CatalogVersion>>(_catalog.GetValueOrDefault(reference) ?? []),
-        () => _gameRunning);
+        _ => Task.FromResult(_gameRunning));
 
     /// <summary>Publishes a mod version on the fake ficsit.app; returns the catalogue entry.</summary>
     private CatalogVersion Publish(string reference, string version, bool gameFeature = false)
@@ -57,7 +57,7 @@ public sealed class ModInstallServiceTests : IDisposable
     private void Serve(params CatalogVersion[] versions)
     {
         foreach (var v in versions)
-            _http.RespondBytes(_files[v.Targets[0].DownloadPath]);
+            _http.RespondBytes(_files[v.Targets[0].DownloadPath], v.Targets[0].DownloadPath);
     }
 
     private string[] KeptArchives() =>
@@ -116,7 +116,8 @@ public sealed class ModInstallServiceTests : IDisposable
         var sml = Publish("SML", "3.12.0");
         var weather = Publish("WeatherExtended", "1.1.0");
         _settings.Save(new AppSettings(DownloadRetries: 0));
-        _http.RespondBytes(_files[sml.Targets[0].DownloadPath]).Fail(HttpStatusCode.NotFound);
+        _http.RespondBytes(_files[sml.Targets[0].DownloadPath], sml.Targets[0].DownloadPath)
+            .Fail(HttpStatusCode.NotFound, weather.Targets[0].DownloadPath);
 
         await Assert.ThrowsAsync<ArchiveDownloadException>(() => Service().InstallAsync(_install, [sml, weather]));
 
@@ -224,4 +225,16 @@ public sealed class ModInstallServiceTests : IDisposable
     [InlineData(GameKind.DedicatedServer, GameHost.Linux, TargetPlatform.LinuxServer)]
     public void Picks_the_build_for_the_game(GameKind kind, GameHost host, TargetPlatform expected) =>
         Assert.Equal(expected, ModInstallService.TargetFor(_install with { Kind = kind, Host = host }));
+
+    [Fact]
+    public async Task Refuses_before_downloading_when_the_archives_drive_is_too_full()
+    {
+        var huge = Publish("Huge", "1.0.0");
+        huge = huge with { Targets = [huge.Targets[0] with { Size = long.MaxValue / 4 }] };
+
+        var e = await Assert.ThrowsAsync<InstallException>(() => Service().InstallAsync(_install, [huge]));
+
+        Assert.Contains("Not enough free space", e.Message);
+        Assert.Empty(_http.RequestBodies);
+    }
 }

@@ -17,7 +17,7 @@ public enum TargetPlatform
 
 /// <summary>One downloadable build of a version for one platform.</summary>
 /// <param name="DownloadPath">Path relative to the API host, e.g. <c>/v1/version/{id}/Windows/download</c>.</param>
-/// <param name="Hash">Hash published by ficsit.app (64 hex characters; algorithm still to be confirmed).</param>
+/// <param name="Hash">SHA-256 of the download as published by ficsit.app (64 hex characters).</param>
 public sealed record VersionTarget(TargetPlatform Platform, string DownloadPath, long? Size, string? Hash);
 
 /// <param name="Condition">Semver range, e.g. <c>^3.12.0</c>.</param>
