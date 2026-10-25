@@ -26,11 +26,14 @@ public sealed class FicsitApiClient : IModCatalogSource
     // varies is sent as a GraphQL variable. Not updated_at: ficsit.app rewrites it on every mod
     // routinely, so it is useless for change detection and, with thousands of identical values,
     // unstable for paging.
-    private const string ModFields = """
+    private const string LatestFields = "version game_version targets { targetName }";
+
+    private const string ModFields = $$"""
         count
         mods { id mod_reference name short_description full_description logo downloads popularity hotness
                updated_at last_version_date tags { name } authors { user { username } }
-               compatibility { EA { state } EXP { state } } }
+               compatibility { EA { state } EXP { state } } views
+               latestVersions { release { {{LatestFields}} } beta { {{LatestFields}} } alpha { {{LatestFields}} } } }
         """;
 
     private const string ModsByCreated = $$"""
@@ -49,7 +52,7 @@ public sealed class FicsitApiClient : IModCatalogSource
         query Versions($modReference: ModReference!, $offset: Int!, $limit: Int!) {
           getModByReference(modReference: $modReference) {
             versions(filter: { offset: $offset, limit: $limit, order_by: created_at, order: desc }) {
-              id version game_version stability required_on_remote created_at
+              id version game_version stability required_on_remote created_at changelog
               targets { targetName link size hash }
               dependencies { mod_reference condition optional }
             }
@@ -145,14 +148,23 @@ public sealed class FicsitApiClient : IModCatalogSource
         m.FullDescription,
         string.IsNullOrWhiteSpace(m.Logo) ? null : m.Logo,
         m.Authors?.Select(a => a.User?.Username).OfType<string>().ToList() ?? [],
-        m.Tags?.Select(t => t.Name).ToList() ?? [],
+        // Some tags arrive padded ("multiplayer ").
+        m.Tags?.Select(t => t.Name.Trim()).Where(t => t.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).ToList() ?? [],
         m.Downloads,
         m.Popularity,
         m.Hotness,
         m.UpdatedAt,
         m.LastVersionDate,
         ParseCompatibility(m.Compatibility?.EA?.State),
-        ParseCompatibility(m.Compatibility?.EXP?.State));
+        ParseCompatibility(m.Compatibility?.EXP?.State),
+        m.Views,
+        new[] { (VersionStability.Release, m.LatestVersions?.Release), (VersionStability.Beta, m.LatestVersions?.Beta),
+                (VersionStability.Alpha, m.LatestVersions?.Alpha) }
+            .Where(l => l.Item2 is not null)
+            .Select(l => new LatestVersion(l.Item1, l.Item2!.Version, l.Item2.GameVersion,
+                l.Item2.Targets?.Select(t => Enum.TryParse<TargetPlatform>(t.TargetName, ignoreCase: true, out var p) ? (TargetPlatform?)p : null)
+                    .OfType<TargetPlatform>().ToList() ?? []))
+            .ToList());
 
     private static CatalogVersion Map(string modReference, VersionDto v) => new(
         v.Id,
@@ -173,7 +185,8 @@ public sealed class FicsitApiClient : IModCatalogSource
                 : null)
             .OfType<VersionTarget>()
             .ToList() ?? [],
-        v.Dependencies?.Select(d => new VersionDependency(d.ModReference, d.Condition, d.Optional)).ToList() ?? []);
+        v.Dependencies?.Select(d => new VersionDependency(d.ModReference, d.Condition, d.Optional)).ToList() ?? [],
+        v.Changelog);
 
     private static CompatibilityState ParseCompatibility(string? state) =>
         Enum.TryParse<CompatibilityState>(state, ignoreCase: true, out var s) ? s : CompatibilityState.Unknown;

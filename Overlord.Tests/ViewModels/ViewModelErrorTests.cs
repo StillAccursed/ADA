@@ -7,6 +7,7 @@ using Overlord.Infrastructure.Catalog;
 using Overlord.Infrastructure.Downloads;
 using Overlord.Infrastructure.Ficsit;
 using Overlord.Infrastructure.Installing;
+using Overlord.Infrastructure.Profiles;
 using Overlord.Infrastructure.Settings;
 using Overlord.Platform.Detection;
 using Overlord.Tests.Fixtures;
@@ -36,7 +37,7 @@ public sealed class ViewModelErrorTests : IDisposable
             (_, _) => throw new FicsitApiException("Could not reach ficsit.app."),
             _ => Task.FromResult(false));
         var install = new GameInstall(game.Root, GameLauncher.Steam, GameHost.Windows, GameKind.Client, null, "test");
-        var vm = new GameInstallViewModel(install, service, NullLogger<GameInstallViewModel>.Instance);
+        var vm = new GameInstallViewModel(install, service, new ModResolutionService((_, _) => Task.FromResult<IReadOnlyList<CatalogVersion>>([]), service), new GameProfiles(new ProfileStore(_dir.Combine("Profiles"), _dir.Combine("profiles.json")), service), NullLogger<GameInstallViewModel>.Instance);
 
         await vm.CheckAsync();
         Assert.True(vm.CanRepair);

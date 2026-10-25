@@ -7,8 +7,9 @@ using Overlord.Infrastructure.Catalog;
 namespace Overlord.ViewModels;
 
 /// <summary>
-/// State of the local mod catalogue: how many mods it holds, when it last checked ficsit.app,
-/// and the "Check for Updates" action. Checked once on launch, then whenever the user asks.
+/// State of the local mod catalogue: how many mods it holds and when it last checked ficsit.app.
+/// Refreshed on launch and then periodically. A refresh only learns about new releases; it never
+/// installs or updates a mod, which is always the user's choice.
 /// </summary>
 public partial class CatalogStatusViewModel(CatalogSync sync, ILogger<CatalogStatusViewModel> log) : ViewModelBase
 {
@@ -49,8 +50,20 @@ public partial class CatalogStatusViewModel(CatalogSync sync, ILogger<CatalogSta
         }
     }
 
+    /// <summary>Refreshes now, then every <paramref name="interval"/> for as long as the app runs.</summary>
+    public async Task KeepFreshAsync(TimeSpan interval, CancellationToken ct = default)
+    {
+        using var timer = new PeriodicTimer(interval);
+        do
+        {
+            // Skip a tick while one is still running (e.g. a slow first download).
+            if (!IsChecking)
+                await RefreshCommand.ExecuteAsync(null);
+        } while (await timer.WaitForNextTickAsync(ct));
+    }
+
     [RelayCommand]
-    private async Task CheckForUpdatesAsync()
+    private async Task RefreshAsync()
     {
         IsChecking = true;
         ErrorText = null;

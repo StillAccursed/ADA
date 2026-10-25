@@ -25,6 +25,7 @@ public sealed record VersionDependency(string ModReference, string Condition, bo
 
 /// <param name="GameVersionRange">Range over the game changelist, e.g. <c>&gt;=513885</c>.</param>
 /// <param name="RequiredOnRemote">Whether the other side of a multiplayer session must have this mod too.</param>
+/// <param name="Changelog">What the author wrote for this release (Markdown); null in lists cached before it was fetched.</param>
 public sealed record CatalogVersion(
     string Id,
     string ModReference,
@@ -34,7 +35,8 @@ public sealed record CatalogVersion(
     bool RequiredOnRemote,
     DateTimeOffset CreatedAt,
     IReadOnlyList<VersionTarget> Targets,
-    IReadOnlyList<VersionDependency> Dependencies)
+    IReadOnlyList<VersionDependency> Dependencies,
+    string? Changelog = null)
 {
     public VersionTarget? TargetFor(TargetPlatform platform) => Targets.FirstOrDefault(t => t.Platform == platform);
 }

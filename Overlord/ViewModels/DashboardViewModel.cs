@@ -34,6 +34,10 @@ public partial class DashboardViewModel(
 
     public ObservableCollection<GameInstallViewModel> Installs { get; } = [];
 
+    /// <summary>Any game has mod updates; shown as an arrow on the Dashboard's nav button.</summary>
+    [ObservableProperty]
+    public partial bool HasUpdates { get; set; }
+
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(StatusText))]
     public partial bool IsScanning { get; set; }
@@ -73,13 +77,17 @@ public partial class DashboardViewModel(
         {
             // Detection reads registry hives and walks folders; keep it off the UI thread.
             var found = await Task.Run(detector.Detect);
+            foreach (var old in Installs)
+                old.PropertyChanged -= OnInstallChanged;
             Installs.Clear();
             foreach (var install in found)
             {
                 var vm = installViewModel(install);
                 vm.IsGameRunning = IsGameRunning;
+                vm.PropertyChanged += OnInstallChanged;
                 Installs.Add(vm);
             }
+            HasUpdates = false;
             log.LogInformation("Found {Count} Satisfactory install(s): {Paths}", found.Count, found.Select(f => f.GamePath));
         }
         catch (Exception e)
@@ -95,6 +103,15 @@ public partial class DashboardViewModel(
         // For each game: finish any interrupted install, then the fast check.
         foreach (var install in Installs)
             _ = install.CheckAsync();
+    }
+
+    /// <summary>Looks for mod updates in every game; run after the catalogue has been checked. Never throws.</summary>
+    public Task FindUpdatesAsync() => Task.WhenAll(Installs.ToList().Select(i => i.FindUpdatesAsync()));
+
+    private void OnInstallChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(GameInstallViewModel.HasUpdates))
+            HasUpdates = Installs.Any(i => i.HasUpdates);
     }
 
     /// <summary>

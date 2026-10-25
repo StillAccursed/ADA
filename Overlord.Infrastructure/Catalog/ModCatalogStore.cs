@@ -22,8 +22,22 @@ public sealed partial class ModCatalogStore
         Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(databasePath))!);
         _connectionString = new SqliteConnectionStringBuilder { DataSource = databasePath, Pooling = true }.ToString();
         using var db = Open();
-        db.Execute(Schema);
+        // The catalogue is a cache: one from an older Overlord is rebuilt rather than migrated (the
+        // next sync is then a full one).
+        if (db.ExecuteScalar<int>("PRAGMA user_version") != SchemaVersion)
+        {
+            db.Execute("DROP TABLE IF EXISTS mods; DROP TABLE IF EXISTS mods_fts; DROP TABLE IF EXISTS mod_versions; DROP TABLE IF EXISTS sync_state;");
+            db.Execute(Schema);
+            db.Execute($"PRAGMA user_version = {SchemaVersion}");
+        }
+        else
+        {
+            db.Execute(Schema);
+        }
     }
+
+    // Bump whenever the tables change shape.
+    private const int SchemaVersion = 2;
 
     private const string Schema = """
         PRAGMA journal_mode = WAL;
@@ -40,6 +54,8 @@ public sealed partial class ModCatalogStore
             downloads INTEGER NOT NULL,
             popularity INTEGER NOT NULL,
             hotness INTEGER NOT NULL,
+            views INTEGER NOT NULL,
+            latest TEXT NOT NULL,
             updated_at TEXT NOT NULL,
             last_version_date TEXT,
             compat_release INTEGER NOT NULL,
@@ -89,6 +105,8 @@ public sealed partial class ModCatalogStore
                 mod.Downloads,
                 mod.Popularity,
                 mod.Hotness,
+                mod.Views,
+                Latest = JsonSerializer.Serialize(mod.Latest ?? [], CatalogJsonContext.Default.IReadOnlyListLatestVersion),
                 Updated = Format(mod.UpdatedAt),
                 LastVersion = mod.LastVersionDate is { } lv ? Format(lv) : null,
                 CompatRelease = (int)mod.CompatibilityRelease,
@@ -105,15 +123,16 @@ public sealed partial class ModCatalogStore
 
             var rowId = db.ExecuteScalar<long>("""
                 INSERT INTO mods (id, reference, name, short_description, full_description, logo, authors, tags,
-                                  downloads, popularity, hotness, updated_at, last_version_date,
+                                  downloads, popularity, hotness, views, latest, updated_at, last_version_date,
                                   compat_release, compat_experimental, seen_at)
                 VALUES ($Id, $Reference, $Name, $Short, $Full, $Logo, $Authors, $Tags,
-                        $Downloads, $Popularity, $Hotness, $Updated, $LastVersion, $CompatRelease, $CompatExp, $Seen)
+                        $Downloads, $Popularity, $Hotness, $Views, $Latest, $Updated, $LastVersion, $CompatRelease, $CompatExp, $Seen)
                 ON CONFLICT(id) DO UPDATE SET
                     reference = excluded.reference, name = excluded.name,
                     short_description = excluded.short_description, full_description = excluded.full_description,
                     logo = excluded.logo, authors = excluded.authors, tags = excluded.tags,
                     downloads = excluded.downloads, popularity = excluded.popularity, hotness = excluded.hotness,
+                    views = excluded.views, latest = excluded.latest,
                     updated_at = excluded.updated_at, last_version_date = excluded.last_version_date,
                     compat_release = excluded.compat_release, compat_experimental = excluded.compat_experimental,
                     seen_at = excluded.seen_at
@@ -185,6 +204,19 @@ public sealed partial class ModCatalogStore
         return rows.Select(r => r.ToMod()).ToList();
     }
 
+    /// <summary>Every tag used by a mod, with how many mods use it, most used first.</summary>
+    public IReadOnlyList<(string Tag, int Count)> Tags()
+    {
+        using var db = Open();
+        return db.Query<string>("SELECT tags FROM mods")
+            .SelectMany(json => JsonSerializer.Deserialize(json, CatalogJsonContext.Default.ListString) ?? [])
+            .GroupBy(t => t, StringComparer.OrdinalIgnoreCase)
+            .Select(g => (g.First(), g.Count()))
+            .OrderByDescending(t => t.Item2)
+            .ThenBy(t => t.Item1, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
     public void SaveVersions(string reference, IReadOnlyList<CatalogVersion> versions, DateTimeOffset fetchedAt)
     {
         using var db = Open();
@@ -229,7 +261,8 @@ public sealed partial class ModCatalogStore
     private const string ModColumns = """
         m.id AS Id, m.reference AS Reference, m.name AS Name, m.short_description AS ShortDescription,
         m.full_description AS FullDescription, m.logo AS Logo, m.authors AS Authors, m.tags AS Tags,
-        m.downloads AS Downloads, m.popularity AS Popularity, m.hotness AS Hotness, m.updated_at AS UpdatedAt,
+        m.downloads AS Downloads, m.popularity AS Popularity, m.hotness AS Hotness, m.views AS Views, m.latest AS Latest,
+        m.updated_at AS UpdatedAt,
         m.last_version_date AS LastVersionDate, m.compat_release AS CompatRelease, m.compat_experimental AS CompatExperimental
         """;
 
@@ -247,6 +280,8 @@ public sealed partial class ModCatalogStore
         public int Downloads { get; set; }
         public int Popularity { get; set; }
         public int Hotness { get; set; }
+        public int Views { get; set; }
+        public string Latest { get; set; } = "[]";
         public string UpdatedAt { get; set; } = "";
         public string? LastVersionDate { get; set; }
         public int CompatRelease { get; set; }
@@ -260,7 +295,9 @@ public sealed partial class ModCatalogStore
             Parse(UpdatedAt),
             LastVersionDate is null ? null : Parse(LastVersionDate),
             (CompatibilityState)CompatRelease,
-            (CompatibilityState)CompatExperimental);
+            (CompatibilityState)CompatExperimental,
+            Views,
+            JsonSerializer.Deserialize(Latest, CatalogJsonContext.Default.ListLatestVersion) ?? []);
     }
 
     // "WeatherExtended" → "WeatherExtended Weather Extended", so a search for "weather" matches
@@ -293,4 +330,6 @@ public sealed partial class ModCatalogStore
 [JsonSerializable(typeof(List<string>))]
 [JsonSerializable(typeof(IReadOnlyList<CatalogVersion>))]
 [JsonSerializable(typeof(List<CatalogVersion>))]
+[JsonSerializable(typeof(IReadOnlyList<LatestVersion>))]
+[JsonSerializable(typeof(List<LatestVersion>))]
 internal sealed partial class CatalogJsonContext : JsonSerializerContext;

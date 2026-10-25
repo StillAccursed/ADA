@@ -44,18 +44,29 @@ public sealed class SettingsStore(string settingsPath)
     }
 
     /// <summary>
+    /// Changes some settings and saves, starting from the settings in effect, so pages that each
+    /// own a few settings never write back another page's old values.
+    /// </summary>
+    public void Update(Func<AppSettings, AppSettings> change)
+    {
+        lock (_gate)
+            SaveLocked(change(_current ??= Load()).Normalized());
+    }
+
+    /// <summary>
     /// Writes to a temporary file, flushes it to disk, then renames it over the old file, so a
     /// crash mid-save leaves the previous settings intact rather than a half-written file.
     /// </summary>
     public void Save(AppSettings settings)
     {
-        var normalized = settings.Normalized();
         lock (_gate)
-        {
-            _current = normalized;
-            AtomicFile.Write(SettingsPath,
-                stream => JsonSerializer.Serialize(stream, normalized, SettingsJsonContext.Default.AppSettings));
-        }
+            SaveLocked(settings.Normalized());
+    }
+
+    private void SaveLocked(AppSettings settings)
+    {
+        _current = settings;
+        AtomicFile.Write(SettingsPath, stream => JsonSerializer.Serialize(stream, settings, SettingsJsonContext.Default.AppSettings));
     }
 }
 

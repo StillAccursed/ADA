@@ -6,6 +6,7 @@ using Overlord.Infrastructure.Catalog;
 using Overlord.Infrastructure.Downloads;
 using Overlord.Infrastructure.Ficsit;
 using Overlord.Infrastructure.Installing;
+using Overlord.Infrastructure.Profiles;
 using Overlord.Infrastructure.Settings;
 using Overlord.Platform.Detection;
 using Overlord.Platform.Storage;
@@ -36,6 +37,7 @@ public static class Services
         services.AddSingleton(sp => new CatalogSync(sp.GetRequiredService<FicsitApiClient>(), sp.GetRequiredService<ModCatalogStore>(),
             log: sp.GetRequiredService<ILogger<CatalogSync>>()));
         services.AddSingleton(sp => new SettingsStore(paths.SettingsFile));
+        services.AddSingleton(_ => new FavouritesStore(paths.FavouritesFile));
         services.AddSingleton(sp => new ArchiveCache(paths.Archives));
         services.AddSingleton(sp => new ArchiveDownloader(Http(sp, DownloadClient), paths.Archives,
             log: sp.GetRequiredService<ILogger<ArchiveDownloader>>()));
@@ -49,22 +51,39 @@ public static class Services
             sp.GetRequiredService<CatalogSync>().GetVersionsAsync,
             sp.GetRequiredService<ModInstallService>(),
             sp.GetRequiredService<ILogger<ModResolutionService>>()));
+        services.AddSingleton(_ => new ProfileStore(paths.Profiles, paths.ProfilesState));
+        services.AddSingleton(sp => new GameProfiles(
+            sp.GetRequiredService<ProfileStore>(),
+            sp.GetRequiredService<ModInstallService>(),
+            sp.GetRequiredService<ILogger<GameProfiles>>()));
         services.AddSingleton(_ => GameDetection.ForCurrentOS());
         services.AddSingleton(sp => new ModLogos(Http(sp, ApiClient), sp.GetRequiredService<ILogger<ModLogos>>()));
 
         services.AddSingleton<CatalogStatusViewModel>();
         services.AddSingleton<SettingsViewModel>();
         services.AddSingleton<Func<GameInstall, GameInstallViewModel>>(sp => install => new GameInstallViewModel(
-            install, sp.GetRequiredService<ModInstallService>(), sp.GetRequiredService<ILogger<GameInstallViewModel>>()));
+            install, sp.GetRequiredService<ModInstallService>(), sp.GetRequiredService<ModResolutionService>(),
+            sp.GetRequiredService<GameProfiles>(),
+            sp.GetRequiredService<ILogger<GameInstallViewModel>>()));
         services.AddSingleton<DashboardViewModel>();
         services.AddSingleton(sp => new ModsViewModel(
             sp.GetRequiredService<ModCatalogStore>(),
             sp.GetRequiredService<CatalogSync>().GetVersionsAsync,
             sp.GetRequiredService<ModResolutionService>(),
             sp.GetRequiredService<ModInstallService>(),
+            sp.GetRequiredService<GameProfiles>(),
             sp.GetRequiredService<DashboardViewModel>(),
             sp.GetRequiredService<ModLogos>(),
-            sp.GetRequiredService<ILogger<ModsViewModel>>()));
+            sp.GetRequiredService<FavouritesStore>(),
+            sp.GetRequiredService<ILogger<ModsViewModel>>(),
+            sp.GetRequiredService<SettingsStore>()));
+        services.AddSingleton<Func<UpdatesViewModel>>(sp => () => new UpdatesViewModel(
+            sp.GetRequiredService<DashboardViewModel>(),
+            sp.GetRequiredService<ModResolutionService>(),
+            sp.GetRequiredService<GameProfiles>(),
+            sp.GetRequiredService<ModCatalogStore>(),
+            sp.GetRequiredService<CatalogSync>().GetVersionsAsync,
+            sp.GetRequiredService<ILogger<UpdatesViewModel>>()));
         services.AddSingleton<MainViewModel>();
 
         return services.BuildServiceProvider(new ServiceProviderOptions { ValidateOnBuild = true });

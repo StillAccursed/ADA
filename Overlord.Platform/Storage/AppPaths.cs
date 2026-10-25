@@ -7,7 +7,7 @@ namespace Overlord.Platform.Storage;
 /// Linux    ~/.overlord
 /// macOS    ~/Library/Application Support/Overlord
 ///   Databases/   SQLite files (mod catalogue)
-///   Config/      settings
+///   Config/      settings, profiles (Config/Profiles/*.olp) and each game's active profile
 ///   Staging/     downloaded archives (Staging/Archives)
 ///   Logs/        daily log files, the last week kept
 /// </code>
@@ -31,6 +31,14 @@ public sealed class AppPaths
     public string CatalogDatabase => Path.Combine(Databases, "catalog.db");
 
     public string SettingsFile => Path.Combine(Config, "settings.json");
+
+    public string Profiles => Path.Combine(Config, "Profiles");
+
+    /// <summary>Mods the user starred on the Mods page.</summary>
+    public string FavouritesFile => Path.Combine(Config, "favourites.json");
+
+    /// <summary>Which profile each game uses.</summary>
+    public string ProfilesState => Path.Combine(Config, "profiles.json");
 
     /// <param name="root">Overrides the OS default; for tests only.</param>
     public AppPaths(string root) => Root = root;

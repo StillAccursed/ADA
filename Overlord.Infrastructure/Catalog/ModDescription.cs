@@ -27,6 +27,27 @@ public static partial class ModDescription
         return BlankLines().Replace(text, "\n\n").Trim();
     }
 
+    /// <summary>The https images a description shows (Markdown and HTML), in order, for the mod page's gallery.</summary>
+    public static IReadOnlyList<string> ImageUrls(string? markdown, int max = 30)
+    {
+        if (string.IsNullOrEmpty(markdown))
+            return [];
+        return MarkdownImageUrl().Matches(markdown).Select(m => (m.Index, Url: m.Groups["url"].Value))
+            .Concat(HtmlImageUrl().Matches(markdown).Select(m => (m.Index, Url: m.Groups["url"].Value)))
+            .OrderBy(m => m.Index)
+            .Select(m => m.Url)
+            .Where(u => Uri.TryCreate(u, UriKind.Absolute, out var uri) && uri.Scheme == Uri.UriSchemeHttps)
+            .Distinct(StringComparer.Ordinal)
+            .Take(max)
+            .ToList();
+    }
+
+    [GeneratedRegex(@"!\[[^\]]*\]\((?<url>[^)\s]+)[^)]*\)")]
+    private static partial Regex MarkdownImageUrl();
+
+    [GeneratedRegex(@"<img\b[^>]*?\bsrc\s*=\s*[""'](?<url>[^""']+)[""']", RegexOptions.IgnoreCase)]
+    private static partial Regex HtmlImageUrl();
+
     [GeneratedRegex(@"!\[[^\]]*\]\([^)]*\)")]
     private static partial Regex MarkdownImage();
 

@@ -2,11 +2,13 @@ using System.Security.Cryptography;
 using Microsoft.Extensions.Logging.Abstractions;
 using Overlord.Core.Catalog;
 using Overlord.Core.Games;
+using Overlord.Core.Settings;
 using Overlord.Imaging;
 using Overlord.Infrastructure.Catalog;
 using Overlord.Infrastructure.Downloads;
 using Overlord.Infrastructure.Ficsit;
 using Overlord.Infrastructure.Installing;
+using Overlord.Infrastructure.Profiles;
 using Overlord.Infrastructure.Settings;
 using Overlord.Platform.Detection;
 using Overlord.Tests.Fixtures;
@@ -44,8 +46,10 @@ public sealed class ModsViewModelTests : IDisposable
         list.Add(new CatalogVersion($"{reference}-{version}", reference, version, ">=513885", VersionStability.Release, false,
             DateTimeOffset.UnixEpoch,
             [new VersionTarget(TargetPlatform.Windows, link, bytes.Length, Convert.ToHexStringLower(SHA256.HashData(bytes)))], deps));
-        _store.Upsert([CatalogFixtures.Mod(reference, shortDescription: description)], DateTimeOffset.UtcNow);
+        _store.Upsert([CatalogFixtures.Mod(reference, shortDescription: description, fullDescription: description)], DateTimeOffset.UtcNow);
     }
+
+    private SettingsStore Settings => new(_dir.Combine("Config", "settings.json"));
 
     private async Task<ModsViewModel> OpenPageAsync()
     {
@@ -58,16 +62,18 @@ public sealed class ModsViewModelTests : IDisposable
             new ArchiveDownloader(new HttpClient(_http), _dir.Combine("Archives")),
             GetVersions,
             _ => Task.FromResult(_gameRunning));
+        var profiles = new GameProfiles(new ProfileStore(_dir.Combine("Profiles"), _dir.Combine("profiles.json")), installs);
         var catalog = new CatalogStatusViewModel(
             new CatalogSync(new FicsitApiClient(new HttpClient(new FakeHttpHandler())), _store),
             NullLogger<CatalogStatusViewModel>.Instance);
         var dashboard = new DashboardViewModel(
             new OneGame(install), catalog,
-            game => new GameInstallViewModel(game, installs, NullLogger<GameInstallViewModel>.Instance),
+            game => new GameInstallViewModel(game, installs, new ModResolutionService(GetVersions, installs), profiles, NullLogger<GameInstallViewModel>.Instance),
             NullLogger<DashboardViewModel>.Instance,
             _ => Task.FromResult<IReadOnlyList<GameProcess>>([]));
-        var page = new ModsViewModel(_store, GetVersions, new ModResolutionService(GetVersions, installs), installs, dashboard,
-            new ModLogos(new HttpClient(new FakeHttpHandler())), NullLogger<ModsViewModel>.Instance);
+        var page = new ModsViewModel(_store, (r, _, ct) => GetVersions(r, ct), new ModResolutionService(GetVersions, installs), installs, profiles, dashboard,
+            new ModLogos(new HttpClient(new FakeHttpHandler())), new FavouritesStore(_dir.Combine("favourites.json")),
+            NullLogger<ModsViewModel>.Instance, Settings);
 
         await dashboard.ScanCommand.ExecuteAsync(null);
         await page.RefreshAsync();
@@ -150,10 +156,168 @@ public sealed class ModsViewModelTests : IDisposable
         await page.InstallCommand.ExecuteAsync(null);
         await page.ConfirmCommand.ExecuteAsync(null);
 
-        page.InstalledOnly = true;
+        page.Filter = ModListQuery.Filters.Single(f => f.Value == ModFilter.Installed);
         await page.PendingSearch;
 
         Assert.Equal(["SML"], page.Results.Select(r => r.Reference));
+    }
+
+    [Fact]
+    public async Task Queued_mods_install_together_in_one_confirmed_change()
+    {
+        Publish("SML", "3.12.0");
+        Publish("A", "1.0.0", deps: new VersionDependency("SML", "^3.12.0", false));
+        Publish("B", "1.0.0", deps: new VersionDependency("SML", "^3.12.0", false));
+        var page = await OpenPageAsync();
+
+        page.SelectedMod = Find(page, "A");
+        page.ToggleQueueCommand.Execute(null);
+        page.SelectedMod = Find(page, "B");
+        page.ToggleQueueCommand.Execute(null);
+        Assert.Equal("2 mods queued", page.QueueText);
+
+        page.Filter = ModListQuery.Filters.Single(f => f.Value == ModFilter.Queued);
+        await page.PendingSearch;
+        Assert.Equal(["A", "B"], page.Results.Select(r => r.Reference).Order());
+
+        await page.InstallQueuedCommand.ExecuteAsync(null);
+        Assert.Equal("Install 2 mods queued?", page.PlanTitle);
+        Assert.Equal(["Install SML 3.12.0 (needed by A 1.0.0, B 1.0.0)", "Install A 1.0.0", "Install B 1.0.0"], page.PlanLines.Take(3));
+        await page.ConfirmCommand.ExecuteAsync(null);
+
+        Assert.Equal(["A", "B", "SML"], new ModInstaller(_game.Root, () => false).Installed.Keys.Order());
+        Assert.False(page.HasQueue);
+    }
+
+    [Fact]
+    public async Task Layout_sort_and_filter_are_remembered_between_launches()
+    {
+        Publish("SML", "3.12.0");
+        var page = await OpenPageAsync();
+
+        page.IsCardView = true;
+        page.Sort = ModListQuery.Sorts.Single(o => o.Value == ModSort.Views);
+        page.Filter = ModListQuery.Filters.Single(o => o.Value == ModFilter.NotInstalled);
+        await page.PendingChoicesSave;
+
+        var reopened = await OpenPageAsync();
+
+        Assert.Equal(ModView.Card, reopened.View);
+        Assert.Equal(ModSort.Views, reopened.Sort.Value);
+        Assert.Equal(ModFilter.NotInstalled, reopened.Filter.Value);
+    }
+
+    [Fact]
+    public async Task A_remembered_queue_filter_opens_on_all_since_the_queue_is_for_one_session()
+    {
+        Settings.Save(new AppSettings(ModsFilter: nameof(ModFilter.Queued), ModsView: "Nonsense"));
+
+        var page = await OpenPageAsync();
+
+        Assert.Equal(ModFilter.All, page.Filter.Value);
+        Assert.Equal(ModView.List, page.View);
+    }
+
+    [Fact]
+    public async Task The_settings_page_keeps_the_mods_page_choices()
+    {
+        Publish("SML", "3.12.0");
+        var page = await OpenPageAsync();
+        page.IsGridView = true;
+        await page.PendingChoicesSave;
+
+        var store = Settings;
+        var settings = new SettingsViewModel(store, new ArchiveCache(_dir.Combine("Archives")), NullLogger<SettingsViewModel>.Instance);
+        settings.KeepDownloadedArchives = false;
+        await settings.PendingSave;
+
+        Assert.Equal(nameof(ModView.Grid), store.Load().ModsView);
+        Assert.False(store.Load().KeepDownloadedArchives);
+    }
+
+    [Fact]
+    public async Task Favourites_are_saved_and_have_their_own_filter()
+    {
+        Publish("SML", "3.12.0");
+        Publish("A", "1.0.0");
+        var page = await OpenPageAsync();
+
+        Find(page, "A").ToggleFavouriteCommand.Execute(null);
+        page.Filter = ModListQuery.Filters.Single(f => f.Value == ModFilter.Favourite);
+        await page.PendingSearch;
+
+        Assert.Equal(["A"], page.Results.Select(r => r.Reference));
+        Assert.Equal("★", page.Results[0].FavouriteGlyph);
+        Assert.Contains("A", new FavouritesStore(_dir.Combine("favourites.json")).All);
+    }
+
+    [Fact]
+    public async Task Choosing_a_mod_opens_its_page_and_Back_returns_to_the_list()
+    {
+        Publish("SML", "3.12.0");
+        Publish("SML", "3.12.5");
+        Publish("A", "1.0.0", "A mod ![shot](https://example.com/a.png)", new VersionDependency("SML", "^3.12.0", false));
+        var page = await OpenPageAsync();
+
+        page.ListSelection = Find(page, "A");
+        await page.PendingDetails;
+
+        Assert.True(page.HasSelection);
+        Assert.Null(page.ListSelection);
+        var mod = page.SelectedMod!;
+        Assert.Equal("Latest for this game: 1.0.0", mod.LatestText);
+        Assert.Equal("SML", Assert.Single(mod.Dependencies).Reference);
+        Assert.False(mod.Dependencies[0].IsInstalled);
+        Assert.Equal("https://example.com/a.png", Assert.Single(mod.Gallery).Url);
+        Assert.Equal(["Latest compatible", "1.0.0"], mod.VersionChoices.Select(c => c.Label));
+        Assert.Contains("1 of its 1 versions work with your game", mod.GameCompatibilityText);
+
+        page.BackCommand.Execute(null);
+        Assert.False(page.HasSelection);
+    }
+
+    [Fact]
+    public async Task A_picked_version_is_installed_and_can_be_switched()
+    {
+        Publish("SML", "3.12.0");
+        Publish("SML", "3.12.5");
+        var page = await OpenPageAsync();
+        page.ListSelection = Find(page, "SML");
+        await page.PendingDetails;
+
+        page.SelectedMod!.SelectedVersionChoice = page.SelectedMod.VersionChoices.Single(c => c.Value == "3.12.0");
+        Assert.Equal("Install 3.12.0", page.SelectedMod.InstallText);
+        await page.InstallCommand.ExecuteAsync(null);
+        await page.ConfirmCommand.ExecuteAsync(null);
+        await page.PendingDetails;
+        Assert.Equal("3.12.0", new ModInstaller(_game.Root, () => false).Installed["SML"].Version);
+
+        page.SelectedMod.SelectedVersionChoice = page.SelectedMod.VersionChoices.Single(c => c.Value == "3.12.5");
+        Assert.Equal("Switch to 3.12.5", page.SelectedMod.InstallText);
+        await page.InstallCommand.ExecuteAsync(null);
+        Assert.Equal("Switch SML to 3.12.5?", page.PlanTitle);
+        await page.ConfirmCommand.ExecuteAsync(null);
+
+        Assert.Equal("3.12.5", new ModInstaller(_game.Root, () => false).Installed["SML"].Version);
+    }
+
+    [Fact]
+    public async Task The_open_page_stays_when_its_mod_leaves_the_filtered_list()
+    {
+        Publish("SML", "3.12.0");
+        var page = await OpenPageAsync();
+        page.ListSelection = Find(page, "SML");
+        await page.InstallCommand.ExecuteAsync(null);
+        await page.ConfirmCommand.ExecuteAsync(null);
+        page.Filter = ModListQuery.Filters.Single(f => f.Value == ModFilter.Installed);
+        await page.PendingSearch;
+
+        await page.UninstallCommand.ExecuteAsync(null);
+        await page.ConfirmCommand.ExecuteAsync(null);
+
+        Assert.True(page.HasSelection);
+        Assert.False(page.SelectedMod!.IsInstalled);
+        Assert.Empty(page.Results);
     }
 
     [Fact]

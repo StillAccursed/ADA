@@ -45,7 +45,21 @@ internal sealed record ModDto(
     [property: JsonPropertyName("last_version_date")] DateTimeOffset? LastVersionDate,
     [property: JsonPropertyName("tags")] IReadOnlyList<TagDto>? Tags,
     [property: JsonPropertyName("authors")] IReadOnlyList<AuthorDto>? Authors,
-    [property: JsonPropertyName("compatibility")] CompatibilityInfoDto? Compatibility);
+    [property: JsonPropertyName("compatibility")] CompatibilityInfoDto? Compatibility,
+    [property: JsonPropertyName("views")] int Views = 0,
+    [property: JsonPropertyName("latestVersions")] LatestVersionsDto? LatestVersions = null);
+
+internal sealed record LatestVersionsDto(
+    [property: JsonPropertyName("release")] LatestVersionDto? Release,
+    [property: JsonPropertyName("beta")] LatestVersionDto? Beta,
+    [property: JsonPropertyName("alpha")] LatestVersionDto? Alpha);
+
+internal sealed record LatestVersionDto(
+    [property: JsonPropertyName("version")] string Version,
+    [property: JsonPropertyName("game_version")] string GameVersion,
+    [property: JsonPropertyName("targets")] IReadOnlyList<LatestTargetDto>? Targets);
+
+internal sealed record LatestTargetDto([property: JsonPropertyName("targetName")] string TargetName);
 
 internal sealed record TagDto([property: JsonPropertyName("name")] string Name);
 
@@ -71,7 +85,8 @@ internal sealed record VersionDto(
     [property: JsonPropertyName("required_on_remote")] bool RequiredOnRemote,
     [property: JsonPropertyName("created_at")] DateTimeOffset CreatedAt,
     [property: JsonPropertyName("targets")] IReadOnlyList<TargetDto>? Targets,
-    [property: JsonPropertyName("dependencies")] IReadOnlyList<DependencyDto>? Dependencies);
+    [property: JsonPropertyName("dependencies")] IReadOnlyList<DependencyDto>? Dependencies,
+    [property: JsonPropertyName("changelog")] string? Changelog = null);
 
 internal sealed record TargetDto(
     [property: JsonPropertyName("targetName")] string TargetName,

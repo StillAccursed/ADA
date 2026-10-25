@@ -68,6 +68,18 @@ internal sealed class SimulatedCrashException(string checkpoint) : Exception("Si
 /// journal alone, because a crash can land between a rename and the journal entry recording it.
 /// That makes recovery safe to run any number of times.
 /// </remarks>
+/// <summary>A mod folder in the game that Overlord didn't install (e.g. Satisfactory Mod Manager did), read from its <c>.uplugin</c>.</summary>
+/// <param name="Location">Relative to <c>FactoryGame</c>, e.g. <c>Mods/X</c>.</param>
+/// <param name="Dependencies">Mods its <c>.uplugin</c> requires (optional ones left out).</param>
+public sealed record FoundMod(string Reference, string Version, string? FriendlyName, string Location,
+    IReadOnlyList<string> Dependencies);
+
+/// <param name="Unreadable">Folders that aren't recognisable mods, and why; never adopted.</param>
+public sealed record FoundMods(IReadOnlyList<FoundMod> Mods, IReadOnlyDictionary<string, string> Unreadable)
+{
+    public static readonly FoundMods None = new([], new Dictionary<string, string>());
+}
+
 public sealed class ModInstaller
 {
     // Room left on the drive beyond the mod itself, for the journal, records and the filesystem.
@@ -263,6 +275,121 @@ public sealed class ModInstaller
         unmanaged.Sort(StringComparer.OrdinalIgnoreCase);
 
         return new CheckResult(results, unmanaged);
+    }
+
+    /// <summary>
+    /// Mod folders Overlord didn't install, with their name and version from each <c>.uplugin</c>.
+    /// Only reads; nothing outside the game's mod folders is looked at.
+    /// </summary>
+    public FoundMods FindUnmanaged()
+    {
+        var mods = new List<FoundMod>();
+        var unreadable = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var references = new HashSet<string>(_records.Load().Keys, StringComparer.OrdinalIgnoreCase);
+        foreach (var location in Check().Unmanaged)
+        {
+            var reference = location[(location.LastIndexOf('/') + 1)..];
+            var descriptor = Path.Combine(_folders.Absolute(location), reference + ".uplugin");
+            if (!ModIdentifiers.IsValidReference(reference) || !File.Exists(descriptor))
+            {
+                unreadable[location] = "Not a mod: there's no .uplugin file named after the folder.";
+                continue;
+            }
+
+            try
+            {
+                using var stream = File.OpenRead(descriptor);
+                var plugin = UPluginDescriptor.Parse(reference, stream);
+                if (!references.Add(reference))
+                {
+                    unreadable[location] = $"{reference} is installed in another folder too.";
+                    continue;
+                }
+                mods.Add(new FoundMod(reference, plugin.Version, plugin.FriendlyName, location,
+                    plugin.Dependencies.Where(d => !d.Optional).Select(d => d.Name).ToList()));
+            }
+            catch (Exception e) when (e is InvalidModArchiveException or IOException or UnauthorizedAccessException)
+            {
+                unreadable[location] = e.Message;
+            }
+        }
+        return new FoundMods(mods, unreadable);
+    }
+
+    /// <summary>
+    /// Mods that installed mods require (from each one's <c>.uplugin</c>, optional ones left out) but
+    /// that aren't installed. Cheap and local; the resolver decides what actually needs installing,
+    /// since a <c>.uplugin</c> can also name engine plugins that ship with the game.
+    /// </summary>
+    /// <returns>Missing mod → the installed mods that need it.</returns>
+    public IReadOnlyDictionary<string, IReadOnlyList<string>> MissingDependencies()
+    {
+        var installed = _records.Load();
+        var missing = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+        foreach (var mod in installed.Values)
+        {
+            var descriptor = Path.Combine(_folders.Absolute(mod.Location), mod.Reference + ".uplugin");
+            UPluginDescriptor plugin;
+            try
+            {
+                using var stream = File.OpenRead(descriptor);
+                plugin = UPluginDescriptor.Parse(mod.Reference, stream);
+            }
+            catch (Exception e) when (e is InvalidModArchiveException or IOException or UnauthorizedAccessException)
+            {
+                continue; // The fast check reports damaged mods.
+            }
+
+            foreach (var dependency in plugin.Dependencies.Where(d => !d.Optional && !installed.ContainsKey(d.Name)))
+            {
+                if (!missing.TryGetValue(dependency.Name, out var neededBy))
+                    missing[dependency.Name] = neededBy = [];
+                neededBy.Add(mod.Reference);
+            }
+        }
+        return missing.ToDictionary(m => m.Key, m => (IReadOnlyList<string>)m.Value, StringComparer.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Takes over mod folders another manager installed, where they are: their files are hashed and
+    /// recorded as if Overlord had installed them, so check, repair, update and uninstall work. No
+    /// file is moved or changed, so this is safe while the game runs.
+    /// </summary>
+    /// <returns>What was recorded. Folders that changed since <see cref="FindUnmanaged"/> are skipped.</returns>
+    public IReadOnlyList<InstalledMod> Adopt(IReadOnlyList<FoundMod> mods, CancellationToken ct = default)
+    {
+        _folders.EnsureWorkFolder();
+        using var _ = AcquireLock();
+        if (_journal.Exists)
+            RecoverLocked();
+
+        var installed = _records.Load();
+        var current = FindUnmanaged().Mods.ToDictionary(m => m.Location, StringComparer.OrdinalIgnoreCase);
+        var adopted = new List<InstalledMod>();
+        foreach (var mod in mods)
+        {
+            if (!current.TryGetValue(mod.Location, out var now) || now.Version != mod.Version || installed.ContainsKey(mod.Reference))
+                continue;
+
+            var folder = _folders.Absolute(mod.Location);
+            var files = new List<InstalledFile>();
+            foreach (var path in Directory.EnumerateFiles(folder, "*", SearchOption.AllDirectories))
+            {
+                ct.ThrowIfCancellationRequested();
+                var info = new FileInfo(path);
+                files.Add(new InstalledFile(Path.GetRelativePath(folder, path).Replace(Path.DirectorySeparatorChar, '/'),
+                    info.Length, HashFile(path), info.LastWriteTimeUtc));
+            }
+            var record = new InstalledMod(mod.Reference, mod.Version, mod.Location.StartsWith("Mods/GameFeatures/", StringComparison.OrdinalIgnoreCase),
+                mod.Location, DateTimeOffset.UtcNow, files);
+            installed[mod.Reference] = record;
+            adopted.Add(record);
+        }
+
+        // One write: either every folder is taken over, or (after a crash) none is.
+        if (adopted.Count > 0)
+            _records.Save(installed);
+        return adopted;
     }
 
     private sealed record PlannedStep(JournalStep Step, ModArchive? Archive);

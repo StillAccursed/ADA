@@ -88,6 +88,18 @@ public sealed class DependencyResolverTests
     }
 
     [Fact]
+    public async Task Pre_release_versions_can_be_chosen_when_nothing_else_fits_or_they_are_kept()
+    {
+        Publish("SML", "3.12.0");
+        Publish("SML", "3.13.0-beta.1", stability: VersionStability.Beta);
+        Publish("A", "1.0.0", deps: "SML ^3.13.0-beta.1");
+
+        Assert.Equal(["SML 3.13.0-beta.1", "A 1.0.0"], Picked(await Resolve("A")));
+        Assert.Equal(["SML 3.13.0-beta.1"], Picked(await Resolve(new Dictionary<string, string> { ["SML"] = "3.13.0-beta.1" }, "SML")));
+        Assert.Equal(["SML 3.12.0"], Picked(await Resolve("SML")));
+    }
+
+    [Fact]
     public async Task Keeps_a_preferred_version_while_it_still_fits()
     {
         Publish("SML", "3.12.0");

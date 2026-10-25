@@ -198,6 +198,47 @@ public sealed class ModInstallServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task Update_plans_move_installed_mods_to_the_newest_versions_that_fit()
+    {
+        Serve(Publish("SML", "3.12.0"), Publish("A", "1.0.0", deps: [Needs("SML")]));
+        await Resolver().ApplyAsync(KnownBuild, await Resolver().PlanInstallAsync(KnownBuild, "A"));
+        Serve(Publish("SML", "3.12.5"));
+        Publish("A", "1.1.0", deps: [Needs("SML", "^3.13.0")]); // needs an SML this game can't have
+
+        var plan = await Resolver().PlanUpdateAsync(KnownBuild);
+
+        Assert.Equal(["Update SML 3.12.0 → 3.12.5"], plan.Install.Select(i => $"Update {i.Reference} {i.InstalledVersion} → {i.Version}"));
+        Assert.Empty(plan.Uninstall);
+        await Resolver().ApplyAsync(KnownBuild, plan);
+        Assert.True((await Resolver().PlanUpdateAsync(KnownBuild)).ChangesNothing);
+    }
+
+    [Fact]
+    public async Task Updating_one_mod_leaves_the_others_as_they_are()
+    {
+        Serve(Publish("SML", "3.12.0"), Publish("A", "1.0.0", deps: [Needs("SML")]));
+        await Resolver().ApplyAsync(KnownBuild, await Resolver().PlanInstallAsync(KnownBuild, "A"));
+        Publish("SML", "3.12.5");
+        Serve(Publish("A", "1.1.0", deps: [Needs("SML")]));
+
+        var plan = await Resolver().PlanUpdateAsync(KnownBuild, only: "A");
+
+        Assert.Equal(["A 1.1.0"], plan.Install.Select(i => $"{i.Reference} {i.Version}"));
+    }
+
+    [Fact]
+    public async Task Update_plans_never_go_back_from_an_installed_beta_to_an_older_release()
+    {
+        Serve(Publish("SML", "3.12.0"));
+        var beta = Publish("SML", "3.13.0-beta.1") with { Stability = VersionStability.Beta };
+        _catalog["SML"][1] = beta;
+        Serve(beta);
+        await Service().InstallAsync(KnownBuild, [beta]);
+
+        Assert.True((await Resolver().PlanUpdateAsync(KnownBuild)).ChangesNothing);
+    }
+
+    [Fact]
     public async Task Installing_what_is_already_installed_changes_nothing()
     {
         Serve(Publish("SML", "3.12.0"));

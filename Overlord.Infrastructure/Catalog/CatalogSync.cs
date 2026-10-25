@@ -54,10 +54,14 @@ public sealed class CatalogSync(IModCatalogSource source, ModCatalogStore store,
     public int ModCount => store.Count();
 
     /// <summary>Versions for a mod, from cache when fresh, otherwise from the API.</summary>
-    public async Task<IReadOnlyList<CatalogVersion>> GetVersionsAsync(string modReference, CancellationToken ct = default)
+    public Task<IReadOnlyList<CatalogVersion>> GetVersionsAsync(string modReference, CancellationToken ct = default) =>
+        GetVersionsAsync(modReference, refresh: false, ct);
+
+    /// <param name="refresh">Skip the cache, e.g. for changelogs missing from lists cached before they were fetched.</param>
+    public async Task<IReadOnlyList<CatalogVersion>> GetVersionsAsync(string modReference, bool refresh, CancellationToken ct = default)
     {
         var now = _clock.GetUtcNow();
-        if (store.GetVersions(modReference, now - VersionCacheLifetime) is { } cached)
+        if (!refresh && store.GetVersions(modReference, now - VersionCacheLifetime) is { } cached)
             return cached;
 
         var versions = await source.GetVersionsAsync(modReference, ct);

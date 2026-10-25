@@ -88,7 +88,12 @@ public partial class SettingsViewModel : ViewModelBase
         try
         {
             await Task.Delay(SaveDelay, ct);
-            await Task.Run(() => _store.Save(settings), ct);
+            // Only this page's settings: others (e.g. the Mods page's layout) keep their current values.
+            await Task.Run(() => _store.Update(current => current with
+            {
+                KeepDownloadedArchives = settings.KeepDownloadedArchives,
+                DownloadRetries = settings.DownloadRetries,
+            }), ct);
             ErrorText = null;
         }
         catch (OperationCanceledException)

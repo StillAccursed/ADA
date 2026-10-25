@@ -3,12 +3,15 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Overlord.Core.Catalog;
 using Overlord.Core.Games;
 using Overlord.Core.Resolution;
+using Semver;
 
 namespace Overlord.Infrastructure.Installing;
 
 /// <param name="InstalledVersion">The version this replaces, or null for a new mod.</param>
 public sealed record PlannedInstall(ResolvedMod Mod, string? InstalledVersion)
 {
+    public bool IsUpdate => InstalledVersion is not null;
+
     public string Reference => Mod.Reference;
 
     public string Version => Mod.Version.Version;
@@ -86,7 +89,19 @@ public sealed class ModResolutionService(
 
     /// <summary>Plans adding a mod (and whatever it needs) to the mods the user asked for in this game.</summary>
     public Task<ModChangePlan> PlanInstallAsync(GameInstall game, string reference, CancellationToken ct = default) =>
-        PlanAsync(game, requested => requested.Add(reference), reference, removing: false, ct);
+        PlanInstallAsync(game, [reference], ct);
+
+    /// <summary>Plans adding several mods at once (the Mods page's queue), so they install in one transaction.</summary>
+    public Task<ModChangePlan> PlanInstallAsync(GameInstall game, IReadOnlyCollection<string> references, CancellationToken ct = default) =>
+        PlanAsync(game, requested => requested.UnionWith(references), "", removing: false, ct);
+
+    /// <summary>
+    /// Plans installing one exact version of a mod (picked on its mod page), or switching to it. Later
+    /// plans keep it while it fits; Check for Updates still offers newer ones.
+    /// </summary>
+    public Task<ModChangePlan> PlanInstallVersionAsync(GameInstall game, string reference, string version, CancellationToken ct = default) =>
+        PlanAsync(game, requested => requested.Add(reference), "", removing: false, ct,
+            ranges: new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { [reference] = version });
 
     /// <summary>
     /// Plans removing a mod, plus any dependency only it needed. Refused while another installed mod
@@ -94,6 +109,44 @@ public sealed class ModResolutionService(
     /// </summary>
     public Task<ModChangePlan> PlanUninstallAsync(GameInstall game, string reference, CancellationToken ct = default) =>
         PlanAsync(game, requested => requested.Remove(reference), reference, removing: true, ct);
+
+    /// <summary>
+    /// Plans what the installed mods need to work in this game: missing dependencies (e.g. SML after
+    /// importing mods from another manager), and newer versions where an installed one doesn't fit
+    /// the game build or another mod. Never removes anything.
+    /// </summary>
+    public async Task<ModChangePlan> PlanFixAsync(GameInstall game, CancellationToken ct = default)
+    {
+        var plan = await PlanAsync(game, _ => { }, "", removing: false, ct);
+        return plan with { Uninstall = [] };
+    }
+
+    /// <summary>
+    /// Plans updating every installed mod to the newest versions that work together in this game
+    /// (release over beta, as always). Never removes anything.
+    /// </summary>
+    /// <param name="only">Update just this mod (and whatever its new version needs), keeping the rest where they fit.</param>
+    public async Task<ModChangePlan> PlanUpdateAsync(GameInstall game, string? only = null, CancellationToken ct = default)
+    {
+        var keep = only is null
+            ? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            : (await Task.Run(() => installs.InstallerFor(game).Installed, ct)).Values
+                .Where(m => !string.Equals(m.Reference, only, StringComparison.OrdinalIgnoreCase))
+                .ToDictionary(m => m.Reference, m => m.Version, StringComparer.OrdinalIgnoreCase);
+        var plan = await PlanAsync(game, _ => { }, "", removing: false, ct, keep);
+
+        // Release over beta can pick an older version than an installed beta: keep those as they are.
+        var older = plan.Install
+            .Where(i => i.IsUpdate && IsOlder(i.Version, i.InstalledVersion!))
+            .ToDictionary(i => i.Reference, i => i.InstalledVersion!, StringComparer.OrdinalIgnoreCase);
+        if (older.Count > 0)
+        {
+            foreach (var (reference, version) in older)
+                keep[reference] = version;
+            plan = await PlanAsync(game, _ => { }, "", removing: false, ct, keep);
+        }
+        return plan with { Uninstall = [] };
+    }
 
     /// <summary>
     /// Applies a plan in one transaction and records what the user asked for. Additions are recorded
@@ -118,8 +171,11 @@ public sealed class ModResolutionService(
         return result;
     }
 
+    /// <param name="preferred">Versions to keep while they fit; null keeps what is installed.</param>
+    /// <param name="ranges">Ranges for some requested mods, e.g. one exact version; the rest take any version.</param>
     private async Task<ModChangePlan> PlanAsync(GameInstall game, Action<HashSet<string>> change, string reference,
-        bool removing, CancellationToken ct)
+        bool removing, CancellationToken ct, IReadOnlyDictionary<string, string>? preferred = null,
+        IReadOnlyDictionary<string, string>? ranges = null)
     {
         var (installed, requested) = await Task.Run(() =>
         {
@@ -132,7 +188,8 @@ public sealed class ModResolutionService(
             return ModChangePlan.Failed([$"{reference} isn't installed by Overlord in this game."]);
 
         change(requested);
-        var resolved = await ResolveAsync(game, requested.Select(r => new ModRequirement(r)).ToList(), null, ct);
+        var resolved = await ResolveAsync(game, requested.Select(r => new ModRequirement(r, ranges?.GetValueOrDefault(r))).ToList(),
+            preferred, ct);
         if (!resolved.Succeeded)
             return ModChangePlan.Failed(resolved.Problems);
 
@@ -175,4 +232,9 @@ public sealed class ModResolutionService(
             [],
             !before.SetEquals(requested));
     }
+
+    private static bool IsOlder(string version, string than) =>
+        SemVersion.TryParse(version, SemVersionStyles.Any, out var a)
+        && SemVersion.TryParse(than, SemVersionStyles.Any, out var b)
+        && SemVersion.ComparePrecedence(a, b) < 0;
 }

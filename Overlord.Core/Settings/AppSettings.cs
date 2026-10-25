@@ -9,7 +9,15 @@ namespace Overlord.Core.Settings;
 /// How many times a failed download is retried after the first attempt (network errors, wrong
 /// size, wrong hash). Clamped to <see cref="MinDownloadRetries"/>–<see cref="MaxDownloadRetries"/>.
 /// </param>
-public sealed record AppSettings(bool KeepDownloadedArchives = true, int DownloadRetries = AppSettings.DefaultDownloadRetries)
+/// <param name="ModsView">The Mods page's layout (List, Grid or Card), as last chosen; null for the default.</param>
+/// <param name="ModsSort">The Mods page's sort, as last chosen; null for the default.</param>
+/// <param name="ModsFilter">The Mods page's filter, as last chosen; null for the default.</param>
+public sealed record AppSettings(
+    bool KeepDownloadedArchives = true,
+    int DownloadRetries = AppSettings.DefaultDownloadRetries,
+    string? ModsView = null,
+    string? ModsSort = null,
+    string? ModsFilter = null)
 {
     public const int DefaultDownloadRetries = 5;
     public const int MinDownloadRetries = 0;

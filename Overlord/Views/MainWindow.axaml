@@ -23,18 +23,32 @@
                            Margin="20,24,20,20"
                            FontSize="16" FontWeight="Bold" LetterSpacing="2"
                            Foreground="{DynamicResource AccentBrush}" />
+                <!-- Footer: check installed mods for updates; the catalogue's last refresh underneath. -->
+                <StackPanel DockPanel.Dock="Bottom" Margin="16,8,16,16" Spacing="6">
+                    <Border Height="1" Margin="-8,0,-8,8" Background="{DynamicResource BorderSubtleBrush}" />
+                    <Button HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+                            Content="Check for Updates"
+                            Click="OnCheckForUpdates" />
+                    <TextBlock Text="{Binding Catalog.SummaryText}" FontSize="11" TextWrapping="Wrap" TextAlignment="Center"
+                               Foreground="{DynamicResource TextSecondaryBrush}" />
+                </StackPanel>
                 <ListBox ItemsSource="{Binding NavItems}"
                          SelectedItem="{Binding SelectedNav}"
+                         ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                          Background="Transparent"
                          Margin="8,0">
                     <ListBox.ItemTemplate>
                         <DataTemplate x:DataType="vm:NavItem">
-                            <StackPanel Orientation="Horizontal" Spacing="12">
-                                <TextBlock Text="{Binding Glyph}" Width="16" TextAlignment="Center"
+                            <Grid ColumnDefinitions="16,*,Auto" ColumnSpacing="12">
+                                <TextBlock Text="{Binding Glyph}" TextAlignment="Center"
                                            Foreground="{DynamicResource TextSecondaryBrush}" />
-                                <TextBlock Text="{Binding Title}"
+                                <TextBlock Grid.Column="1" Text="{Binding Title}"
                                            Foreground="{DynamicResource TextPrimaryBrush}" />
-                            </StackPanel>
+                                <TextBlock Grid.Column="2" Text="↑" FontWeight="Bold"
+                                           IsVisible="{Binding HasUpdates}"
+                                           ToolTip.Tip="Mod updates available"
+                                           Foreground="{DynamicResource AccentBrush}" />
+                            </Grid>
                         </DataTemplate>
                     </ListBox.ItemTemplate>
                 </ListBox>

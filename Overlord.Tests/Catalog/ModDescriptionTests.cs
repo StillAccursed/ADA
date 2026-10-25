@@ -26,4 +26,18 @@ public class ModDescriptionTests
     [InlineData(null)]
     [InlineData("   ")]
     public void Empty_descriptions_are_empty(string? markdown) => Assert.Equal("", ModDescription.Readable(markdown));
+
+    [Fact]
+    public void Gallery_takes_https_images_in_order_without_repeats()
+    {
+        const string markdown = """
+            ![one](https://example.com/1.png "title")
+            <img alt="two" src="https://example.com/2.jpg">
+            ![insecure](http://example.com/3.png)
+            ![again](https://example.com/1.png)
+            [not an image](https://example.com/page)
+            """;
+
+        Assert.Equal(["https://example.com/1.png", "https://example.com/2.jpg"], ModDescription.ImageUrls(markdown));
+    }
 }

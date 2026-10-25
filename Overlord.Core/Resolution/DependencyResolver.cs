@@ -134,7 +134,9 @@ public sealed class DependencyResolver(Func<string, CancellationToken, Task<IRea
     {
         try
         {
-            range = SemVersionRange.ParseNpm(string.IsNullOrWhiteSpace(text) ? "*" : text);
+            // npm leaves pre-releases (3.13.0-beta.1) out of ranges like ^3.12.0; ficsit.app marks betas
+            // by stability instead, which the ordering already handles, so keep them in.
+            range = SemVersionRange.ParseNpm(string.IsNullOrWhiteSpace(text) ? "*" : text, includeAllPrerelease: true);
             return true;
         }
         catch (FormatException)

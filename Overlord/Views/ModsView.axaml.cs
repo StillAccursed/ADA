@@ -19,4 +19,11 @@ public partial class ModsView : UserControl
         if (DataContext is ModsViewModel vm)
             _ = vm.RefreshAsync();
     }
+
+    // Opens the mod's ficsit.app page in the user's browser; the address is built from the reference only.
+    private async void OnOpenOnFicsit(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is ModsViewModel { SelectedMod: { } mod } && TopLevel.GetTopLevel(this) is { } top)
+            await top.Launcher.LaunchUriAsync(mod.FicsitUri);
+    }
 }

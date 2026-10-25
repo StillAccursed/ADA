@@ -149,6 +149,18 @@ public sealed class ModInstallService(
         return result;
     }
 
+    /// <summary>Mod folders another manager installed in this game.</summary>
+    public Task<FoundMods> FindUnmanagedAsync(GameInstall game, CancellationToken ct = default) =>
+        Task.Run(() => InstallerFor(game).FindUnmanaged(), ct);
+
+    /// <summary>Takes over mod folders where they are; see <see cref="ModInstaller.Adopt"/>.</summary>
+    public async Task<IReadOnlyList<InstalledMod>> AdoptAsync(GameInstall game, IReadOnlyList<FoundMod> mods, CancellationToken ct = default)
+    {
+        var adopted = await Task.Run(() => InstallerFor(game).Adopt(mods, ct), ct);
+        _log.LogInformation("Took over {Mods} in {Game}", adopted.Select(m => $"{m.Reference} {m.Version}"), game.GamePath);
+        return adopted;
+    }
+
     /// <summary>
     /// Reinstalls each damaged or missing mod at the version that was installed, from a kept archive
     /// when it still matches, otherwise by downloading it again.
