@@ -71,7 +71,7 @@ Three top-level objects:
 | `mods.<ref>.dependencies` | null in every entry | `null` | Present but unused in the sample |
 | `mods.<ref>.targets` | object keyed by platform | `Windows` / `WindowsServer` / `LinuxServer` | Per-platform download |
 | `targets.<platform>.link` | string, absolute URL | `https://api.ficsit.app/v1/version/<id>/<platform>/download` | Same path as the API's target `link`, with the host added |
-| `targets.<platform>.hash` | string, 64 hex | | SHA-256 of that download. Matches the API (WeatherExtended 1.0.0 `Windows`: `1a94ad64…`, same as `ficsit-api.md`) |
+| `targets.<platform>.hash` | string, 64 hex | | SHA-256 of that download. Matches the ficsit.app API's target `hash`, which is the SHA-256 of the file served by the target's download link (checked: WeatherExtended 1.0.0 `Windows`, `1a94ad64…` in both) |
 
 Observations from the sample:
 
@@ -115,7 +115,7 @@ Write the same three objects so the file opens in other tools:
 
 Formatting matches the sample exactly: 2-space indents, keys sorted by character code (`AutoLink` before `AutomatedInhalers`, not culture-aware sorting), `>` written as-is rather than `\u003E`, and a final newline. **Verified 2026-10-25:** reading the 233 KB sample and writing it back reproduces it byte for byte.
 
-Overlord's own format is `.olp` (see `olp.md`); converting between the two is described there.
+Overlord's own format is `.olp`: a profile name and its mods as mod references at exact versions, `{ "name": "Atria", "mods": [ { "name": "SML", "version": "3.12.0" } ] }`, with dependencies listed like any other mod. Converting a `.smmprofile` to `.olp` takes the lockfile's exact versions and leaves out mods whose profile entry has `enabled: false`.
 
 ## Open questions
 

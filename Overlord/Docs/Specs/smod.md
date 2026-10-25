@@ -75,7 +75,7 @@ Notes:
 
 - `GameVersion` is compared against the install's changelist, read from the game's own files: `Engine/Binaries/Win64/FactoryGame<Store>-Win64-Shipping.version` → `"Changelist": 513885` (with `"GameVersion": "1.2.4.1"`). This works the same for Steam and Epic. Do not use Steam's `buildid` or Epic's `AppVersionString` for compatibility: those are launcher values.
 - `Plugins[].Optional` (a standard Unreal field) may mark optional dependencies; not present in the sample.
-- A dependency named `SML` is the mod loader itself, and is resolved like any other mod (see `sml.md`).
+- A dependency named `SML` is the mod loader itself, and is resolved like any other mod. Each game gets its own SML: the newest stable version whose game-version range includes that game's CL, that satisfies every installed mod's `SML` range, and that has a build for the game's platform. SML installs to `FactoryGame/Mods/SML/`.
 - Read with a lenient JSON reader (allow comments and trailing commas): authors sometimes edit `.uplugin` files by hand.
 
 ## Installing
@@ -96,7 +96,7 @@ Steps:
 1. Verify the download's size and SHA-256 against the API target before opening it.
 2. Find the mod root (see Layout): the archive root if flat, otherwise the folder for the target platform (`Windows` for clients, `WindowsServer` / `LinuxServer` for servers). Never copy a client's mods to a server; the docs warn this does not work.
 3. Read `GameFeature` from that folder's `.uplugin` and compute the destination above.
-4. Extract, verify and commit through the install engine: archive in `Staging/Archives/`, extraction into the hidden `FactoryGame/.overlord/` folder, then a single rename into `Mods` (see `install-engine.md`).
+4. Extract, verify and commit. The archive is kept in Overlord's app-data folder (`Staging/Archives/`). The mod is extracted into the hidden `FactoryGame/.overlord/` folder on the game's own drive, and every file is re-read and checked by size and SHA-256. The finished folder is then renamed into `Mods` in one step, so the game never sees a partly written mod. An update moves the old version out and the new one in the same way.
 5. Optionally skip `*.pdb` files (debug symbols, not needed to run) to save ~99% of disk space and copy time. Keep them behind a "keep debug symbols" setting, since mod authors ask for them in crash reports.
 
 On servers, refuse to install while the server is running: a running server locks mod files (dedicated server docs).

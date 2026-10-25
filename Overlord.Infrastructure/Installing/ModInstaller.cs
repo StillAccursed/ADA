@@ -52,7 +52,8 @@ internal sealed class SimulatedCrashException(string checkpoint) : Exception("Si
 
 /// <summary>
 /// Installs, updates and uninstalls mods in one game so that <c>Mods</c> only ever changes by
-/// renaming whole mod folders. See <c>install-engine.md</c>.
+/// renaming whole mod folders: each mod is extracted and verified in the hidden
+/// <c>FactoryGame/.overlord</c> folder on the game's own drive, then renamed into place.
 /// </summary>
 /// <remarks>
 /// Every commit and rollback step checks where folders actually are rather than trusting the

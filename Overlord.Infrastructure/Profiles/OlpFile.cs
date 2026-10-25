@@ -9,7 +9,10 @@ namespace Overlord.Infrastructure.Profiles;
 
 public sealed class InvalidProfileException(string message) : Exception(message);
 
-/// <summary>Reads and writes Overlord's <c>.olp</c> profile files (see <c>olp.md</c>).</summary>
+/// <summary>
+/// Reads and writes Overlord's <c>.olp</c> profile files:
+/// <c>{ "name": "...", "mods": [ { "name": "&lt;mod reference&gt;", "version": "&lt;exact version&gt;" } ] }</c>.
+/// </summary>
 public static partial class OlpFile
 {
     public const string Extension = ".olp";
@@ -25,7 +28,7 @@ public static partial class OlpFile
         Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
     });
 
-    /// <exception cref="InvalidProfileException">The file breaks any rule in <c>olp.md</c>.</exception>
+    /// <exception cref="InvalidProfileException">The file is too large, or has a missing name or mod list, an invalid mod name or exact version, a duplicate mod, or over the size limits.</exception>
     public static ModProfile Read(string path)
     {
         var info = new FileInfo(path);
@@ -35,7 +38,7 @@ public static partial class OlpFile
         return Parse(stream);
     }
 
-    /// <exception cref="InvalidProfileException">The JSON breaks any rule in <c>olp.md</c>.</exception>
+    /// <exception cref="InvalidProfileException">Not valid JSON, or a missing name or mod list, an invalid mod name or exact version, a duplicate mod, or over the size limits.</exception>
     public static ModProfile Parse(Stream json)
     {
         OlpDocument? doc;
