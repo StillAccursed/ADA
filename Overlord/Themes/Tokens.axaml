@@ -1,0 +1,29 @@
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <!--
+        Semantic design tokens. Views reference these names only, never raw colours, so a theme is
+        just a different set of values. Placeholder values until the Figma kit is applied.
+    -->
+    <ResourceDictionary.ThemeDictionaries>
+        <ResourceDictionary x:Key="Dark">
+            <SolidColorBrush x:Key="SurfaceBrush" Color="#16181C" />
+            <SolidColorBrush x:Key="SurfaceRaisedBrush" Color="#1F2228" />
+            <SolidColorBrush x:Key="SurfaceSunkenBrush" Color="#111317" />
+            <SolidColorBrush x:Key="BorderSubtleBrush" Color="#2C3038" />
+            <SolidColorBrush x:Key="TextPrimaryBrush" Color="#ECEEF2" />
+            <SolidColorBrush x:Key="TextSecondaryBrush" Color="#9AA1AD" />
+            <SolidColorBrush x:Key="AccentBrush" Color="#F39C3C" />
+            <SolidColorBrush x:Key="SuccessBrush" Color="#4CB782" />
+        </ResourceDictionary>
+        <ResourceDictionary x:Key="Light">
+            <SolidColorBrush x:Key="SurfaceBrush" Color="#F6F7F9" />
+            <SolidColorBrush x:Key="SurfaceRaisedBrush" Color="#FFFFFF" />
+            <SolidColorBrush x:Key="SurfaceSunkenBrush" Color="#ECEEF2" />
+            <SolidColorBrush x:Key="BorderSubtleBrush" Color="#DADDE3" />
+            <SolidColorBrush x:Key="TextPrimaryBrush" Color="#16181C" />
+            <SolidColorBrush x:Key="TextSecondaryBrush" Color="#5B6270" />
+            <SolidColorBrush x:Key="AccentBrush" Color="#C96A0A" />
+            <SolidColorBrush x:Key="SuccessBrush" Color="#2E8B5E" />
+        </ResourceDictionary>
+    </ResourceDictionary.ThemeDictionaries>
+</ResourceDictionary>

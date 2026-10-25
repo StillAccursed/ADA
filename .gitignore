@@ -1,0 +1,17 @@
+bin/
+obj/
+/packages/
+riderModule.iml
+/_ReSharper.Caches/
+
+.claude/
+Docs/.proposals
+Overlord/Docs/.proposals
+Overlord/.claude
+
+Overlord/bin
+Overlord/obj
+# IDE and test output
+.idea/
+*.user
+TestResults/
