@@ -5,13 +5,17 @@
              x:DataType="vm:ModsViewModel">
     <!-- Progress and outcomes for changes started from the Mods page. -->
     <StackPanel Spacing="10">
+        <TextBlock Text="{Binding OperationQueueText}" TextWrapping="Wrap" IsVisible="{Binding HasPendingOperations}"
+                   Foreground="{DynamicResource TextSecondaryBrush}" />
         <TextBlock Text="{Binding GameRunningText}" TextWrapping="Wrap" IsVisible="{Binding IsGameRunning}"
                    Foreground="{DynamicResource WarningBrush}" />
         <TextBlock Text="{Binding ProgressText}" TextWrapping="Wrap"
                    IsVisible="{Binding ProgressText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
                    Foreground="{DynamicResource TextSecondaryBrush}" />
-        <SelectableTextBlock Text="{Binding Notice}" TextWrapping="Wrap"
-                             IsVisible="{Binding Notice, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
-                             Foreground="{DynamicResource WarningBrush}" />
+        <ScrollViewer MaxHeight="160" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                      IsVisible="{Binding Notice, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+            <SelectableTextBlock Text="{Binding Notice}" TextWrapping="Wrap"
+                                 Foreground="{DynamicResource WarningBrush}" />
+        </ScrollViewer>
     </StackPanel>
 </UserControl>

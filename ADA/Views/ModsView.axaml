@@ -26,7 +26,7 @@
                                Foreground="{DynamicResource AccentBrush}" />
                 </StackPanel>
                 <Button Grid.Column="3" Classes="quickAction" Content="{Binding QuickActionText}"
-                        Classes.install="{Binding !IsInstalled}" Classes.uninstall="{Binding IsInstalled}"
+                        Classes.install="{Binding !IsUninstallAction}" Classes.uninstall="{Binding IsUninstallAction}"
                         Command="{Binding $parent[views:ModsView].((vm:ModsViewModel)DataContext).QuickChangeCommand}"
                         CommandParameter="{Binding}" VerticalAlignment="Center" />
                 <Button Grid.Column="4" Classes="star" Content="{Binding FavouriteGlyph}" Command="{Binding ToggleFavouriteCommand}"
@@ -53,7 +53,7 @@
                                Foreground="{DynamicResource SuccessBrush}" />
                 </Panel>
                 <Button Grid.Row="3" Classes="quickAction" Content="{Binding QuickActionText}" Margin="0,8,0,0"
-                        Classes.install="{Binding !IsInstalled}" Classes.uninstall="{Binding IsInstalled}"
+                        Classes.install="{Binding !IsUninstallAction}" Classes.uninstall="{Binding IsUninstallAction}"
                         Command="{Binding $parent[views:ModsView].((vm:ModsViewModel)DataContext).QuickChangeCommand}"
                         CommandParameter="{Binding}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
             </Grid>
@@ -88,7 +88,7 @@
                         <Button Classes="star" HorizontalAlignment="Right" Content="{Binding FavouriteGlyph}"
                                 Command="{Binding ToggleFavouriteCommand}" ToolTip.Tip="Favourite" />
                         <Button Classes="quickAction" Content="{Binding QuickActionText}"
-                                Classes.install="{Binding !IsInstalled}" Classes.uninstall="{Binding IsInstalled}"
+                                Classes.install="{Binding !IsUninstallAction}" Classes.uninstall="{Binding IsUninstallAction}"
                                 Command="{Binding $parent[views:ModsView].((vm:ModsViewModel)DataContext).QuickChangeCommand}"
                                 CommandParameter="{Binding}" />
                     </StackPanel>
@@ -228,14 +228,14 @@
             <!-- A queued install's plan and outcome show here; a single mod's on its page. -->
             <views:PlanPanel DockPanel.Dock="Bottom" Margin="0,8,0,0" />
 
-            <!-- Install queue: everything queued installs as one confirmed change. -->
+            <!-- Selected batch: submit it as one operation in the automatic execution queue. -->
             <Border DockPanel.Dock="Bottom" Margin="0,8,0,0" Padding="14,10" CornerRadius="8" BorderThickness="1"
                     IsVisible="{Binding HasQueue}"
                     Background="{DynamicResource SurfaceRaisedBrush}" BorderBrush="{DynamicResource AccentBrush}">
                 <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
                     <TextBlock Text="{Binding QueueText}" VerticalAlignment="Center" FontWeight="SemiBold"
                                Foreground="{DynamicResource TextPrimaryBrush}" />
-                    <Button Grid.Column="1" Classes="accent" Content="Install queued" Command="{Binding InstallQueuedCommand}" />
+                    <Button Grid.Column="1" Classes="accent" Content="{Binding InstallQueuedButtonText}" Command="{Binding InstallQueuedCommand}" />
                     <Button Grid.Column="2" Content="Clear" Command="{Binding ClearQueueCommand}" />
                 </Grid>
             </Border>
@@ -342,8 +342,8 @@
                             <Button HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Classes="accent"
                                     Content="{Binding SelectedMod.InstallText}" Command="{Binding InstallCommand}"
                                     IsVisible="{Binding SelectedMod.CanInstallHere}" />
-                            <Button HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Content="Uninstall"
-                                    Command="{Binding UninstallCommand}" IsVisible="{Binding SelectedMod.IsInstalled}" />
+                            <Button HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Content="{Binding SelectedMod.UninstallText}"
+                                    Command="{Binding UninstallCommand}" IsVisible="{Binding SelectedMod.ShowUninstall}" />
                             <Button HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Content="Add to queue"
                                     Command="{Binding ToggleQueueCommand}" IsVisible="{Binding !SelectedMod.IsQueued}"
                                     ToolTip.Tip="Install it later with the rest of the queue" />

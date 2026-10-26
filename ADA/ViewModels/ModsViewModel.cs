@@ -18,7 +18,7 @@ namespace ADA.ViewModels;
 /// <summary>
 /// The Mods page: search the local catalogue with filters, tags and sorting, shown as a list, grid
 /// or cards; see a mod's details; star it; and install, queue or uninstall it in one game. Every
-/// change is planned through the resolver and applied immediately when valid.
+/// change is queued in click order, resolved against current installed state, and applied when valid.
 /// </summary>
 public partial class ModsViewModel : ViewModelBase
 {
@@ -53,6 +53,13 @@ public partial class ModsViewModel : ViewModelBase
     // Searches run off the UI thread and can finish out of order; only the newest may show its results.
     private readonly Lock _resultsLock = new();
     private int _searchGeneration;
+
+    // Entries include the active operation, so duplicate clicks cannot submit it again.
+    private readonly Lock _operationLock = new();
+    private readonly Queue<ModOperation> _operations = new();
+    private readonly List<string> _operationOutcomes = [];
+    private ModOperation? _activeOperation;
+    private bool _processingOperations;
 
     /// <param name="getVersions">A mod's versions; the flag skips the cache.</param>
     public ModsViewModel(ModCatalogStore store, Func<string, bool, CancellationToken, Task<IReadOnlyList<CatalogVersion>>> getVersions,
@@ -154,16 +161,33 @@ public partial class ModsViewModel : ViewModelBase
     [ObservableProperty]
     public partial string ResultsText { get; set; } = "";
 
-    /// <summary>Planning or applying a change; the buttons wait.</summary>
+    /// <summary>The operation worker is resolving, applying or refreshing a change.</summary>
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(InstallCommand), nameof(UninstallCommand), nameof(InstallQueuedCommand))]
     [NotifyCanExecuteChangedFor(nameof(QuickChangeCommand))]
     public partial bool IsBusy { get; set; }
 
+    /// <summary>Operations waiting for their turn, across the captured game targets.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasPendingOperations), nameof(OperationQueueText))]
+    public partial int PendingOperationCount { get; private set; }
+
+    public bool HasPendingOperations => PendingOperationCount > 0;
+
+    /// <summary>Explains how many operations are waiting and whether the game must close first.</summary>
+    public string OperationQueueText => $"{PendingOperationCount} operation{(PendingOperationCount == 1 ? "" : "s")} waiting"
+        + (IsGameRunning ? " until Satisfactory closes." : ".");
+
+    /// <summary>The batch button submits work behind the current operation when the worker is busy.</summary>
+    public string InstallQueuedButtonText => IsBusy ? "Queue installs" : "Install queued";
+
+    /// <summary>Completes when the current worker drains the queue or pauses for the game; for tests.</summary>
+    internal Task PendingOperations { get; private set; } = Task.CompletedTask;
+
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(InstallCommand), nameof(UninstallCommand), nameof(InstallQueuedCommand))]
     [NotifyCanExecuteChangedFor(nameof(QuickChangeCommand))]
-    [NotifyPropertyChangedFor(nameof(GameRunningText))]
+    [NotifyPropertyChangedFor(nameof(GameRunningText), nameof(OperationQueueText))]
     public partial bool IsGameRunning { get; set; }
 
     public string? GameRunningText => IsGameRunning
@@ -173,19 +197,21 @@ public partial class ModsViewModel : ViewModelBase
     [ObservableProperty]
     public partial string? ProgressText { get; set; }
 
-    /// <summary>The outcome of the last change, or why it couldn't be made.</summary>
+    /// <summary>Outcomes of the current run, retained while subsequent operations execute.</summary>
     [ObservableProperty]
     public partial string? Notice { get; set; }
 
-    private bool CanPlan => SelectedGame is not null && SelectedMod is not null && !IsBusy && !IsGameRunning;
+    private bool CanPlan => SelectedGame is { } game && SelectedMod is { } mod
+        && !IsGameRunning && !IsActiveOperationFor(game, mod.Reference);
 
     private bool CanInstall => CanPlan && SelectedMod is { CanInstallHere: true };
 
-    private bool CanUninstall => CanPlan && SelectedMod is { IsInstalled: true };
+    private bool CanUninstall => CanPlan && SelectedMod is { ShowUninstall: true };
 
     private bool CanQueue => SelectedGame is not null && SelectedMod is { CanBeRequested: true };
 
-    private bool CanInstallQueued => HasQueue && SelectedGame is not null && !IsBusy && !IsGameRunning;
+    private bool CanInstallQueued => HasQueue && SelectedGame is { } game && !IsGameRunning
+        && CurrentQueue()!.Any(reference => FindOperation(game, reference) is null);
 
     /// <summary>Completes when the most recent change of layout, sort or filter is saved; for tests.</summary>
     internal Task PendingChoicesSave { get; private set; } = Task.CompletedTask;
@@ -304,12 +330,13 @@ public partial class ModsViewModel : ViewModelBase
             ScheduleSearch(TimeSpan.Zero);
     }
 
-    /// <summary>Resolves and installs the queued mods together in one transaction.</summary>
-    [RelayCommand(CanExecute = nameof(CanInstallQueued))]
+    /// <summary>Submits the selected batch as one transaction after earlier operations.</summary>
+    [RelayCommand(CanExecute = nameof(CanInstallQueued), AllowConcurrentExecutions = true)]
     private Task InstallQueuedAsync()
     {
-        var queued = CurrentQueue()?.ToList() ?? [];
-        return PlanAndApplyAsync(game => _resolution.PlanInstallAsync(game, queued));
+        return CanInstallQueued
+            ? EnqueueOperation(SelectedGame!, ModOperationKind.Install, CurrentQueue()!.ToArray())
+            : Task.CompletedTask;
     }
 
     private HashSet<string>? CurrentQueue()
@@ -323,8 +350,8 @@ public partial class ModsViewModel : ViewModelBase
 
     partial void OnSelectedGameChanged(GameInstallViewModel? value)
     {
-        Notice = null;
         QueueCount = CurrentQueue()?.Count ?? 0;
+        UpdateOperationState();
         _ = RefreshAsync();
     }
 
@@ -345,6 +372,10 @@ public partial class ModsViewModel : ViewModelBase
     {
         if (value is not null)
             value.PropertyChanged += OnSelectedModPropertyChanged;
+        if (value is not null)
+        {
+            ApplyOperationState(value);
+        }
         ReloadDetails(value);
     }
 
@@ -360,84 +391,248 @@ public partial class ModsViewModel : ViewModelBase
     /// <summary>Completes when the open mod page has its versions, dependencies and gallery; for tests.</summary>
     internal Task PendingDetails { get; private set; } = Task.CompletedTask;
 
-    [RelayCommand(CanExecute = nameof(CanInstall))]
+    /// <summary>Captures the selected mod, game and version before waiting for earlier changes.</summary>
+    [RelayCommand(CanExecute = nameof(CanInstall), AllowConcurrentExecutions = true)]
     private Task InstallAsync()
     {
-        var mod = SelectedMod!;
-        return mod.SelectedVersion is { } version
-            ? PlanAndApplyAsync(game => _resolution.PlanInstallVersionAsync(game, mod.Reference, version))
-            : PlanAndApplyAsync(game => _resolution.PlanInstallAsync(game, mod.Reference));
+        return CanInstall
+            ? EnqueueOperation(SelectedGame!, ModOperationKind.Install, [SelectedMod!.Reference], SelectedMod.SelectedVersion)
+            : Task.CompletedTask;
     }
 
     /// <summary>Back from a mod page to the list, where the user left it.</summary>
     [RelayCommand]
     private void Back() => SelectedMod = null;
 
-    [RelayCommand(CanExecute = nameof(CanUninstall))]
+    /// <summary>Captures a removal request without disabling other mods' buttons.</summary>
+    [RelayCommand(CanExecute = nameof(CanUninstall), AllowConcurrentExecutions = true)]
     private Task UninstallAsync()
     {
-        var reference = SelectedMod!.Reference;
-        return PlanAndApplyAsync(game => _resolution.PlanUninstallAsync(game, reference));
+        return CanUninstall
+            ? EnqueueOperation(SelectedGame!, ModOperationKind.Uninstall, [SelectedMod!.Reference])
+            : Task.CompletedTask;
     }
 
     /// <summary>
-    /// Installs or removes the clicked mod in the selected game without opening its details page.
-    /// Uses the existing resolution and apply flow, installing the latest compatible version.
+    /// Captures the clicked mod's current action without opening its page. Additional clicks on
+    /// other mods enqueue work immediately while the single worker applies earlier requests.
     /// </summary>
-    [RelayCommand(CanExecute = nameof(CanQuickChange))]
+    [RelayCommand(CanExecute = nameof(CanQuickChange), AllowConcurrentExecutions = true)]
     private Task QuickChangeAsync(ModItemViewModel? mod)
     {
-        if (!CanQuickChange(mod))
-        {
-            return Task.CompletedTask;
-        }
-
-        var reference = mod!.Reference;
-        var uninstall = mod.IsInstalled;
-
-        return PlanAndApplyAsync(game => uninstall
-            ? _resolution.PlanUninstallAsync(game, reference)
-            : _resolution.PlanInstallAsync(game, reference));
+        return CanQuickChange(mod)
+            ? EnqueueOperation(SelectedGame!, mod!.IsUninstallAction ? ModOperationKind.Uninstall : ModOperationKind.Install, [mod.Reference])
+            : Task.CompletedTask;
     }
 
     private bool CanQuickChange(ModItemViewModel? mod)
     {
-        return mod is not null
-            && SelectedGame is not null
-            && !IsBusy
-            && !IsGameRunning;
+        return mod is not null && SelectedGame is { } game && !IsGameRunning
+            && !IsActiveOperationFor(game, mod.Reference);
     }
 
-    /// <summary>Applies to the captured game, records its profile, and refreshes the currently displayed game.</summary>
-    private async Task ApplyAsync(GameInstallViewModel game, ModChangePlan plan)
+    /// <summary>
+    /// Copies request data at the click. A mod already submitted for this game keeps its existing
+    /// place and action; overlapping batch entries are not submitted a second time.
+    /// </summary>
+    private Task EnqueueOperation(GameInstallViewModel game, ModOperationKind kind, IReadOnlyList<string> references, string? version = null)
     {
+        var waiting = new List<Task>();
+        lock (_operationLock)
+        {
+            var newReferences = new List<string>();
+            foreach (var reference in references.Distinct(StringComparer.OrdinalIgnoreCase))
+            {
+                if (FindOperation(game, reference) is { } existing)
+                {
+                    waiting.Add(existing.Completion.Task);
+                }
+                else
+                {
+                    newReferences.Add(reference);
+                }
+            }
+
+            if (newReferences.Count > 0)
+            {
+                if (_operations.Count == 0)
+                {
+                    _operationOutcomes.Clear();
+                    Notice = null;
+                }
+                var operation = new ModOperation(game, kind, newReferences.ToArray(), version);
+                _operations.Enqueue(operation);
+                waiting.Add(operation.Completion.Task);
+            }
+        }
+        UpdateOperationState();
+        StartOperations();
+        return Task.WhenAll(waiting);
+    }
+
+    /// <summary>Starts at most one worker; paused requests stay at the head until the game closes.</summary>
+    private void StartOperations()
+    {
+        lock (_operationLock)
+        {
+            if (_processingOperations || _operations.Count == 0 || IsGameRunning)
+            {
+                return;
+            }
+            _processingOperations = true;
+        }
+        PendingOperations = ProcessOperationsAsync();
+    }
+
+    /// <summary>
+    /// Processes captured requests in order, recording failures without dropping later work.
+    /// A late game start retains the current request for a fresh plan after the game closes.
+    /// </summary>
+    private async Task ProcessOperationsAsync()
+    {
+        ModOperation? finishing = null;
         try
         {
-            var progress = new Progress<ModInstallProgress>(p => ProgressText = PlanText.Progress(p));
-            var result = await _resolution.ApplyAsync(game.Install, plan, progress);
-            Notice = Describe(result);
-            try
+            while (true)
             {
-                await _profiles.RecordInstalledAsync(game.Install);
+                ModOperation operation;
+                lock (_operationLock)
+                {
+                    if (IsGameRunning || !_operations.TryPeek(out var next))
+                    {
+                        break;
+                    }
+                    operation = next;
+                    _activeOperation = operation;
+                }
+                IsBusy = true;
+                UpdateOperationState();
+
+                try
+                {
+                    RecordOperationOutcome(await PlanAndApplyAsync(operation));
+                }
+                catch (GameRunningException)
+                {
+                    // The install engine can see a start before the process watcher. Publish it
+                    // there too, so even a short game session produces the later close notification.
+                    _dashboard.IsGameRunning = true;
+                    foreach (var game in Games)
+                    {
+                        game.IsGameRunning = true;
+                    }
+                    IsGameRunning = true;
+                    break;
+                }
+                catch (Exception e)
+                {
+                    _log.LogError(e, "Changing mods in {Game} failed", operation.Game.Install.GamePath);
+                    RecordOperationOutcome($"Couldn't {operation.Kind.ToString().ToLowerInvariant()} {string.Join(", ", operation.References)}: {e.Message}");
+                }
+
+                try
+                {
+                    await RefreshAfterOperationAsync(operation.Game);
+                }
+                catch (Exception e)
+                {
+                    _log.LogError(e, "Refreshing mods in {Game} failed", operation.Game.Install.GamePath);
+                    RecordOperationOutcome($"Couldn't refresh the displayed state: {e.Message}");
+                }
+
+                lock (_operationLock)
+                {
+                    _operations.Dequeue();
+                    _activeOperation = null;
+                    finishing = operation;
+                }
+                UpdateOperationState();
+
+                lock (_operationLock)
+                {
+                    if (_operations.Count == 0 || IsGameRunning)
+                    {
+                        break;
+                    }
+                }
+                finishing.Completion.TrySetResult();
+                finishing = null;
             }
-            catch (Exception e)
+        }
+        finally
+        {
+            lock (_operationLock)
             {
-                // The mods changed; only the profile file is behind, and the next change rewrites it.
-                _log.LogError(e, "Updating the profile for {Game} failed", game.Install.GamePath);
-                Notice += $" Couldn't update the profile: {e.Message}";
+                _activeOperation = null;
             }
+            ProgressText = null;
+            IsBusy = false;
+            UpdateOperationState();
+            lock (_operationLock)
+            {
+                _processingOperations = false;
+            }
+            finishing?.Completion.TrySetResult();
+            StartOperations();
+        }
+    }
+
+    /// <summary>Plans against the current disk state only when this request reaches the head.</summary>
+    private async Task<string> PlanAndApplyAsync(ModOperation operation)
+    {
+        var game = operation.Game.Install;
+        ProgressText = $"Working out what needs to change for {string.Join(", ", operation.References)}…";
+        var plan = operation.Kind == ModOperationKind.Uninstall
+            ? await _resolution.PlanUninstallAsync(game, operation.References[0])
+            : operation.Version is { } version
+                ? await _resolution.PlanInstallVersionAsync(game, operation.References[0], version)
+                : await _resolution.PlanInstallAsync(game, operation.References);
+
+        if (IsGameRunning)
+        {
+            throw new GameRunningException();
+        }
+        if (!plan.Succeeded)
+        {
+            return string.Join("\n", plan.Problems);
+        }
+        if (plan.ChangesNothing)
+        {
+            return "Already in the requested state; nothing to change.";
+        }
+
+        ProgressText = "Applying changes…";
+        var progress = new Progress<ModInstallProgress>(p =>
+        {
+            if (ReferenceEquals(_activeOperation, operation))
+            {
+                ProgressText = PlanText.Progress(p);
+            }
+        });
+        var result = await _resolution.ApplyAsync(game, plan, progress);
+        var outcome = Describe(result);
+        try
+        {
+            await _profiles.RecordInstalledAsync(game);
         }
         catch (Exception e)
         {
-            // Offline, the game started, a failed install (already rolled back): shown, never thrown.
-            if (e is not GameRunningException)
-            {
-                _log.LogError(e, "Changing mods in {Game} failed", game.Install.GamePath);
-            }
-            Notice = e is GameRunningException ? e.Message : $"Nothing was changed: {e.Message}";
+            _log.LogError(e, "Updating the profile for {Game} failed", game.GamePath);
+            outcome += $" Couldn't update the profile: {e.Message}";
         }
+        return outcome;
+    }
 
-        // Installed mods leave the queue. Show the new state here, on the open mod page and on the Dashboard.
+    /// <summary>Retains every outcome in this run so the next request cannot hide an earlier failure.</summary>
+    private void RecordOperationOutcome(string outcome)
+    {
+        _operationOutcomes.Add(outcome);
+        Notice = string.Join("\n", _operationOutcomes);
+    }
+
+    /// <summary>Updates the captured game's batch and profile display, then the currently visible game.</summary>
+    private async Task RefreshAfterOperationAsync(GameInstallViewModel game)
+    {
         if (_queues.TryGetValue(game.Install.GamePath, out var changedQueue))
         {
             var installed = await Task.Run(() => _installs.InstallerFor(game.Install).Installed);
@@ -445,64 +640,85 @@ public partial class ModsViewModel : ViewModelBase
         }
         await RefreshAsync();
         ReloadDetails(SelectedMod);
-        if (CurrentQueue() is { } queue)
-        {
-            QueueCount = queue.Count;
-            foreach (var item in Results)
-            {
-                item.IsQueued = queue.Contains(item.Reference);
-            }
-        }
+        QueueCount = CurrentQueue()?.Count ?? 0;
         _ = game.CheckAsync();
     }
 
-    /// <summary>
-    /// Resolves and immediately applies a valid change to the game selected at the initial click.
-    /// Keeps change commands disabled until application and the displayed state have refreshed.
-    /// </summary>
-    private async Task PlanAndApplyAsync(Func<GameInstall, Task<ModChangePlan>> plan)
+    private ModOperation? FindOperation(GameInstallViewModel game, string reference)
     {
-        if (SelectedGame is not { } game || IsBusy || IsGameRunning)
+        lock (_operationLock)
         {
-            return;
+            return _operations.FirstOrDefault(operation => operation.Game.Install.GamePath == game.Install.GamePath
+                && operation.References.Contains(reference, StringComparer.OrdinalIgnoreCase));
         }
+    }
 
-        IsBusy = true;
-        Notice = null;
-        ProgressText = "Working out what needs to change…";
-        try
+    private bool IsActiveOperationFor(GameInstallViewModel game, string reference)
+    {
+        lock (_operationLock)
         {
-            ModChangePlan result;
-            try
-            {
-                result = await plan(game.Install);
-            }
-            catch (Exception e)
-            {
-                _log.LogError(e, "Planning a change in {Game} failed", game.Install.GamePath);
-                Notice = $"Couldn't work out the change: {e.Message}";
-                return;
-            }
+            return _activeOperation is { } active && active.Game.Install.GamePath == game.Install.GamePath
+                && active.References.Contains(reference, StringComparer.OrdinalIgnoreCase);
+        }
+    }
 
-            if (!result.Succeeded)
-            {
-                Notice = string.Join("\n", result.Problems);
-            }
-            else if (result.ChangesNothing)
-            {
-                Notice = "Already installed; nothing to change.";
-            }
-            else
-            {
-                ProgressText = "Applying changes…";
-                await ApplyAsync(game, result);
-            }
-        }
-        finally
+    /// <summary>Reapplies operation state after queue changes and to replacement search results.</summary>
+    private void ApplyOperationState(ModItemViewModel item)
+    {
+        lock (_operationLock)
         {
-            ProgressText = null;
-            IsBusy = false;
+            var operations = _operations.ToArray();
+            var operation = SelectedGame is { } game ? FindOperation(game, item.Reference) : null;
+            item.IsOperationQueueBusy = operations.Length > 0;
+            item.PendingUninstall = operation is null ? null : operation.Kind == ModOperationKind.Uninstall;
+            item.OperationPosition = operation is null ? 0 : Array.IndexOf(operations, operation) + 1;
+            item.IsOperationRunning = operation is not null && ReferenceEquals(operation, _activeOperation);
         }
+    }
+
+    private void UpdateOperationState()
+    {
+        lock (_operationLock)
+        {
+            PendingOperationCount = _operations.Count - (_activeOperation is null ? 0 : 1);
+        }
+        lock (_resultsLock)
+        {
+            foreach (var item in Results)
+            {
+                ApplyOperationState(item);
+            }
+            if (SelectedMod is { } open)
+            {
+                ApplyOperationState(open);
+            }
+        }
+        InstallCommand.NotifyCanExecuteChanged();
+        UninstallCommand.NotifyCanExecuteChanged();
+        QuickChangeCommand.NotifyCanExecuteChanged();
+        InstallQueuedCommand.NotifyCanExecuteChanged();
+        OnPropertyChanged(nameof(InstallQueuedButtonText));
+    }
+
+    partial void OnIsGameRunningChanged(bool value)
+    {
+        UpdateOperationState();
+        if (!value)
+        {
+            StartOperations();
+        }
+    }
+
+    private enum ModOperationKind
+    {
+        Install,
+        Uninstall
+    }
+
+    /// <summary>Immutable request data and a completion signal shared by duplicate submissions.</summary>
+    private sealed record ModOperation(GameInstallViewModel Game, ModOperationKind Kind, IReadOnlyList<string> References, string? Version)
+    {
+        public TaskCompletionSource Completion { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
     }
 
     private void ScheduleSearch(TimeSpan delay)
@@ -686,6 +902,7 @@ public partial class ModsViewModel : ViewModelBase
     {
         item.InstalledVersion = _installed.GetValueOrDefault(item.Reference)?.Version;
         item.IsDependencyOnly = item.IsInstalled && !_requested.Contains(item.Reference);
+        ApplyOperationState(item);
     }
 
     /// <summary>Fills in a mod's page: versions and changelogs, dependencies and gallery. Never throws.</summary>

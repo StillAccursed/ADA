@@ -70,7 +70,7 @@ public partial class ModItemViewModel(CatalogMod mod, Action<ModItemViewModel, b
     /// <summary>The version installed in the selected game, or null.</summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsInstalled), nameof(InstalledText), nameof(CanBeRequested), nameof(CanInstallHere))]
-    [NotifyPropertyChangedFor(nameof(QuickActionText))]
+    [NotifyPropertyChangedFor(nameof(QuickActionText), nameof(IsUninstallAction), nameof(ShowUninstall))]
     public partial string? InstalledVersion { get; set; }
 
     /// <summary>Installed only because another mod needs it.</summary>
@@ -80,14 +80,56 @@ public partial class ModItemViewModel(CatalogMod mod, Action<ModItemViewModel, b
 
     public bool IsInstalled => InstalledVersion is not null;
 
-    /// <summary>The list shortcut removes installed mods or installs the latest compatible version.</summary>
-    public string QuickActionText => IsInstalled ? "Uninstall" : "Install";
+    /// <summary>True for a captured removal request, otherwise follows the current installed state.</summary>
+    public bool IsUninstallAction => PendingUninstall ?? IsInstalled;
+
+    /// <summary>The request captured for this mod in the displayed game; null when none is pending.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(QuickActionText), nameof(InstallText), nameof(UninstallText), nameof(IsUninstallAction), nameof(CanInstallHere), nameof(ShowUninstall))]
+    public partial bool? PendingUninstall { get; internal set; }
+
+    /// <summary>One-based position in the execution order; zero when this mod has no submitted request.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(QuickActionText), nameof(InstallText), nameof(UninstallText))]
+    public partial int OperationPosition { get; internal set; }
+
+    /// <summary>This mod's captured operation is currently being resolved, applied or refreshed.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(QuickActionText), nameof(InstallText), nameof(UninstallText))]
+    public partial bool IsOperationRunning { get; internal set; }
+
+    /// <summary>New operations join existing work rather than starting immediately.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(QuickActionText), nameof(InstallText), nameof(UninstallText))]
+    public partial bool IsOperationQueueBusy { get; internal set; }
+
+    /// <summary>The quick action, or the captured request's running state and queue position.</summary>
+    public string QuickActionText => OperationText ?? (IsOperationQueueBusy ? QueueActionText : ActionText);
+
+    private string ActionText => IsUninstallAction ? "Uninstall" : "Install";
+
+    private string QueueActionText => IsUninstallAction ? "Queue uninstall" : "Queue install";
+
+    /// <summary>The details-page removal action, including its submitted request's status.</summary>
+    public string UninstallText => PendingUninstall is true ? OperationText! : IsOperationQueueBusy ? "Queue uninstall" : "Uninstall";
+
+    private string? OperationText => PendingUninstall switch
+    {
+        null => null,
+        true when IsOperationRunning => "Uninstalling…",
+        false when IsOperationRunning => "Installing…",
+        true => $"Uninstall queued · #{OperationPosition}",
+        false => $"Install queued · #{OperationPosition}",
+    };
 
     /// <summary>Install is offered: not installed, or only there as a dependency (installing keeps it).</summary>
     public bool CanBeRequested => !IsInstalled || IsDependencyOnly;
 
-    /// <summary>Install is offered on the mod page: as on the list, or to switch to a picked version.</summary>
-    public bool CanInstallHere => CanBeRequested || CanSwitchVersion;
+    /// <summary>Offers installation or version switching, and keeps a captured install visible until it completes.</summary>
+    public bool CanInstallHere => CanBeRequested || CanSwitchVersion || PendingUninstall is false;
+
+    /// <summary>Keeps a captured removal visible even if an earlier request already removed this mod.</summary>
+    public bool ShowUninstall => IsInstalled || PendingUninstall is true;
 
     public string? InstalledText => InstalledVersion switch
     {
@@ -136,8 +178,11 @@ public partial class ModItemViewModel(CatalogMod mod, Action<ModItemViewModel, b
 
     public string? SelectedVersion => SelectedVersionChoice?.Value;
 
-    /// <summary>The main button: install, install a picked version, or switch the installed one to it.</summary>
-    public string InstallText => (InstalledVersion, SelectedVersion) switch
+    /// <summary>The details-page install/version action, including its submitted request's status.</summary>
+    public string InstallText => PendingUninstall is false ? OperationText!
+        : IsOperationQueueBusy ? $"Queue {char.ToLowerInvariant(BaseInstallText[0])}{BaseInstallText[1..]}" : BaseInstallText;
+
+    private string BaseInstallText => (InstalledVersion, SelectedVersion) switch
     {
         (null, null) => "Install",
         (null, var v) => $"Install {v}",
