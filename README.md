@@ -72,6 +72,9 @@ Overlord is built on these open-source projects. Thank you to their authors and 
 | [Avalonia](https://avaloniaui.net/) | Cross-platform UI | MIT |
 | [Inter](https://rsms.me/inter/) (via Avalonia.Fonts.Inter) | UI typeface | SIL Open Font License 1.1 |
 | [CommunityToolkit.Mvvm](https://github.com/CommunityToolkit/dotnet) | View models and commands | MIT |
+| [Markdown.Avalonia](https://github.com/whistyun/Markdown.Avalonia) (Tight, Html, SyntaxHigh, ColorDocument and ColorTextBlock) | Native formatted mod descriptions | MIT |
+| [AvaloniaEdit](https://github.com/AvaloniaUI/AvaloniaEdit) | Renderer dependency | MIT |
+| [HtmlAgilityPack](https://github.com/zzzprojects/html-agility-pack) | Renderer HTML parsing | MIT |
 | [Microsoft.Extensions.DependencyInjection, Http, Logging](https://github.com/dotnet/runtime) | Service wiring, HTTP clients | MIT |
 | [Microsoft.Data.Sqlite](https://github.com/dotnet/efcore) | Local mod catalogue | MIT |
 | [SQLite](https://sqlite.org/) (via SQLitePCLRaw) | Database engine and full-text search | Public domain (SQLitePCLRaw: Apache-2.0) |
@@ -89,3 +92,7 @@ Mod data and downloads come from [ficsit.app](https://ficsit.app), the Satisfact
 Overlord's own source code is released under the [MIT licence](LICENSE) and will stay that way.
 
 The third-party packages, fonts and services listed above are **not** covered by Overlord's licence. Each remains under its own licence and terms, linked above, and anyone redistributing Overlord must follow those as well. All of them allow use in an MIT-licensed project.
+
+The mod description renderer uses the community MIT-licensed `Markdown.Avalonia.Html` package,
+not Avalonia's commercial `Avalonia.Controls.Markdown`. It does not require Avalonia Pro.
+Its dependency notices are in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md), copied into build and publish output.

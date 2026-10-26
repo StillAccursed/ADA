@@ -3,28 +3,8 @@
              xmlns:vm="using:Overlord.ViewModels"
              x:Class="Overlord.Views.PlanPanel"
              x:DataType="vm:ModsViewModel">
-    <!-- Every change is shown before it is made; then its progress and outcome. -->
+    <!-- Progress and outcomes for changes started from the Mods page. -->
     <StackPanel Spacing="10">
-        <Border Padding="16,12" CornerRadius="8" BorderThickness="1" IsVisible="{Binding HasPendingPlan}"
-                Background="{DynamicResource SurfaceRaisedBrush}"
-                BorderBrush="{DynamicResource AccentBrush}">
-            <StackPanel Spacing="8">
-                <TextBlock Text="{Binding PlanTitle}" FontWeight="SemiBold" TextWrapping="Wrap"
-                           Foreground="{DynamicResource TextPrimaryBrush}" />
-                <ItemsControl ItemsSource="{Binding PlanLines}">
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate x:DataType="x:String">
-                            <TextBlock Text="{Binding}" TextWrapping="Wrap" Margin="0,1"
-                                       Foreground="{DynamicResource TextSecondaryBrush}" />
-                        </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
-                <StackPanel Orientation="Horizontal" Spacing="8">
-                    <Button Content="Confirm" Classes="accent" Command="{Binding ConfirmCommand}" />
-                    <Button Content="Cancel" Command="{Binding CancelCommand}" />
-                </StackPanel>
-            </StackPanel>
-        </Border>
         <TextBlock Text="{Binding GameRunningText}" TextWrapping="Wrap" IsVisible="{Binding IsGameRunning}"
                    Foreground="{DynamicResource WarningBrush}" />
         <TextBlock Text="{Binding ProgressText}" TextWrapping="Wrap"

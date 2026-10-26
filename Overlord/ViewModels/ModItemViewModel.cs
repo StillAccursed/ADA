@@ -53,21 +53,24 @@ public partial class ModItemViewModel(CatalogMod mod, Action<ModItemViewModel, b
 
     public bool HasTags => Mod.Tags.Count > 0;
 
-    // Built on first selection: descriptions can be long, and most listed mods are never opened.
-    public string Description => _description ??= ModDescription.Readable(Mod.FullDescription) is { Length: > 0 } text
+    /// <summary>
+    /// Markdown and structural HTML for the Overview, prepared on first use without author CSS or
+    /// images. Falls back to the short description when the full description contains no content.
+    /// </summary>
+    public string Description => _description ??= ModDescription.Formatted(Mod.FullDescription) is { Length: > 0 } text
         ? text
         : Mod.ShortDescription;
 
-    public string? CompatibilityText => Mod.CompatibilityRelease switch
-    {
-        CompatibilityState.Damaged => "Reported partly broken on the current game version",
-        CompatibilityState.Broken => "Reported broken on the current game version",
-        _ => null,
-    };
+    /// <summary>Ficsit's current EA report for Stable, independent of the selected mod version and local game.</summary>
+    public BranchCompatibilityViewModel StableCompatibility { get; } = new(mod.CompatibilityRelease);
+
+    /// <summary>Ficsit's current EXP report, independent of the selected mod version and local game.</summary>
+    public BranchCompatibilityViewModel ExperimentalCompatibility { get; } = new(mod.CompatibilityExperimental);
 
     /// <summary>The version installed in the selected game, or null.</summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsInstalled), nameof(InstalledText), nameof(CanBeRequested), nameof(CanInstallHere))]
+    [NotifyPropertyChangedFor(nameof(QuickActionText))]
     public partial string? InstalledVersion { get; set; }
 
     /// <summary>Installed only because another mod needs it.</summary>
@@ -76,6 +79,9 @@ public partial class ModItemViewModel(CatalogMod mod, Action<ModItemViewModel, b
     public partial bool IsDependencyOnly { get; set; }
 
     public bool IsInstalled => InstalledVersion is not null;
+
+    /// <summary>The list shortcut removes installed mods or installs the latest compatible version.</summary>
+    public string QuickActionText => IsInstalled ? "Uninstall" : "Install";
 
     /// <summary>Install is offered: not installed, or only there as a dependency (installing keeps it).</summary>
     public bool CanBeRequested => !IsInstalled || IsDependencyOnly;
@@ -157,22 +163,6 @@ public partial class ModItemViewModel(CatalogMod mod, Action<ModItemViewModel, b
 
     [ObservableProperty]
     public partial string? SizeText { get; set; }
-
-    /// <summary>The selected game against the mod's versions, in a sentence or two.</summary>
-    [ObservableProperty]
-    public partial string? GameCompatibilityText { get; set; }
-
-    public string ReleaseReportText => $"Players on the release branch: {Describe(Mod.CompatibilityRelease)}";
-
-    public string ExperimentalReportText => $"Players on the experimental branch: {Describe(Mod.CompatibilityExperimental)}";
-
-    private static string Describe(CompatibilityState state) => state switch
-    {
-        CompatibilityState.Works => "works",
-        CompatibilityState.Damaged => "partly broken",
-        CompatibilityState.Broken => "broken",
-        _ => "no reports",
-    };
 
     /// <summary>The newest version for the selected game, once looked up.</summary>
     [ObservableProperty]

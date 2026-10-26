@@ -1,5 +1,6 @@
 using Avalonia.Controls;
 using Avalonia.Interactivity;
+using CommunityToolkit.Mvvm.Input;
 using Overlord.ViewModels;
 
 namespace Overlord.Views;
@@ -9,6 +10,9 @@ public partial class ModsView : UserControl
     public ModsView()
     {
         InitializeComponent();
+        // Descriptions remain selectable without introducing author-supplied navigation or
+        // shell actions. The dedicated ficsit.app button below remains the external link.
+        DescriptionViewer.Plugins.HyperlinkCommand = new RelayCommand(static () => { }, static () => false);
     }
 
     // Mods change from the Dashboard (repairs) and Profiles too, so re-read them each time the page opens.

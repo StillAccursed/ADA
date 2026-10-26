@@ -2,12 +2,14 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:Overlord.ViewModels"
              xmlns:views="using:Overlord.Views"
+             xmlns:md="clr-namespace:Markdown.Avalonia;assembly=Markdown.Avalonia"
+             xmlns:html="clr-namespace:Markdown.Avalonia.Html;assembly=Markdown.Avalonia.Html"
              x:Class="Overlord.Views.ModsView"
              x:DataType="vm:ModsViewModel">
     <UserControl.Resources>
         <!-- List: compact rows. -->
         <DataTemplate x:Key="ListRow" x:DataType="vm:ModItemViewModel">
-            <Grid ColumnDefinitions="32,*,Auto,Auto" ColumnSpacing="12" Margin="0,3">
+            <Grid ColumnDefinitions="32,*,Auto,Auto,Auto" ColumnSpacing="12" Margin="0,3">
                 <Border Width="32" Height="32" CornerRadius="4" ClipToBounds="True" Background="{DynamicResource SurfaceRaisedBrush}">
                     <Image Source="{Binding Logo}" Stretch="UniformToFill" />
                 </Border>
@@ -23,14 +25,18 @@
                     <TextBlock FontSize="12" Text="Queued" IsVisible="{Binding IsQueued}"
                                Foreground="{DynamicResource AccentBrush}" />
                 </StackPanel>
-                <Button Grid.Column="3" Classes="star" Content="{Binding FavouriteGlyph}" Command="{Binding ToggleFavouriteCommand}"
+                <Button Grid.Column="3" Classes="quickAction" Content="{Binding QuickActionText}"
+                        Classes.install="{Binding !IsInstalled}" Classes.uninstall="{Binding IsInstalled}"
+                        Command="{Binding $parent[views:ModsView].((vm:ModsViewModel)DataContext).QuickChangeCommand}"
+                        CommandParameter="{Binding}" VerticalAlignment="Center" />
+                <Button Grid.Column="4" Classes="star" Content="{Binding FavouriteGlyph}" Command="{Binding ToggleFavouriteCommand}"
                         ToolTip.Tip="Favourite" />
             </Grid>
         </DataTemplate>
 
         <!-- Grid: tiles led by the logo. -->
         <DataTemplate x:Key="GridTile" x:DataType="vm:ModItemViewModel">
-            <Grid Width="164" RowDefinitions="Auto,Auto,Auto" Margin="2">
+            <Grid Width="164" RowDefinitions="Auto,Auto,Auto,Auto" Margin="2">
                 <Panel>
                     <Border Height="132" CornerRadius="6" ClipToBounds="True" Background="{DynamicResource SurfaceRaisedBrush}">
                         <Image Source="{Binding Logo}" Stretch="UniformToFill" />
@@ -46,6 +52,10 @@
                     <TextBlock FontSize="12" Text="{Binding InstalledText}" IsVisible="{Binding IsInstalled}" TextTrimming="CharacterEllipsis"
                                Foreground="{DynamicResource SuccessBrush}" />
                 </Panel>
+                <Button Grid.Row="3" Classes="quickAction" Content="{Binding QuickActionText}" Margin="0,8,0,0"
+                        Classes.install="{Binding !IsInstalled}" Classes.uninstall="{Binding IsInstalled}"
+                        Command="{Binding $parent[views:ModsView].((vm:ModsViewModel)DataContext).QuickChangeCommand}"
+                        CommandParameter="{Binding}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
             </Grid>
         </DataTemplate>
 
@@ -74,14 +84,34 @@
                             <TextBlock FontSize="12" Text="Queued" IsVisible="{Binding IsQueued}" Foreground="{DynamicResource AccentBrush}" />
                         </WrapPanel>
                     </StackPanel>
-                    <Button Grid.Column="2" Classes="star" VerticalAlignment="Top" Content="{Binding FavouriteGlyph}"
-                            Command="{Binding ToggleFavouriteCommand}" ToolTip.Tip="Favourite" />
+                    <StackPanel Grid.Column="2" Spacing="8" VerticalAlignment="Top">
+                        <Button Classes="star" HorizontalAlignment="Right" Content="{Binding FavouriteGlyph}"
+                                Command="{Binding ToggleFavouriteCommand}" ToolTip.Tip="Favourite" />
+                        <Button Classes="quickAction" Content="{Binding QuickActionText}"
+                                Classes.install="{Binding !IsInstalled}" Classes.uninstall="{Binding IsInstalled}"
+                                Command="{Binding $parent[views:ModsView].((vm:ModsViewModel)DataContext).QuickChangeCommand}"
+                                CommandParameter="{Binding}" />
+                    </StackPanel>
                 </Grid>
             </Border>
         </DataTemplate>
     </UserControl.Resources>
 
     <UserControl.Styles>
+        <Style Selector="Button.quickAction">
+            <Setter Property="MinWidth" Value="80" />
+            <Setter Property="Padding" Value="10,5" />
+        </Style>
+        <Style Selector="Button.quickAction.install:not(:disabled) /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="#237548" />
+            <Setter Property="BorderBrush" Value="#237548" />
+            <Setter Property="Foreground" Value="White" />
+        </Style>
+        <Style Selector="Button.quickAction.uninstall:not(:disabled) /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="#B42318" />
+            <Setter Property="BorderBrush" Value="#B42318" />
+            <Setter Property="Foreground" Value="White" />
+        </Style>
         <Style Selector="Button.star">
             <Setter Property="Background" Value="Transparent" />
             <Setter Property="Padding" Value="6,2" />
@@ -119,6 +149,15 @@
         <Style Selector="TextBlock.label">
             <Setter Property="FontSize" Value="11" />
             <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
+        </Style>
+        <Style Selector="TextBlock.compatibilityIndicator">
+            <Setter Property="FontSize" Value="28" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="HorizontalAlignment" Value="Center" />
+            <Setter Property="Foreground" Value="{DynamicResource FailureBrush}" />
+        </Style>
+        <Style Selector="TextBlock.compatibilityIndicator.compatible">
+            <Setter Property="Foreground" Value="{DynamicResource SuccessBrush}" />
         </Style>
         <Style Selector="RadioButton.view">
             <Setter Property="Theme" Value="{StaticResource {x:Type ToggleButton}}" />
@@ -212,13 +251,17 @@
                     Background="Transparent" Padding="4,2" />
 
             <Grid ColumnDefinitions="*,300" ColumnSpacing="24">
-                <!-- Tabs: what the mod is, its pictures, its versions, and whether it fits this game. -->
+                <!-- Tabs: the description, pictures and release history. -->
                 <TabControl Padding="0,8,0,0">
                     <TabItem Header="Overview">
-                        <ScrollViewer>
-                            <SelectableTextBlock Text="{Binding SelectedMod.Description}" TextWrapping="Wrap" Margin="0,0,12,0"
-                                                 Foreground="{DynamicResource TextPrimaryBrush}" />
-                        </ScrollViewer>
+                        <md:MarkdownScrollViewer x:Name="DescriptionViewer" Markdown="{Binding SelectedMod.Description}"
+                                                 SelectionEnabled="True" Margin="0,0,12,0">
+                            <md:MarkdownScrollViewer.Plugins>
+                                <md:MdAvPlugins>
+                                    <html:HtmlPlugin />
+                                </md:MdAvPlugins>
+                            </md:MarkdownScrollViewer.Plugins>
+                        </md:MarkdownScrollViewer>
                     </TabItem>
                     <TabItem Header="{Binding SelectedMod.GalleryHeader}" IsVisible="{Binding SelectedMod.HasGallery}">
                         <ScrollViewer>
@@ -275,19 +318,6 @@
                             </ItemsControl>
                         </ScrollViewer>
                     </TabItem>
-                    <TabItem Header="Compatibility">
-                        <StackPanel Spacing="10" Margin="0,0,12,0">
-                            <TextBlock Text="{Binding SelectedMod.GameCompatibilityText}" TextWrapping="Wrap"
-                                       Foreground="{DynamicResource TextPrimaryBrush}" />
-                            <TextBlock Text="{Binding SelectedMod.ReleaseReportText}" TextWrapping="Wrap"
-                                       Foreground="{DynamicResource TextSecondaryBrush}" />
-                            <TextBlock Text="{Binding SelectedMod.ExperimentalReportText}" TextWrapping="Wrap"
-                                       Foreground="{DynamicResource TextSecondaryBrush}" />
-                            <TextBlock Text="{Binding SelectedMod.CompatibilityText}" TextWrapping="Wrap"
-                                       IsVisible="{Binding SelectedMod.CompatibilityText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
-                                       Foreground="{DynamicResource WarningBrush}" />
-                        </StackPanel>
-                    </TabItem>
                 </TabControl>
 
                 <!-- Side column: the mod, what to do with it, and its facts. -->
@@ -308,7 +338,7 @@
                                     Command="{Binding SelectedMod.ToggleFavouriteCommand}" ToolTip.Tip="Favourite" />
                         </Grid>
 
-                        <StackPanel Spacing="8" IsVisible="{Binding !HasPendingPlan}">
+                        <StackPanel Spacing="8">
                             <Button HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Classes="accent"
                                     Content="{Binding SelectedMod.InstallText}" Command="{Binding InstallCommand}"
                                     IsVisible="{Binding SelectedMod.CanInstallHere}" />
@@ -327,6 +357,27 @@
                             <ComboBox HorizontalAlignment="Stretch" ItemsSource="{Binding SelectedMod.VersionChoices}"
                                       SelectedItem="{Binding SelectedMod.SelectedVersionChoice}" />
                         </StackPanel>
+
+                        <Border Classes="box">
+                            <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto" ColumnSpacing="12" RowSpacing="12">
+                                <Border Grid.ColumnSpan="2" BorderThickness="0,0,0,1"
+                                        BorderBrush="{DynamicResource BorderSubtleBrush}" />
+                                <TextBlock Text="Stable" HorizontalAlignment="Center" Margin="0,0,0,10"
+                                           Foreground="{DynamicResource TextPrimaryBrush}" />
+                                <TextBlock Grid.Column="1" Text="Experimental" HorizontalAlignment="Center" Margin="0,0,0,10"
+                                           Foreground="{DynamicResource TextPrimaryBrush}" />
+                                <TextBlock Grid.Row="1" Classes="compatibilityIndicator"
+                                           Text="{Binding SelectedMod.StableCompatibility.Glyph}"
+                                           Classes.compatible="{Binding SelectedMod.StableCompatibility.IsCompatible}"
+                                           ToolTip.Tip="{Binding SelectedMod.StableCompatibility.Description}"
+                                           AutomationProperties.Name="{Binding SelectedMod.StableCompatibility.Description, StringFormat='Stable: {0}'}" />
+                                <TextBlock Grid.Row="1" Grid.Column="1" Classes="compatibilityIndicator"
+                                           Text="{Binding SelectedMod.ExperimentalCompatibility.Glyph}"
+                                           Classes.compatible="{Binding SelectedMod.ExperimentalCompatibility.IsCompatible}"
+                                           ToolTip.Tip="{Binding SelectedMod.ExperimentalCompatibility.Description}"
+                                           AutomationProperties.Name="{Binding SelectedMod.ExperimentalCompatibility.Description, StringFormat='Experimental: {0}'}" />
+                            </Grid>
+                        </Border>
 
                         <Border Classes="box">
                             <StackPanel>

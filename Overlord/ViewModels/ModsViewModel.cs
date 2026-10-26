@@ -18,7 +18,7 @@ namespace Overlord.ViewModels;
 /// <summary>
 /// The Mods page: search the local catalogue with filters, tags and sorting, shown as a list, grid
 /// or cards; see a mod's details; star it; and install, queue or uninstall it in one game. Every
-/// change is planned through the resolver and shown for confirmation first.
+/// change is planned through the resolver and applied immediately when valid.
 /// </summary>
 public partial class ModsViewModel : ViewModelBase
 {
@@ -129,6 +129,7 @@ public partial class ModsViewModel : ViewModelBase
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(InstallCommand), nameof(UninstallCommand), nameof(ToggleQueueCommand))]
+    [NotifyCanExecuteChangedFor(nameof(QuickChangeCommand))]
     public partial GameInstallViewModel? SelectedGame { get; set; }
 
     [ObservableProperty]
@@ -155,25 +156,13 @@ public partial class ModsViewModel : ViewModelBase
 
     /// <summary>Planning or applying a change; the buttons wait.</summary>
     [ObservableProperty]
-    [NotifyCanExecuteChangedFor(nameof(InstallCommand), nameof(UninstallCommand), nameof(ConfirmCommand), nameof(InstallQueuedCommand))]
+    [NotifyCanExecuteChangedFor(nameof(InstallCommand), nameof(UninstallCommand), nameof(InstallQueuedCommand))]
+    [NotifyCanExecuteChangedFor(nameof(QuickChangeCommand))]
     public partial bool IsBusy { get; set; }
 
-    /// <summary>A planned change waiting for the user to confirm.</summary>
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(HasPendingPlan))]
-    [NotifyCanExecuteChangedFor(nameof(InstallCommand), nameof(UninstallCommand), nameof(ConfirmCommand), nameof(InstallQueuedCommand))]
-    public partial ModChangePlan? PendingPlan { get; set; }
-
-    public bool HasPendingPlan => PendingPlan is not null;
-
-    [ObservableProperty]
-    public partial string PlanTitle { get; set; } = "";
-
-    [ObservableProperty]
-    public partial IReadOnlyList<string> PlanLines { get; set; } = [];
-
-    [ObservableProperty]
-    [NotifyCanExecuteChangedFor(nameof(InstallCommand), nameof(UninstallCommand), nameof(ConfirmCommand), nameof(InstallQueuedCommand))]
+    [NotifyCanExecuteChangedFor(nameof(InstallCommand), nameof(UninstallCommand), nameof(InstallQueuedCommand))]
+    [NotifyCanExecuteChangedFor(nameof(QuickChangeCommand))]
     [NotifyPropertyChangedFor(nameof(GameRunningText))]
     public partial bool IsGameRunning { get; set; }
 
@@ -188,17 +177,15 @@ public partial class ModsViewModel : ViewModelBase
     [ObservableProperty]
     public partial string? Notice { get; set; }
 
-    private bool CanPlan => SelectedGame is not null && SelectedMod is not null && !IsBusy && PendingPlan is null && !IsGameRunning;
+    private bool CanPlan => SelectedGame is not null && SelectedMod is not null && !IsBusy && !IsGameRunning;
 
     private bool CanInstall => CanPlan && SelectedMod is { CanInstallHere: true };
 
     private bool CanUninstall => CanPlan && SelectedMod is { IsInstalled: true };
 
-    private bool CanConfirm => PendingPlan is not null && !IsBusy && !IsGameRunning;
-
     private bool CanQueue => SelectedGame is not null && SelectedMod is { CanBeRequested: true };
 
-    private bool CanInstallQueued => HasQueue && SelectedGame is not null && !IsBusy && PendingPlan is null && !IsGameRunning;
+    private bool CanInstallQueued => HasQueue && SelectedGame is not null && !IsBusy && !IsGameRunning;
 
     /// <summary>Completes when the most recent change of layout, sort or filter is saved; for tests.</summary>
     internal Task PendingChoicesSave { get; private set; } = Task.CompletedTask;
@@ -317,12 +304,12 @@ public partial class ModsViewModel : ViewModelBase
             ScheduleSearch(TimeSpan.Zero);
     }
 
-    /// <summary>Plans installing everything queued in one go, shown for confirmation like a single install.</summary>
+    /// <summary>Resolves and installs the queued mods together in one transaction.</summary>
     [RelayCommand(CanExecute = nameof(CanInstallQueued))]
     private Task InstallQueuedAsync()
     {
         var queued = CurrentQueue()?.ToList() ?? [];
-        return PlanAsync(game => _resolution.PlanInstallAsync(game, queued), $"Install {QueueText}?");
+        return PlanAndApplyAsync(game => _resolution.PlanInstallAsync(game, queued));
     }
 
     private HashSet<string>? CurrentQueue()
@@ -336,7 +323,6 @@ public partial class ModsViewModel : ViewModelBase
 
     partial void OnSelectedGameChanged(GameInstallViewModel? value)
     {
-        PendingPlan = null;
         Notice = null;
         QueueCount = CurrentQueue()?.Count ?? 0;
         _ = RefreshAsync();
@@ -359,7 +345,6 @@ public partial class ModsViewModel : ViewModelBase
     {
         if (value is not null)
             value.PropertyChanged += OnSelectedModPropertyChanged;
-        PendingPlan = null;
         ReloadDetails(value);
     }
 
@@ -380,9 +365,8 @@ public partial class ModsViewModel : ViewModelBase
     {
         var mod = SelectedMod!;
         return mod.SelectedVersion is { } version
-            ? PlanAsync(game => _resolution.PlanInstallVersionAsync(game, mod.Reference, version),
-                mod.IsInstalled ? $"Switch {mod.Name} to {version}?" : $"Install {mod.Name} {version}?")
-            : PlanAsync(game => _resolution.PlanInstallAsync(game, mod.Reference), $"Install {mod.Name}?");
+            ? PlanAndApplyAsync(game => _resolution.PlanInstallVersionAsync(game, mod.Reference, version))
+            : PlanAndApplyAsync(game => _resolution.PlanInstallAsync(game, mod.Reference));
     }
 
     /// <summary>Back from a mod page to the list, where the user left it.</summary>
@@ -390,17 +374,43 @@ public partial class ModsViewModel : ViewModelBase
     private void Back() => SelectedMod = null;
 
     [RelayCommand(CanExecute = nameof(CanUninstall))]
-    private Task UninstallAsync() =>
-        PlanAsync(game => _resolution.PlanUninstallAsync(game, SelectedMod!.Reference), $"Uninstall {SelectedMod!.Name}?");
-
-    [RelayCommand(CanExecute = nameof(CanConfirm))]
-    private async Task ConfirmAsync()
+    private Task UninstallAsync()
     {
-        if (PendingPlan is not { } plan || SelectedGame is not { } game)
-            return;
+        var reference = SelectedMod!.Reference;
+        return PlanAndApplyAsync(game => _resolution.PlanUninstallAsync(game, reference));
+    }
 
-        IsBusy = true;
-        Notice = null;
+    /// <summary>
+    /// Installs or removes the clicked mod in the selected game without opening its details page.
+    /// Uses the existing resolution and apply flow, installing the latest compatible version.
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(CanQuickChange))]
+    private Task QuickChangeAsync(ModItemViewModel? mod)
+    {
+        if (!CanQuickChange(mod))
+        {
+            return Task.CompletedTask;
+        }
+
+        var reference = mod!.Reference;
+        var uninstall = mod.IsInstalled;
+
+        return PlanAndApplyAsync(game => uninstall
+            ? _resolution.PlanUninstallAsync(game, reference)
+            : _resolution.PlanInstallAsync(game, reference));
+    }
+
+    private bool CanQuickChange(ModItemViewModel? mod)
+    {
+        return mod is not null
+            && SelectedGame is not null
+            && !IsBusy
+            && !IsGameRunning;
+    }
+
+    /// <summary>Applies to the captured game, records its profile, and refreshes the currently displayed game.</summary>
+    private async Task ApplyAsync(GameInstallViewModel game, ModChangePlan plan)
+    {
         try
         {
             var progress = new Progress<ModInstallProgress>(p => ProgressText = PlanText.Progress(p));
@@ -421,58 +431,72 @@ public partial class ModsViewModel : ViewModelBase
         {
             // Offline, the game started, a failed install (already rolled back): shown, never thrown.
             if (e is not GameRunningException)
+            {
                 _log.LogError(e, "Changing mods in {Game} failed", game.Install.GamePath);
+            }
             Notice = e is GameRunningException ? e.Message : $"Nothing was changed: {e.Message}";
-        }
-        finally
-        {
-            PendingPlan = null;
-            ProgressText = null;
-            IsBusy = false;
         }
 
         // Installed mods leave the queue. Show the new state here, on the open mod page and on the Dashboard.
+        if (_queues.TryGetValue(game.Install.GamePath, out var changedQueue))
+        {
+            var installed = await Task.Run(() => _installs.InstallerFor(game.Install).Installed);
+            changedQueue.RemoveWhere(installed.ContainsKey);
+        }
         await RefreshAsync();
         ReloadDetails(SelectedMod);
         if (CurrentQueue() is { } queue)
         {
-            queue.RemoveWhere(_installed.ContainsKey);
             QueueCount = queue.Count;
             foreach (var item in Results)
+            {
                 item.IsQueued = queue.Contains(item.Reference);
+            }
         }
         _ = game.CheckAsync();
     }
 
-    [RelayCommand]
-    private void Cancel() => PendingPlan = null;
-
-    private async Task PlanAsync(Func<GameInstall, Task<ModChangePlan>> plan, string title)
+    /// <summary>
+    /// Resolves and immediately applies a valid change to the game selected at the initial click.
+    /// Keeps change commands disabled until application and the displayed state have refreshed.
+    /// </summary>
+    private async Task PlanAndApplyAsync(Func<GameInstall, Task<ModChangePlan>> plan)
     {
-        if (SelectedGame is not { } game)
+        if (SelectedGame is not { } game || IsBusy || IsGameRunning)
+        {
             return;
+        }
 
         IsBusy = true;
         Notice = null;
         ProgressText = "Working out what needs to change…";
         try
         {
-            var result = await plan(game.Install);
+            ModChangePlan result;
+            try
+            {
+                result = await plan(game.Install);
+            }
+            catch (Exception e)
+            {
+                _log.LogError(e, "Planning a change in {Game} failed", game.Install.GamePath);
+                Notice = $"Couldn't work out the change: {e.Message}";
+                return;
+            }
+
             if (!result.Succeeded)
+            {
                 Notice = string.Join("\n", result.Problems);
+            }
             else if (result.ChangesNothing)
+            {
                 Notice = "Already installed; nothing to change.";
+            }
             else
             {
-                PlanTitle = title;
-                PlanLines = PlanText.Lines(result);
-                PendingPlan = result;
+                ProgressText = "Applying changes…";
+                await ApplyAsync(game, result);
             }
-        }
-        catch (Exception e)
-        {
-            _log.LogError(e, "Planning a change in {Game} failed", game.Install.GamePath);
-            Notice = $"Couldn't work out the change: {e.Message}";
         }
         finally
         {
@@ -664,7 +688,7 @@ public partial class ModsViewModel : ViewModelBase
         item.IsDependencyOnly = item.IsInstalled && !_requested.Contains(item.Reference);
     }
 
-    /// <summary>Fills in a mod's page: versions and changelogs, dependencies, gallery, compatibility. Never throws.</summary>
+    /// <summary>Fills in a mod's page: versions and changelogs, dependencies and gallery. Never throws.</summary>
     private async Task LoadDetailsAsync(ModItemViewModel item, CancellationToken ct)
     {
         var logo = _logos.GetAsync(item.Mod.LogoUrl);
@@ -717,15 +741,11 @@ public partial class ModsViewModel : ViewModelBase
         if (game?.Build is not { } gameBuild)
         {
             item.LatestText = null;
-            item.GameCompatibilityText = "This game's build is unknown, so Overlord can't tell which versions work with it.";
             return;
         }
         item.LatestText = latest is null
             ? $"No version supports game build {gameBuild.Changelist} yet."
             : $"Latest for this game: {latest.Version}{(latest.Stability == VersionStability.Release ? "" : $" ({latest.Stability})")}";
-        item.GameCompatibilityText = compatible.Count == 0
-            ? $"None of its {versions.Count} versions supports your game ({gameBuild.GameVersion ?? "build"} · CL {gameBuild.Changelist})."
-            : $"{compatible.Count} of its {versions.Count} versions work with your game ({gameBuild.GameVersion ?? "build"} · CL {gameBuild.Changelist}). The newest is {latest!.Version}.";
     }
 
     private async Task<IReadOnlyList<DependencyRowViewModel>> DependencyRowsAsync(ModItemViewModel item, IReadOnlyList<CatalogVersion> versions,
