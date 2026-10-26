@@ -1,5 +1,6 @@
 <p align="center">
-  <img src="ADA/Assets/ada-logo-white.png" alt="ADA — Automated Deployment Assistant" width="560">
+  <img src="ADA/Assets/ada-logo-light.png#gh-light-mode-only" alt="ADA — Automated Deployment Assistant" width="560">
+  <img src="ADA/Assets/ada-logo-dark.png#gh-dark-mode-only" alt="ADA — Automated Deployment Assistant" width="560">
 </p>
 
 [![CI](https://github.com/StillAccursed/ADA/actions/workflows/ci.yml/badge.svg)](https://github.com/StillAccursed/ADA/actions/workflows/ci.yml)
