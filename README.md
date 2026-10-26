@@ -1,10 +1,10 @@
-# Overlord
+# ADA
 
-[![CI](https://github.com/StillAccursed/Overlord/actions/workflows/ci.yml/badge.svg)](https://github.com/StillAccursed/Overlord/actions/workflows/ci.yml)
+[![CI](https://github.com/StillAccursed/ADA/actions/workflows/ci.yml/badge.svg)](https://github.com/StillAccursed/ADA/actions/workflows/ci.yml)
 
 A cross-platform mod manager for [Satisfactory](https://www.satisfactorygame.com/), built with .NET 10 and Avalonia.
 
-Overlord's core promise: **a mod install either completes fully or leaves your game exactly as it was.** No half-installed mods, even if the app crashes mid-install.
+ADA's core promise: **a mod install either completes fully or leaves your game exactly as it was.** No half-installed mods, even if the app crashes mid-install.
 
 > Status: early development. Game detection, the mod catalogue, verified downloads, the crash-safe install engine (install, update, uninstall, recovery, repair) and profile files work. The Mods and Profiles pages, and dependency resolution, are next.
 
@@ -16,16 +16,16 @@ Overlord's core promise: **a mod install either completes fully or leaves your g
 | Linux | Steam (native, Flatpak, Snap; Proton) and Epic via Heroic / Legendary |
 | macOS | Steam or Epic running inside a CrossOver bottle |
 
-Overlord only manages installs recorded by Steam or the Epic Games Launcher. There is no option to point it at a custom folder.
+ADA only manages installs recorded by Steam or the Epic Games Launcher. There is no option to point it at a custom folder.
 
 ## Building
 
 Requires the [.NET 10 SDK](https://dotnet.microsoft.com/download).
 
 ```bash
-dotnet build Overlord.sln
-dotnet test Overlord.sln
-dotnet run --project Overlord
+dotnet build ADA.sln
+dotnet test ADA.sln
+dotnet run --project ADA
 ```
 
 Package versions are set in one place, `Directory.Packages.props`; shared build settings are in `Directory.Build.props`.
@@ -34,19 +34,19 @@ Package versions are set in one place, `Directory.Packages.props`; shared build 
 
 | Project | Purpose |
 | --- | --- |
-| `Overlord` | Avalonia desktop app: views, view models, themes, and the composition root (`Services.cs`) |
-| `Overlord.Core` | Domain model and logic, no OS or file-format specifics |
-| `Overlord.Platform` | Game detection, launcher and Wine file formats, game processes, app data folders |
-| `Overlord.Infrastructure` | ficsit.app API client, SQLite catalogue and search, verified downloads, install engine, settings, profiles |
-| `Overlord.Tests` | xUnit tests with on-disk fixture installs |
+| `ADA` | Avalonia desktop app: views, view models, themes, and the composition root (`Services.cs`) |
+| `ADA.Core` | Domain model and logic, no OS or file-format specifics |
+| `ADA.Platform` | Game detection, launcher and Wine file formats, game processes, app data folders |
+| `ADA.Infrastructure` | ficsit.app API client, SQLite catalogue and search, verified downloads, install engine, settings, profiles |
+| `ADA.Tests` | xUnit tests with on-disk fixture installs |
 
-## Where Overlord keeps its data
+## Where ADA keeps its data
 
 | OS | Folder |
 | --- | --- |
-| Windows | `%LOCALAPPDATA%\Overlord` |
-| Linux | `~/.overlord` |
-| macOS | `~/Library/Application Support/Overlord` |
+| Windows | `%LOCALAPPDATA%\ADA` |
+| Linux | `~/.ada` |
+| macOS | `~/Library/Application Support/ADA` |
 
 Inside it: `Databases/` (mod catalogue), `Config/` (settings), `Staging/Archives/` (downloaded mods) and `Logs/` (one file per day, the last week kept). Please attach the latest log when reporting a bug.
 
@@ -61,11 +61,11 @@ Each release lists SHA-256 checksums so you can verify the download.
 
 ## Clean-room note
 
-Overlord is written from public API documentation and observed file formats. It does not copy or port code from Satisfactory Mod Manager.
+ADA is written from public API documentation and observed file formats. It does not copy or port code from Satisfactory Mod Manager.
 
 ## Credits
 
-Overlord is built on these open-source projects. Thank you to their authors and contributors.
+ADA is built on these open-source projects. Thank you to their authors and contributors.
 
 | Project | Used for | Licence |
 | --- | --- | --- |
@@ -85,13 +85,13 @@ Overlord is built on these open-source projects. Thank you to their authors and 
 | [Semver](https://github.com/WalkerCodeRanger/semver) | Version parsing | MIT |
 | [xUnit](https://xunit.net/) | Tests (not shipped) | Apache-2.0 |
 
-Mod data and downloads come from [ficsit.app](https://ficsit.app), the Satisfactory modding community's repository, and are subject to its terms. Satisfactory is a trademark of Coffee Stain Studios; Overlord is a community project and is not affiliated with or endorsed by Coffee Stain Studios.
+Mod data and downloads come from [ficsit.app](https://ficsit.app), the Satisfactory modding community's repository, and are subject to its terms. Satisfactory is a trademark of Coffee Stain Studios; ADA is a community project and is not affiliated with or endorsed by Coffee Stain Studios.
 
 ## Licence
 
-Overlord's own source code is released under the [MIT licence](LICENSE) and will stay that way.
+ADA's own source code is released under the [MIT licence](LICENSE) and will stay that way.
 
-The third-party packages, fonts and services listed above are **not** covered by Overlord's licence. Each remains under its own licence and terms, linked above, and anyone redistributing Overlord must follow those as well. All of them allow use in an MIT-licensed project.
+The third-party packages, fonts and services listed above are **not** covered by ADA's licence. Each remains under its own licence and terms, linked above, and anyone redistributing ADA must follow those as well. All of them allow use in an MIT-licensed project.
 
 The mod description renderer uses the community MIT-licensed `Markdown.Avalonia.Html` package,
 not Avalonia's commercial `Avalonia.Controls.Markdown`. It does not require Avalonia Pro.

@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>ADA.Core</RootNamespace>
+    <AssemblyName>ADA.Core</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Semver" />
+  </ItemGroup>
+
+</Project>

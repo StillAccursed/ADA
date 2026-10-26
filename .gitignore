@@ -6,12 +6,12 @@ riderModule.iml
 
 .claude/
 Docs/.proposals
-Overlord/Docs/.proposals
-Overlord/.claude
-Overlord/Docs/.refs
+ADA/Docs/.proposals
+ADA/.claude
+ADA/Docs/.refs
 
-Overlord/bin
-Overlord/obj
+ADA/bin
+ADA/obj
 # IDE and test output
 .idea/
 *.user

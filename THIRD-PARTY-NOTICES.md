@@ -2,7 +2,7 @@
 
 These notices cover the packages added for formatted mod descriptions. Other project
 dependencies and their licences are listed in [README.md](README.md#credits).
-Overlord's own source remains licensed under MIT.
+ADA's own source remains licensed under MIT.
 
 ## Markdown.Avalonia
 

@@ -1,0 +1,165 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
+using ADA.Core.Profiles;
+using ADA.Infrastructure.IO;
+
+namespace ADA.Infrastructure.Profiles;
+
+/// <summary>
+/// The user's profiles, one <c>.olp</c> file each in <c>Config/Profiles/</c>, and which profile each
+/// game is using (<c>Config/profiles.json</c>, keyed by the game's folder).
+/// </summary>
+public sealed partial class ProfileStore(string profilesFolder, string stateFile)
+{
+    public const string DefaultName = "Default";
+
+    private readonly Lock _gate = new();
+
+    public string Folder { get; } = profilesFolder;
+
+    /// <summary>Every readable profile, by name. A damaged file is skipped rather than stopping the app.</summary>
+    public IReadOnlyList<ModProfile> List()
+    {
+        lock (_gate)
+            return Files().Select(f => f.Profile).OrderBy(p => p.Name, StringComparer.CurrentCultureIgnoreCase).ToList();
+    }
+
+    public ModProfile? Get(string name)
+    {
+        lock (_gate)
+            return Find(name)?.Profile;
+    }
+
+    /// <summary>Creates or replaces the profile with this name (names match ignoring case).</summary>
+    /// <exception cref="InvalidProfileException">The name or a mod is invalid.</exception>
+    public void Save(ModProfile profile)
+    {
+        lock (_gate)
+        {
+            Directory.CreateDirectory(Folder);
+            OlpFile.Write(Find(profile.Name)?.Path ?? NewPath(profile.Name), profile);
+        }
+    }
+
+    /// <returns>Why the name can't be used for a new profile, or null if it can.</returns>
+    public string? ProblemWithNewName(string? name)
+    {
+        var trimmed = name?.Trim();
+        if (string.IsNullOrEmpty(trimmed))
+            return "Give the profile a name.";
+        if (trimmed.Length > OlpFile.MaxNameLength)
+            return $"Profile names are at most {OlpFile.MaxNameLength} characters.";
+        return Get(trimmed) is null ? null : $"There's already a profile called \"{trimmed}\".";
+    }
+
+    /// <summary>The profile the game uses; <see cref="DefaultName"/> until another is chosen.</summary>
+    public string ActiveName(string gamePath)
+    {
+        lock (_gate)
+            return LoadState().Active.GetValueOrDefault(gamePath) ?? DefaultName;
+    }
+
+    public void SetActive(string gamePath, string name)
+    {
+        lock (_gate)
+        {
+            var state = LoadState();
+            state.Active[gamePath] = name;
+            SaveState(state);
+        }
+    }
+
+    /// <summary>Mod folders the user chose to leave alone in this game, so they aren't asked about again.</summary>
+    public IReadOnlySet<string> LeftAlone(string gamePath)
+    {
+        lock (_gate)
+            return (LoadState().LeftAlone.GetValueOrDefault(gamePath) ?? []).ToHashSet(StringComparer.OrdinalIgnoreCase);
+    }
+
+    public void LeaveAlone(string gamePath, IEnumerable<string> locations)
+    {
+        lock (_gate)
+        {
+            var state = LoadState();
+            state.LeftAlone[gamePath] = [.. (state.LeftAlone.GetValueOrDefault(gamePath) ?? []).Union(locations, StringComparer.OrdinalIgnoreCase)];
+            SaveState(state);
+        }
+    }
+
+    private IEnumerable<(string Path, ModProfile Profile)> Files()
+    {
+        if (!Directory.Exists(Folder))
+            yield break;
+        foreach (var path in Directory.EnumerateFiles(Folder, "*" + OlpFile.Extension))
+        {
+            ModProfile profile;
+            try
+            {
+                profile = OlpFile.Read(path);
+            }
+            catch (Exception e) when (e is InvalidProfileException or IOException or UnauthorizedAccessException)
+            {
+                continue;
+            }
+            yield return (path, profile);
+        }
+    }
+
+    private (string Path, ModProfile Profile)? Find(string name)
+    {
+        foreach (var file in Files())
+        {
+            if (string.Equals(file.Profile.Name, name.Trim(), StringComparison.OrdinalIgnoreCase))
+                return file;
+        }
+        return null;
+    }
+
+    // Any name the user types becomes a safe, unique file name; the real name is inside the file.
+    private string NewPath(string name)
+    {
+        var stem = UnsafeFileNameChars().Replace(name.Trim(), "_");
+        if (ReservedOnWindows().IsMatch(stem))
+            stem = "_" + stem;
+        var path = Path.Combine(Folder, stem + OlpFile.Extension);
+        for (var n = 2; File.Exists(path); n++)
+            path = Path.Combine(Folder, $"{stem} ({n}){OlpFile.Extension}");
+        return path;
+    }
+
+    private ProfileState LoadState()
+    {
+        try
+        {
+            if (File.Exists(stateFile))
+            {
+                using var stream = File.OpenRead(stateFile);
+                if (JsonSerializer.Deserialize(stream, ProfileJsonContext.Default.ProfileState) is { } state)
+                    return state with { Active = new(state.Active, StringComparer.Ordinal), LeftAlone = new(state.LeftAlone, StringComparer.Ordinal) };
+            }
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or JsonException)
+        {
+            // Like settings: a damaged file falls back to defaults and is replaced on the next save.
+        }
+        return new ProfileState(new(StringComparer.Ordinal), new(StringComparer.Ordinal));
+    }
+
+    private void SaveState(ProfileState state) =>
+        AtomicFile.Write(stateFile, stream => JsonSerializer.Serialize(stream, state, ProfileJsonContext.Default.ProfileState));
+
+    [GeneratedRegex(@"^(?:CON|PRN|AUX|NUL|COM\d|LPT\d)(?:\..*)?$", RegexOptions.IgnoreCase)]
+    private static partial Regex ReservedOnWindows();
+
+    [GeneratedRegex(@"[^\p{L}\p{N} ._-]|^\.+")]
+    private static partial Regex UnsafeFileNameChars();
+}
+
+/// <param name="Active">Game folder → profile name.</param>
+/// <param name="LeftAlone">Game folder → mod folders (relative to <c>FactoryGame</c>) not to ask about again.</param>
+internal sealed record ProfileState(Dictionary<string, string> Active, Dictionary<string, List<string>> LeftAlone);
+
+[JsonSourceGenerationOptions(JsonSerializerDefaults.Web, WriteIndented = true)]
+[JsonSerializable(typeof(ProfileState))]
+internal sealed partial class ProfileJsonContext : JsonSerializerContext;

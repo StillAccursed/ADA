@@ -1,0 +1,68 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:ADA.ViewModels"
+             x:Class="ADA.Views.SettingsView"
+             x:DataType="vm:SettingsViewModel">
+    <ScrollViewer>
+        <StackPanel Margin="32,28" Spacing="20" MaxWidth="760" HorizontalAlignment="Left">
+            <TextBlock Text="Settings" FontSize="24" FontWeight="SemiBold"
+                       Foreground="{DynamicResource TextPrimaryBrush}" />
+
+            <StackPanel Spacing="8">
+                <TextBlock Text="DOWNLOADS" FontSize="12" FontWeight="SemiBold" LetterSpacing="1"
+                           Foreground="{DynamicResource TextSecondaryBrush}" />
+
+                <Border Padding="20,16" CornerRadius="8" BorderThickness="1"
+                        Background="{DynamicResource SurfaceRaisedBrush}"
+                        BorderBrush="{DynamicResource BorderSubtleBrush}">
+                    <StackPanel Spacing="16">
+                        <Grid ColumnDefinitions="*,Auto">
+                            <StackPanel Spacing="4" Margin="0,0,24,0">
+                                <TextBlock Text="Keep downloaded archives" FontWeight="SemiBold"
+                                           Foreground="{DynamicResource TextPrimaryBrush}" />
+                                <TextBlock TextWrapping="Wrap" Foreground="{DynamicResource TextSecondaryBrush}"
+                                           Text="Keeps each mod's .smod file after it is installed, so repairing, rolling back and switching profiles work offline without downloading again. When off, archives are deleted once their mod is installed." />
+                            </StackPanel>
+                            <ToggleSwitch Grid.Column="1" VerticalAlignment="Center"
+                                          OnContent="On" OffContent="Off"
+                                          IsChecked="{Binding KeepDownloadedArchives}" />
+                        </Grid>
+
+                        <Border Height="1" Background="{DynamicResource BorderSubtleBrush}" />
+
+                        <Grid ColumnDefinitions="*,Auto">
+                            <StackPanel Spacing="4" Margin="0,0,24,0">
+                                <TextBlock Text="Download retries" FontWeight="SemiBold"
+                                           Foreground="{DynamicResource TextPrimaryBrush}" />
+                                <TextBlock TextWrapping="Wrap" Foreground="{DynamicResource TextSecondaryBrush}"
+                                           Text="How many times to try again when a download fails, or arrives with the wrong size or hash. Between 0 and 8." />
+                            </StackPanel>
+                            <NumericUpDown Grid.Column="1" VerticalAlignment="Center" Width="120"
+                                           Minimum="{Binding MinDownloadRetries}" Maximum="{Binding MaxDownloadRetries}"
+                                           Increment="1" FormatString="0" ClipValueToMinMax="True"
+                                           Value="{Binding DownloadRetries}" />
+                        </Grid>
+
+                        <Border Height="1" Background="{DynamicResource BorderSubtleBrush}" />
+
+                        <Grid ColumnDefinitions="*,Auto">
+                            <StackPanel Spacing="4" Margin="0,0,24,0">
+                                <TextBlock Text="{Binding ArchiveSummary}"
+                                           Foreground="{DynamicResource TextPrimaryBrush}" />
+                                <SelectableTextBlock Text="{Binding ArchivesFolder}" FontFamily="monospace" FontSize="12"
+                                                     TextWrapping="Wrap"
+                                                     Foreground="{DynamicResource TextSecondaryBrush}" />
+                            </StackPanel>
+                            <Button Grid.Column="1" VerticalAlignment="Center" Content="Delete archives"
+                                    Command="{Binding DeleteArchivesCommand}" />
+                        </Grid>
+                    </StackPanel>
+                </Border>
+
+                <TextBlock Text="{Binding ErrorText}" TextWrapping="Wrap"
+                           IsVisible="{Binding ErrorText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                           Foreground="{DynamicResource WarningBrush}" />
+            </StackPanel>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

@@ -1,0 +1,12 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:ADA.ViewModels"
+             x:Class="ADA.Views.PlaceholderView"
+             x:DataType="vm:PlaceholderViewModel">
+    <StackPanel Margin="32,28" Spacing="8">
+        <TextBlock Text="{Binding Title}" FontSize="24" FontWeight="SemiBold"
+                   Foreground="{DynamicResource TextPrimaryBrush}" />
+        <TextBlock Text="{Binding Description}" TextWrapping="Wrap"
+                   Foreground="{DynamicResource TextSecondaryBrush}" />
+    </StackPanel>
+</UserControl>
