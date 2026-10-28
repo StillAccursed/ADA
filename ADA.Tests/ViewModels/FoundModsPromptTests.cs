@@ -1,4 +1,3 @@
-using Microsoft.Extensions.Logging.Abstractions;
 using ADA.Core.Catalog;
 using ADA.Core.Games;
 using ADA.Infrastructure.Downloads;
@@ -8,6 +7,7 @@ using ADA.Infrastructure.Settings;
 using ADA.Tests.Fixtures;
 using ADA.Tests.Installing;
 using ADA.ViewModels;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace ADA.Tests.ViewModels;
 
@@ -29,15 +29,21 @@ public sealed class FoundModsPromptTests : IDisposable
 
     public void Dispose() => _dir.Dispose();
 
-    private async Task<GameInstallViewModel> CardAsync()
+    /// <param name="withProfile">Give the game an active profile first, as after the first-run prompt.</param>
+    private async Task<GameInstallViewModel> CardAsync(bool withProfile = true)
     {
+        if (withProfile)
+        {
+            _store.Save(new("Playthrough", []));
+            _store.SetActive(_game.Root, "Playthrough");
+        }
         var service = new ModInstallService(
             new SettingsStore(_dir.Combine("settings.json")),
             new ArchiveDownloader(new HttpClient(new FakeHttpHandler()), _dir.Combine("Archives")),
-            (_, _) => Task.FromResult<IReadOnlyList<CatalogVersion>>([]),
+            new FakeVersionSource((_, _) => Task.FromResult<IReadOnlyList<CatalogVersion>>([])),
             _ => Task.FromResult(false));
         var install = new GameInstall(_game.Root, GameLauncher.Steam, GameHost.Windows, GameKind.Client, null, "test");
-        var card = new GameInstallViewModel(install, service, new ModResolutionService((_, _) => Task.FromResult<IReadOnlyList<CatalogVersion>>([]), service), new GameProfiles(_store, service), NullLogger<GameInstallViewModel>.Instance);
+        var card = new GameInstallViewModel(install, service, new ModResolutionService(new FakeVersionSource((_, _) => Task.FromResult<IReadOnlyList<CatalogVersion>>([])), service), new GameProfiles(_store, service), NullLogger<GameInstallViewModel>.Instance);
         await card.CheckAsync();
         return card;
     }
@@ -50,7 +56,17 @@ public sealed class FoundModsPromptTests : IDisposable
         Assert.True(card.ShowFoundChoice);
         Assert.Equal("Found 1 mod installed by another mod manager", card.FoundTitle);
         Assert.Equal("Satisfactory Mod Loader", card.FoundNames);
-        Assert.Equal("Add to \"Default\"", card.ImportToCurrentText);
+        Assert.Equal("Add to \"Playthrough\"", card.ImportToCurrentText);
+    }
+
+    [Fact]
+    public async Task Without_a_profile_found_mods_can_only_go_into_a_new_one()
+    {
+        var card = await CardAsync(withProfile: false);
+
+        Assert.True(card.ShowFoundChoice);
+        Assert.Equal("Add to current profile", card.ImportToCurrentText);
+        Assert.False(card.ImportToCurrentCommand.CanExecute(null));
     }
 
     [Fact]
@@ -61,7 +77,7 @@ public sealed class FoundModsPromptTests : IDisposable
         await card.ImportToCurrentCommand.ExecuteAsync(null);
 
         Assert.False(card.HasFoundMods);
-        Assert.StartsWith("Added 1 mod to \"Default\"", card.Notice);
+        Assert.StartsWith("Added 1 mod to \"Playthrough\"", card.Notice);
         Assert.Contains("1 mod installed", card.ModsSummary);
     }
 

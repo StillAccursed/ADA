@@ -110,13 +110,13 @@ public sealed class OlpFileTests : IDisposable
     [Fact]
     public void Rejects_oversized_profiles()
     {
-        var tooLong = new string('x', OlpFile.MaxNameLength + 1);
+        var tooLong = new string('x', OlpFile.MAX_NAME_LENGTH + 1);
         Assert.Throws<InvalidProfileException>(() => Parse($$"""{ "name": "{{tooLong}}", "mods": [] }"""));
 
-        var mods = string.Join(",", Enumerable.Range(0, OlpFile.MaxMods + 1).Select(i => $$"""{ "name": "M{{i}}", "version": "1.0.0" }"""));
+        var mods = string.Join(",", Enumerable.Range(0, OlpFile.MAX_MODS + 1).Select(i => $$"""{ "name": "M{{i}}", "version": "1.0.0" }"""));
         Assert.Throws<InvalidProfileException>(() => Parse($$"""{ "name": "P", "mods": [ {{mods}} ] }"""));
 
-        var big = _dir.WriteFile("big.olp", $$"""{ "name": "P", "mods": [], "pad": "{{new string('x', (int)OlpFile.MaxFileBytes)}}" }""");
+        var big = _dir.WriteFile("big.olp", $$"""{ "name": "P", "mods": [], "pad": "{{new string('x', (int)OlpFile.MAX_FILE_BYTES)}}" }""");
         Assert.Throws<InvalidProfileException>(() => OlpFile.Read(big));
     }
 

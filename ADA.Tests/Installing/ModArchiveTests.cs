@@ -123,7 +123,9 @@ public sealed class ModArchiveTests : IDisposable
     {
         var path = _dir.Combine("empty.smod");
         using (var zip = ZipFile.Open(path, ZipArchiveMode.Create))
+        {
             zip.CreateEntry("readme.txt");
+        }
 
         Assert.Throws<InvalidModArchiveException>(() => ModArchive.Open(path, TargetPlatform.Windows));
     }
@@ -143,6 +145,6 @@ public sealed class ModArchiveTests : IDisposable
     public void The_size_ceiling_allows_large_mods()
     {
         // Whole profiles reach tens of GB; one mod must not be capped anywhere near a few GB.
-        Assert.True(ModArchive.MaxUncompressedBytes >= 32L * 1024 * 1024 * 1024);
+        Assert.True(ModArchive.MAX_UNCOMPRESSED_BYTES >= 32L * 1024 * 1024 * 1024);
     }
 }

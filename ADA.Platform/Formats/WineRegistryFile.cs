@@ -7,7 +7,7 @@ namespace ADA.Platform.Formats;
 /// <c>user.reg</c> is HKCU). We only need a handful of launcher keys, so this streams the file
 /// rather than loading tens of thousands of keys into memory.
 /// </summary>
-public static class WineRegistryFile
+internal static class WineRegistryFile
 {
     /// <param name="regFilePath">Path to the .reg file.</param>
     /// <param name="keyPath">Key relative to the hive root, single backslashes, e.g. <c>Software\Valve\Steam</c>.</param>
@@ -15,7 +15,9 @@ public static class WineRegistryFile
     public static string? ReadString(string regFilePath, string keyPath, string valueName)
     {
         if (!File.Exists(regFilePath))
+        {
             return null;
+        }
 
         try
         {
@@ -30,7 +32,9 @@ public static class WineRegistryFile
                 }
 
                 if (!inKey || !line.StartsWith('"'))
+                {
                     continue;
+                }
 
                 if (TryParseStringValue(line, out var name, out var value)
                     && string.Equals(name, valueName, StringComparison.OrdinalIgnoreCase))
@@ -51,11 +55,15 @@ public static class WineRegistryFile
         name = value = "";
         var nameEnd = FindClosingQuote(line, 1);
         if (nameEnd < 0 || nameEnd + 2 >= line.Length || line[nameEnd + 1] != '=' || line[nameEnd + 2] != '"')
+        {
             return false; // not a plain REG_SZ (dword:, hex:, str(2): ...)
+        }
 
         var valueEnd = FindClosingQuote(line, nameEnd + 3);
         if (valueEnd < 0)
+        {
             return false;
+        }
 
         name = Unescape(line[1..nameEnd]);
         value = Unescape(line[(nameEnd + 3)..valueEnd]);
@@ -67,9 +75,13 @@ public static class WineRegistryFile
         for (var i = start; i < s.Length; i++)
         {
             if (s[i] == '\\')
+            {
                 i++;
+            }
             else if (s[i] == '"')
+            {
                 return i;
+            }
         }
         return -1;
     }
@@ -77,13 +89,18 @@ public static class WineRegistryFile
     private static string Unescape(string s)
     {
         if (!s.Contains('\\'))
+        {
             return s;
+        }
 
         var sb = new StringBuilder(s.Length);
         for (var i = 0; i < s.Length; i++)
         {
             if (s[i] == '\\' && i + 1 < s.Length)
+            {
                 i++;
+            }
+
             sb.Append(s[i]);
         }
         return sb.ToString();

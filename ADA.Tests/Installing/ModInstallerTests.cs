@@ -137,7 +137,9 @@ public sealed class ModInstallerTests : IDisposable
         var failing = Installer(cp =>
         {
             if (cp == "moved-in:C")
+            {
                 throw new IOException("disk said no");
+            }
         });
         var e = Assert.Throws<InstallException>(() =>
             failing.Apply([Install(Smod("A", "2.0.0")), new ModChange.Uninstall("B"), Install(Smod("C", "1.0.0"))]));
@@ -157,7 +159,9 @@ public sealed class ModInstallerTests : IDisposable
         var installer = Installer(cp =>
         {
             if (cp == "extracted:B:1")
+            {
                 cts.Cancel();
+            }
         });
 
         var e = Assert.Throws<InstallException>(() =>

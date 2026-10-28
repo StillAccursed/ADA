@@ -1,9 +1,9 @@
-using CommunityToolkit.Mvvm.ComponentModel;
-using CommunityToolkit.Mvvm.Input;
-using Microsoft.Extensions.Logging;
 using ADA.Core.Games;
 using ADA.Infrastructure.Installing;
 using ADA.Infrastructure.Profiles;
+using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
+using Microsoft.Extensions.Logging;
 
 namespace ADA.ViewModels;
 
@@ -56,8 +56,11 @@ public partial class GameInstallViewModel(GameInstall install, ModInstallService
 
     public bool CanRepair => HasRepairs && !IsBusy && !IsGameRunning;
 
+    /// <summary>The game's active profile; null until the user creates or chooses one.</summary>
     [ObservableProperty]
-    public partial string ProfileName { get; set; } = ProfileStore.DefaultName;
+    [NotifyPropertyChangedFor(nameof(ImportToCurrentText))]
+    [NotifyCanExecuteChangedFor(nameof(ImportToCurrentCommand))]
+    public partial string? ProfileName { get; set; }
 
     // Mods another manager installed: the user chooses what to do with them, in steps.
     [ObservableProperty]
@@ -109,14 +112,15 @@ public partial class GameInstallViewModel(GameInstall install, ModInstallService
     [ObservableProperty]
     public partial string UpdatesTitle { get; set; } = "";
 
-    public string ImportToCurrentText => $"Add to \"{ProfileName}\"";
+    public string ImportToCurrentText => ProfileName is null ? "Add to current profile" : $"Add to \"{ProfileName}\"";
 
-    partial void OnProfileNameChanged(string value) => OnPropertyChanged(nameof(ImportToCurrentText));
-
-    /// <summary>Launch-time recovery and fast check. Never throws.</summary>
+    /// <summary>
+    /// Launch-time recovery and fast check. Skipped while this card or another operation holds the
+    /// installation; that operation re-checks when it finishes. Never throws.
+    /// </summary>
     public async Task CheckAsync()
     {
-        if (IsBusy || IsSwitchingProfile)
+        if (IsBusy || IsSwitchingProfile || profiles.IsChanging(Install))
         {
             return;
         }
@@ -135,6 +139,10 @@ public partial class GameInstallViewModel(GameInstall install, ModInstallService
             await FindFixesAsync();
             await FindUpdatesAsync();
         }
+        catch (InstallationBusyException)
+        {
+            // Another operation started between the guard above and the reservation.
+        }
         catch (Exception e)
         {
             log.LogError(e, "Checking mods in {Game} failed", Install.GamePath);
@@ -151,7 +159,9 @@ public partial class GameInstallViewModel(GameInstall install, ModInstallService
     private async Task RepairAsync()
     {
         if (_lastCheck is null)
+        {
             return;
+        }
 
         IsBusy = true;
         Notice = null;
@@ -168,7 +178,10 @@ public partial class GameInstallViewModel(GameInstall install, ModInstallService
 
             var parts = new List<string>();
             if (result.Repaired.Count > 0)
+            {
                 parts.Add($"Repaired {string.Join(", ", result.Repaired)}.");
+            }
+
             parts.AddRange(result.Failed.Select(f => $"Couldn't repair {f.Key}: {f.Value}"));
             Notice = string.Join(" ", parts);
 
@@ -178,7 +191,10 @@ public partial class GameInstallViewModel(GameInstall install, ModInstallService
         {
             // Offline, the game started, a disk error: all shown here rather than crashing the app.
             if (e is not GameRunningException)
+            {
                 log.LogError(e, "Repair in {Game} failed", Install.GamePath);
+            }
+
             Notice = e is GameRunningException ? e.Message : $"Couldn't repair: {e.Message}";
         }
         finally
@@ -188,7 +204,7 @@ public partial class GameInstallViewModel(GameInstall install, ModInstallService
         }
     }
 
-    [RelayCommand(CanExecute = nameof(CanActOnFound))]
+    [RelayCommand(CanExecute = nameof(CanImportToCurrent))]
     private Task ImportToCurrentAsync() => ActOnFoundAsync(async () =>
     {
         var result = await profiles.ImportToCurrentAsync(Install, _found);
@@ -225,13 +241,17 @@ public partial class GameInstallViewModel(GameInstall install, ModInstallService
 
     private bool CanActOnFound => HasFoundMods && !IsBusy;
 
+    private bool CanImportToCurrent => CanActOnFound && ProfileName is not null;
+
     private bool CanFix => HasFix && !IsBusy && !IsGameRunning;
 
     [RelayCommand(CanExecute = nameof(CanFix))]
     private async Task FixAsync()
     {
         if (_fix is not { } plan)
+        {
             return;
+        }
 
         IsBusy = true;
         Notice = null;
@@ -246,7 +266,10 @@ public partial class GameInstallViewModel(GameInstall install, ModInstallService
         catch (Exception e)
         {
             if (e is not GameRunningException)
+            {
                 log.LogError(e, "Fixing mods in {Game} failed", Install.GamePath);
+            }
+
             Notice = e is GameRunningException ? e.Message : $"Nothing was changed: {e.Message}";
         }
         finally
@@ -297,7 +320,9 @@ public partial class GameInstallViewModel(GameInstall install, ModInstallService
         {
             var missing = await Task.Run(() => service.InstallerFor(Install).MissingDependencies());
             if (missing.Count == 0)
+            {
                 return;
+            }
 
             var plan = await resolution.PlanFixAsync(Install);
             if (!plan.Succeeded)
@@ -307,7 +332,9 @@ public partial class GameInstallViewModel(GameInstall install, ModInstallService
                 return;
             }
             if (plan.ChangesNothing)
+            {
                 return;
+            }
 
             _fix = plan;
             FixLines = PlanText.Lines(plan);
@@ -335,7 +362,10 @@ public partial class GameInstallViewModel(GameInstall install, ModInstallService
         catch (Exception e)
         {
             if (e is not GameRunningException and not InvalidProfileException)
+            {
                 log.LogError(e, "Handling found mods in {Game} failed", Install.GamePath);
+            }
+
             Notice = e is GameRunningException or InvalidProfileException ? e.Message : $"Nothing was changed: {e.Message}";
         }
         finally
@@ -390,32 +420,53 @@ public partial class GameInstallViewModel(GameInstall install, ModInstallService
                 : $"{broken.Count} need{(broken.Count == 1 ? "s" : "")} repair: {string.Join(", ", broken)}");
         }
         if (check.Unmanaged.Count > 0)
+        {
             parts.Add($"{check.Unmanaged.Count} folder{(check.Unmanaged.Count == 1 ? "" : "s")} not managed by ADA");
+        }
+
         ModsSummary = string.Join(" · ", parts);
     }
 
     private static string? DescribeRecovery(GameModsStatus status)
     {
         if (status.RecoveryDeferred)
+        {
             return "An install was interrupted. Close Satisfactory and ADA will finish it.";
+        }
+
         if (!status.Recovery.HadInterruptedTransaction)
+        {
             return null;
+        }
 
         var r = status.Recovery;
         var parts = new List<string> { "Finished an interrupted install." };
         if (r.RolledForward.Count > 0)
+        {
             parts.Add($"Completed: {string.Join(", ", r.RolledForward)}.");
+        }
+
         if (r.Discarded.Count > 0)
+        {
             parts.Add($"Not installed (wasn't verified yet): {string.Join(", ", r.Discarded)}.");
+        }
+
         if (r.RolledBack.Count > 0)
+        {
             parts.Add($"Put back as they were: {string.Join(", ", r.RolledBack)}.");
+        }
+
         return string.Join(" ", parts);
     }
 }
 
+/// <summary>Steps of the Dashboard's "mods found from another manager" prompt.</summary>
 public enum FoundModsStep
 {
+    /// <summary>No prompt is shown.</summary>
     None,
+    /// <summary>Asking whether to add the mods to the current profile or a new one.</summary>
     Choose,
+    /// <summary>Naming the new profile.</summary>
     NewProfile,
 }

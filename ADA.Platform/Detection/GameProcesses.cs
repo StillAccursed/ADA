@@ -12,13 +12,19 @@ public static class GameProcesses
 {
     // Client: FactoryGameSteam / FactoryGameEGS and their -Win64-Shipping children.
     // Server: FactoryServer and FactoryServer-*-Shipping.
-    private static readonly string[] Prefixes = ["FactoryGame", "FactoryServer"];
+    private static readonly string[] PREFIXES = ["FactoryGame", "FactoryServer"];
 
     // ps and osascript answer in milliseconds; anything slower is stuck.
-    private static readonly TimeSpan CommandTimeout = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan COMMAND_TIMEOUT = TimeSpan.FromSeconds(5);
 
+    /// <summary>Whether <see cref="FindRunningAsync"/> finds anything.</summary>
     public static async Task<bool> IsAnyRunningAsync(CancellationToken ct = default) => (await FindRunningAsync(ct)).Count > 0;
 
+    /// <summary>
+    /// Running game and dedicated-server processes. On macOS and Linux this reads <c>ps</c> (names
+    /// only, never arguments, which can hold login tokens), because .NET reports every Wine process
+    /// under one name. Falls back to .NET's process list if <c>ps</c> fails.
+    /// </summary>
     public static async Task<IReadOnlyList<GameProcess>> FindRunningAsync(CancellationToken ct = default) =>
         OperatingSystem.IsWindows() ? FindNative() : await FindWithPsAsync(ct) ?? FindNative();
 
@@ -27,21 +33,24 @@ public static class GameProcesses
     /// <c>FactoryGameEGS-Win64-Shipping</c> (Windows), <c>Y:\Games\Satisfactory\FactoryGameEGS.exe</c>
     /// (Wine under CrossOver or Proton), or a truncated name such as <c>FactoryGameStea</c> (Linux).
     /// </summary>
-    public static bool IsGameProcessName(string name)
+    internal static bool IsGameProcessName(string name)
     {
         var trimmed = name.Trim();
         var lastSeparator = trimmed.LastIndexOfAny(['/', '\\']);
         var executable = lastSeparator >= 0 ? trimmed[(lastSeparator + 1)..] : trimmed;
-        return Prefixes.Any(p => executable.StartsWith(p, StringComparison.OrdinalIgnoreCase));
+        return PREFIXES.Any(p => executable.StartsWith(p, StringComparison.OrdinalIgnoreCase));
     }
 
     /// <summary>Parses one line of <c>ps -axo pid=,comm=</c>. Command names can contain spaces.</summary>
-    public static GameProcess? ParsePsLine(string line)
+    internal static GameProcess? ParsePsLine(string line)
     {
         var trimmed = line.TrimStart();
         var space = trimmed.IndexOf(' ');
         if (space <= 0 || !int.TryParse(trimmed.AsSpan(0, space), out var pid))
+        {
             return null;
+        }
+
         var name = trimmed[(space + 1)..].Trim();
         return IsGameProcessName(name) ? new GameProcess(pid, name) : null;
     }
@@ -54,13 +63,19 @@ public static class GameProcesses
     public static async Task<bool> CloseAsync(IReadOnlyList<GameProcess> processes, TimeSpan grace, CancellationToken ct = default)
     {
         foreach (var process in processes)
+        {
             await RequestExitAsync(process.Id, ct);
+        }
 
         if (await WaitForExitAsync(processes, grace, ct))
+        {
             return true;
+        }
 
         foreach (var process in processes.Where(p => IsAlive(p.Id)))
+        {
             ForceExit(process.Id);
+        }
 
         return await WaitForExitAsync(processes, TimeSpan.FromSeconds(5), ct);
     }
@@ -75,7 +90,9 @@ public static class GameProcesses
                 try
                 {
                     if (IsGameProcessName(process.ProcessName))
+                    {
                         found.Add(new GameProcess(process.Id, process.ProcessName));
+                    }
                 }
                 catch (InvalidOperationException)
                 {
@@ -163,9 +180,15 @@ public static class GameProcesses
         while (true)
         {
             if (!processes.Any(p => IsAlive(p.Id)))
+            {
                 return true;
+            }
+
             if (Stopwatch.GetElapsedTime(started) >= timeout)
+            {
                 return false;
+            }
+
             await Task.Delay(250, ct);
         }
     }
@@ -174,7 +197,7 @@ public static class GameProcesses
     private static async Task<string?> RunAsync(string file, string[] args, CancellationToken ct)
     {
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        timeout.CancelAfter(CommandTimeout);
+        timeout.CancelAfter(COMMAND_TIMEOUT);
         try
         {
             var result = await Cli.Wrap(file)

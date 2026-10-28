@@ -29,7 +29,10 @@ public partial class MainViewModel : ViewModelBase
     public IReadOnlyList<NavItem> NavItems { get; }
 
     // Often enough that new releases show up during a session, gentle on ficsit.app.
-    private static readonly TimeSpan CatalogRefreshInterval = TimeSpan.FromMinutes(30);
+    private static readonly TimeSpan CATALOG_REFRESH_INTERVAL = TimeSpan.FromMinutes(30);
+
+    /// <summary>The Dashboard page; the main window also shows its create-profile prompt over any page.</summary>
+    internal DashboardViewModel Dashboard => _dashboard;
 
     /// <summary>The mod catalogue; its last update time is shown under "Check for Updates".</summary>
     public CatalogStatusViewModel Catalog { get; }
@@ -74,7 +77,7 @@ public partial class MainViewModel : ViewModelBase
         _dashboard.ScanCommand.Execute(null);
         _ = _dashboard.WatchGameAsync();
         _ = Catalog.LoadAsync();
-        _ = Catalog.KeepFreshAsync(CatalogRefreshInterval);
+        _ = Catalog.KeepFreshAsync(CATALOG_REFRESH_INTERVAL);
     }
 
     /// <summary>A fresh "Check for Updates" window's contents.</summary>
@@ -83,13 +86,17 @@ public partial class MainViewModel : ViewModelBase
     private void OnDashboardChanged(object? sender, PropertyChangedEventArgs e)
     {
         if (e.PropertyName == nameof(DashboardViewModel.HasUpdates))
+        {
             _dashboardNav.HasUpdates = _dashboard.HasUpdates;
+        }
     }
 
     // New releases arrive with each catalogue refresh: look for updates (never install them).
     private void OnCatalogChanged(object? sender, PropertyChangedEventArgs e)
     {
         if (e.PropertyName == nameof(CatalogStatusViewModel.IsChecking) && !Catalog.IsChecking)
+        {
             _ = _dashboard.FindUpdatesAsync();
+        }
     }
 }

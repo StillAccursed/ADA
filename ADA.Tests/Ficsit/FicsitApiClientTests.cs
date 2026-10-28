@@ -8,7 +8,7 @@ namespace ADA.Tests.Ficsit;
 public class FicsitApiClientTests
 {
     // Shapes recorded from the live API on 2026-10-25 (trimmed).
-    private const string ModsPage = """
+    private const string MODS_PAGE = """
         { "data": { "getMods": { "count": 2, "mods": [
           { "id": "8tof4SFdKiL6tP", "mod_reference": "WeatherExtended", "name": "Weather Extended",
             "short_description": "Darker nights plus new weather.", "full_description": "## Weather\n![Fog at night](https://x/fog.png)",
@@ -22,7 +22,7 @@ public class FicsitApiClientTests
         ] } } }
         """;
 
-    private const string SmlVersions = """
+    private const string SML_VERSIONS = """
         { "data": { "getModByReference": { "versions": [
           { "id": "74YqQBq2KJKN77", "version": "3.12.0", "game_version": ">=491125", "stability": "release",
             "required_on_remote": true, "created_at": "2026-09-01T00:00:00Z",
@@ -49,7 +49,7 @@ public class FicsitApiClientTests
     public async Task Maps_mods_page()
     {
         var (client, handler, _) = Create();
-        handler.Respond(ModsPage);
+        handler.Respond(MODS_PAGE);
 
         var page = await client.GetModsAsync(0, 100, CatalogOrder.CreatedAscending);
 
@@ -74,7 +74,7 @@ public class FicsitApiClientTests
     public async Task Maps_versions_targets_and_dependencies()
     {
         var (client, handler, _) = Create();
-        handler.Respond(SmlVersions);
+        handler.Respond(SML_VERSIONS);
 
         var versions = await client.GetVersionsAsync("SML");
 
@@ -109,7 +109,7 @@ public class FicsitApiClientTests
     public async Task Retries_rate_limits_and_server_errors_with_backoff()
     {
         var (client, handler, time) = Create();
-        handler.Fail(HttpStatusCode.TooManyRequests).Fail(HttpStatusCode.BadGateway).Respond(ModsPage);
+        handler.Fail(HttpStatusCode.TooManyRequests).Fail(HttpStatusCode.BadGateway).Respond(MODS_PAGE);
 
         var page = await client.GetModsAsync(0, 100, CatalogOrder.CreatedAscending);
 
@@ -122,7 +122,9 @@ public class FicsitApiClientTests
     {
         var (client, handler, _) = Create();
         for (var i = 0; i < 4; i++)
+        {
             handler.Fail(HttpStatusCode.ServiceUnavailable);
+        }
 
         var e = await Assert.ThrowsAsync<FicsitApiException>(() => client.GetModsAsync(0, 100, CatalogOrder.CreatedAscending));
         Assert.Contains("503", e.Message);

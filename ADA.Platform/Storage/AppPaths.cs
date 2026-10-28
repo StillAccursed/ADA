@@ -16,9 +16,9 @@ public sealed class AppPaths
 {
     private const string APP_FOLDER_NAME = "ADA";
 
-    public string Root { get; }
+    internal string Root { get; }
 
-    public string Databases => Path.Combine(Root, "Databases");
+    internal string Databases => Path.Combine(Root, "Databases");
 
     public string Config => Path.Combine(Root, "Config");
 

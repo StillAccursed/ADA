@@ -18,8 +18,8 @@ public class ModIdentifiersTests
     [Fact]
     public void References_are_at_most_100_characters()
     {
-        Assert.True(ModIdentifiers.IsValidReference(new string('a', ModIdentifiers.MaxReferenceLength)));
-        Assert.False(ModIdentifiers.IsValidReference(new string('a', ModIdentifiers.MaxReferenceLength + 1)));
+        Assert.True(ModIdentifiers.IsValidReference(new string('a', ModIdentifiers.MAX_REFERENCE_LENGTH)));
+        Assert.False(ModIdentifiers.IsValidReference(new string('a', ModIdentifiers.MAX_REFERENCE_LENGTH + 1)));
     }
 
     [Theory]

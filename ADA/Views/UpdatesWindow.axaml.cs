@@ -1,6 +1,6 @@
+using ADA.ViewModels;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
-using ADA.ViewModels;
 
 namespace ADA.Views;
 

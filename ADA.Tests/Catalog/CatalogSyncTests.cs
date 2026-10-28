@@ -53,7 +53,9 @@ public sealed class CatalogSyncTests : IDisposable
     private void AddMods(int count, DateTimeOffset releasedAt)
     {
         for (var i = 0; i < count; i++)
+        {
             _source.Mods.Add(Mod($"Mod{_source.Mods.Count}", lastVersion: releasedAt.AddMinutes(-i)));
+        }
     }
 
     [Fact]
@@ -179,7 +181,7 @@ public sealed class CatalogSyncTests : IDisposable
         // A full resync rewrites every mod (ficsit.app also bumps updated_at constantly)...
         _clock.Now = T0.AddHours(2);
         _source.Mods[1] = mod with { UpdatedAt = T0.AddHours(2), Downloads = 999 };
-        _store.SetState(CatalogSync.LastFullSyncKey, T0.AddDays(-5));
+        _store.SetState(CatalogSync.LAST_FULL_SYNC_KEY, T0.AddDays(-5));
         await _sync.SyncAsync();
         await _sync.GetVersionsAsync(mod.Reference);
         Assert.Equal(1, _source.VersionRequests);

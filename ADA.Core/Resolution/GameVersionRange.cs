@@ -23,6 +23,10 @@ public sealed class GameVersionRange
         _alternatives = alternatives;
     }
 
+    /// <summary>
+    /// Parses a ficsit.app game range: comparators on the build number, alternatives joined by
+    /// <c>||</c>, with <c>*</c> or <c>x</c> matching any build. False for anything else.
+    /// </summary>
     public static bool TryParse(string? text, out GameVersionRange range)
     {
         range = null!;
@@ -35,14 +39,19 @@ public sealed class GameVersionRange
             foreach (var token in alternative.Split(' ', StringSplitOptions.RemoveEmptyEntries))
             {
                 if (token is "*" or "x")
+                {
                     continue;
+                }
 
                 var op = token.StartsWith(">=") || token.StartsWith("<=") ? token[..2]
                     : token.StartsWith('>') || token.StartsWith('<') || token.StartsWith('=') ? token[..1]
                     : "=";
                 var digits = op == "=" && !token.StartsWith('=') ? token : token[op.Length..];
                 if (!int.TryParse(digits, NumberStyles.None, CultureInfo.InvariantCulture, out var value))
+                {
                     return false;
+                }
+
                 comparators.Add((op, value));
             }
             alternatives.Add(comparators);

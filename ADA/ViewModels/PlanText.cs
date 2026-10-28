@@ -19,9 +19,15 @@ internal static class PlanText
         }
         lines.AddRange(plan.Uninstall.Select(r => $"Remove {r}"));
         if (plan.Install.Count == 0 && plan.Uninstall.Count == 0)
+        {
             lines.Add("Keep it installed even when no other mod needs it");
+        }
+
         if (plan.DownloadBytes > 0)
-            lines.Add($"Download up to {SettingsViewModel.FormatSize(plan.DownloadBytes)}");
+        {
+            lines.Add($"Download up to {ByteSize.Format(plan.DownloadBytes)}");
+        }
+
         return lines;
     }
 

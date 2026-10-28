@@ -1,5 +1,3 @@
-using Microsoft.Data.Sqlite;
-using Microsoft.Extensions.Logging.Abstractions;
 using ADA.Core.Catalog;
 using ADA.Core.Games;
 using ADA.Core.Settings;
@@ -13,6 +11,8 @@ using ADA.Platform.Detection;
 using ADA.Tests.Fixtures;
 using ADA.Tests.Installing;
 using ADA.ViewModels;
+using Microsoft.Data.Sqlite;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace ADA.Tests.ViewModels;
 
@@ -34,10 +34,10 @@ public sealed class ViewModelErrorTests : IDisposable
         var service = new ModInstallService(
             new SettingsStore(_dir.Combine("settings.json")),
             new ArchiveDownloader(new HttpClient(new FakeHttpHandler()), _dir.Combine("Staging")),
-            (_, _) => throw new FicsitApiException("Could not reach ficsit.app."),
+            new FakeVersionSource((_, _) => throw new FicsitApiException("Could not reach ficsit.app.")),
             _ => Task.FromResult(false));
         var install = new GameInstall(game.Root, GameLauncher.Steam, GameHost.Windows, GameKind.Client, null, "test");
-        var vm = new GameInstallViewModel(install, service, new ModResolutionService((_, _) => Task.FromResult<IReadOnlyList<CatalogVersion>>([]), service), new GameProfiles(new ProfileStore(_dir.Combine("Profiles"), _dir.Combine("profiles.json")), service), NullLogger<GameInstallViewModel>.Instance);
+        var vm = new GameInstallViewModel(install, service, new ModResolutionService(new FakeVersionSource((_, _) => Task.FromResult<IReadOnlyList<CatalogVersion>>([])), service), new GameProfiles(new ProfileStore(_dir.Combine("Profiles"), _dir.Combine("profiles.json")), service), NullLogger<GameInstallViewModel>.Instance);
 
         await vm.CheckAsync();
         Assert.True(vm.CanRepair);
@@ -56,7 +56,10 @@ public sealed class ViewModelErrorTests : IDisposable
         var sync = new CatalogSync(new FicsitApiClient(new HttpClient(new FakeHttpHandler())), new ModCatalogStore(path));
         SqliteConnection.ClearAllPools();
         foreach (var file in Directory.EnumerateFiles(_dir.Path, "catalog.db*"))
+        {
             File.Delete(file);
+        }
+
         await File.WriteAllTextAsync(path, "this is not a SQLite database, just text long enough to have a header");
 
         var vm = new CatalogStatusViewModel(sync, NullLogger<CatalogStatusViewModel>.Instance);
@@ -69,12 +72,10 @@ public sealed class ViewModelErrorTests : IDisposable
     public async Task The_game_watcher_keeps_going_after_a_failed_check()
     {
         var calls = 0;
-        var dashboard = new DashboardViewModel(
+        var dashboard = DashboardFactory.Create(_dir,
             new NoGames(),
-            null!,
             _ => throw new InvalidOperationException("not used"),
-            NullLogger<DashboardViewModel>.Instance,
-            _ => ++calls == 1
+            findRunning: _ => ++calls == 1
                 ? throw new InvalidOperationException("ps failed")
                 : Task.FromResult<IReadOnlyList<GameProcess>>([new GameProcess(42, "FactoryGameSteam")]),
             watchInterval: TimeSpan.FromMilliseconds(20));
@@ -83,7 +84,10 @@ public sealed class ViewModelErrorTests : IDisposable
         var watching = dashboard.WatchGameAsync(stop.Token);
         var deadline = DateTime.UtcNow.AddSeconds(5);
         while (!dashboard.IsGameRunning && DateTime.UtcNow < deadline)
+        {
             await Task.Delay(10);
+        }
+
         await stop.CancelAsync();
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => watching);
 

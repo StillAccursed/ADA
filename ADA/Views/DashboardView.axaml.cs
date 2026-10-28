@@ -1,15 +1,21 @@
-using Avalonia.Controls;
-using Avalonia;
-using Avalonia.Interactivity;
 using System.ComponentModel;
 using ADA.ViewModels;
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Interactivity;
 
 namespace ADA.Views;
 
 public partial class DashboardView : UserControl
 {
     private DashboardViewModel? _viewModel;
+    private GameInstallViewModel? _game;
     private int _layoutMode = -1;
+
+    // Whether the selected installation needed attention at the last change; the details panel
+    // opens only when this becomes true, so a user can collapse it while a problem remains.
+    private bool _neededAttention;
+
     public DashboardView()
     {
         InitializeComponent();
@@ -23,6 +29,7 @@ public partial class DashboardView : UserControl
         {
             _viewModel = vm;
             vm.PropertyChanged += OnDashboardChanged;
+            WatchInstall(vm.SelectedInstall);
             _ = vm.RefreshCardsAsync();
         }
         ArrangeCards();
@@ -35,6 +42,7 @@ public partial class DashboardView : UserControl
         {
             vm.PropertyChanged -= OnDashboardChanged;
         }
+        WatchInstall(null);
         _viewModel = null;
         base.OnUnloaded(e);
     }
@@ -51,10 +59,41 @@ public partial class DashboardView : UserControl
 
     private void OnDashboardChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (_viewModel?.SelectedInstall is { } game && ((game.IsBusy && !string.IsNullOrEmpty(game.ProgressText)) || game.HasFoundMods || game.HasFix || game.HasFixProblem || game.HasRepairs))
+        if (e.PropertyName == nameof(DashboardViewModel.SelectedInstall))
+        {
+            WatchInstall(_viewModel?.SelectedInstall);
+        }
+    }
+
+    /// <summary>Follows the selected installation's own changes, including progress the Dashboard doesn't forward.</summary>
+    private void WatchInstall(GameInstallViewModel? game)
+    {
+        if (_game is not null)
+        {
+            _game.PropertyChanged -= OnInstallChanged;
+        }
+        _game = game;
+        _neededAttention = false;
+        if (game is not null)
+        {
+            game.PropertyChanged += OnInstallChanged;
+            ExpandIfNewlyNeeded();
+        }
+    }
+
+    private void OnInstallChanged(object? sender, PropertyChangedEventArgs e) => ExpandIfNewlyNeeded();
+
+    /// <summary>Opens the details panel when the installation starts needing attention, never again until it stops.</summary>
+    private void ExpandIfNewlyNeeded()
+    {
+        var needsAttention = _game is { } game
+            && ((game.IsBusy && !string.IsNullOrEmpty(game.ProgressText))
+                || game.HasFoundMods || game.HasFix || game.HasFixProblem || game.HasRepairs);
+        if (needsAttention && !_neededAttention)
         {
             InstallationDetails.IsExpanded = true;
         }
+        _neededAttention = needsAttention;
     }
 
     private void ArrangeCards()

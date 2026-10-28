@@ -1,5 +1,4 @@
 using System.Security.Cryptography;
-using Microsoft.Extensions.Logging.Abstractions;
 using ADA.Core.Catalog;
 using ADA.Core.Games;
 using ADA.Infrastructure.Catalog;
@@ -11,6 +10,7 @@ using ADA.Infrastructure.Settings;
 using ADA.Tests.Fixtures;
 using ADA.Tests.Installing;
 using ADA.ViewModels;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace ADA.Tests.ViewModels;
 
@@ -38,9 +38,15 @@ public sealed class FixAfterImportTests : IDisposable
         var bytes = File.ReadAllBytes(path);
         var link = $"/v1/version/{reference}-{version}/Windows/download";
         if (serve)
+        {
             _http.RespondBytes(bytes, link);
+        }
+
         if (!_catalog.TryGetValue(reference, out var list))
+        {
             _catalog[reference] = list = [];
+        }
+
         list.Add(new CatalogVersion($"{reference}-{version}", reference, version, ">=513885", VersionStability.Release, false,
             DateTimeOffset.UnixEpoch,
             [new VersionTarget(TargetPlatform.Windows, link, bytes.Length, Convert.ToHexStringLower(SHA256.HashData(bytes)))],
@@ -63,12 +69,15 @@ public sealed class FixAfterImportTests : IDisposable
         var service = new ModInstallService(
             new SettingsStore(_dir.Combine("settings.json")),
             new ArchiveDownloader(new HttpClient(_http), _dir.Combine("Archives")),
-            GetVersions,
+            new FakeVersionSource(GetVersions),
             _ => Task.FromResult(false));
         var install = new GameInstall(_game.Root, GameLauncher.Epic, GameHost.CrossOver, GameKind.Client, null, "test",
             new GameBuild(513885, "1.2.4.1"));
-        _resolution = new ModResolutionService(GetVersions, service);
-        _profiles = new GameProfiles(new ProfileStore(_dir.Combine("Profiles"), _dir.Combine("profiles.json")), service);
+        _resolution = new ModResolutionService(new FakeVersionSource(GetVersions), service);
+        var store = new ProfileStore(_dir.Combine("Profiles"), _dir.Combine("profiles.json"));
+        store.Save(new("Playthrough", []));
+        store.SetActive(_game.Root, "Playthrough");
+        _profiles = new GameProfiles(store, service);
         var card = new GameInstallViewModel(install, service, _resolution, _profiles, NullLogger<GameInstallViewModel>.Instance);
         await card.CheckAsync();
         return card;
@@ -148,8 +157,8 @@ public sealed class FixAfterImportTests : IDisposable
         var store = new ModCatalogStore(_dir.Combine("catalog.db"));
         var catalog = new CatalogStatusViewModel(new CatalogSync(new FicsitApiClient(new HttpClient(new FakeHttpHandler())), store),
             NullLogger<CatalogStatusViewModel>.Instance);
-        var dashboard = new DashboardViewModel(new OneGame(card), catalog, _ => card, NullLogger<DashboardViewModel>.Instance,
-            _ => Task.FromResult<IReadOnlyList<ADA.Platform.Detection.GameProcess>>([]));
+        var dashboard = DashboardFactory.Create(_dir, new OneGame(card), _ => card, catalog, store,
+            profiles: _profiles, resolution: _resolution);
         await dashboard.ScanCommand.ExecuteAsync(null);
         await dashboard.FindUpdatesAsync();
 
@@ -159,7 +168,7 @@ public sealed class FixAfterImportTests : IDisposable
         Assert.Equal("3.12.0", new ModInstaller(_game.Root, () => false).Installed["SML"].Version);
 
         var updates = new UpdatesViewModel(dashboard, _resolution!, _profiles!, store,
-            (r, _, _) => Task.FromResult<IReadOnlyList<CatalogVersion>>(_catalog.GetValueOrDefault(r) ?? []),
+            new FakeVersionSource((r, _) => Task.FromResult<IReadOnlyList<CatalogVersion>>(_catalog.GetValueOrDefault(r) ?? [])),
             NullLogger<UpdatesViewModel>.Instance);
         await updates.CheckAsync();
 

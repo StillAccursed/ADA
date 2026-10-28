@@ -2,9 +2,10 @@ using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
+using ADA.Core.Catalog;
+using ADA.Core.Settings;
 using Dapper;
 using Microsoft.Data.Sqlite;
-using ADA.Core.Catalog;
 
 namespace ADA.Infrastructure.Catalog;
 
@@ -17,6 +18,10 @@ public sealed partial class ModCatalogStore
 {
     private readonly string _connectionString;
 
+    /// <summary>
+    /// Opens or creates the database. A catalogue from an older schema is dropped and rebuilt, so the
+    /// next sync is a full one.
+    /// </summary>
     public ModCatalogStore(string databasePath)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(databasePath))!);
@@ -24,22 +29,22 @@ public sealed partial class ModCatalogStore
         using var db = Open();
         // The catalogue is a cache: one from an older ADA is rebuilt rather than migrated (the
         // next sync is then a full one).
-        if (db.ExecuteScalar<int>("PRAGMA user_version") != SchemaVersion)
+        if (db.ExecuteScalar<int>("PRAGMA user_version") != SCHEMA_VERSION)
         {
             db.Execute("DROP TABLE IF EXISTS mods; DROP TABLE IF EXISTS mods_fts; DROP TABLE IF EXISTS mod_versions; DROP TABLE IF EXISTS sync_state;");
-            db.Execute(Schema);
-            db.Execute($"PRAGMA user_version = {SchemaVersion}");
+            db.Execute(SCHEMA);
+            db.Execute($"PRAGMA user_version = {SCHEMA_VERSION}");
         }
         else
         {
-            db.Execute(Schema);
+            db.Execute(SCHEMA);
         }
     }
 
     // Bump whenever the tables change shape.
-    private const int SchemaVersion = 2;
+    private const int SCHEMA_VERSION = 2;
 
-    private const string Schema = """
+    private const string SCHEMA = """
         PRAGMA journal_mode = WAL;
         CREATE TABLE IF NOT EXISTS mods (
             rowid INTEGER PRIMARY KEY,
@@ -75,7 +80,7 @@ public sealed partial class ModCatalogStore
 
     // bm25 weights, in mods_fts column order: a match in the name counts far more than one deep
     // in a long description.
-    private const string Bm25 = "bm25(mods_fts, 10.0, 8.0, 4.0, 1.0, 3.0, 3.0, 1.5)";
+    private const string BM25 = "bm25(mods_fts, 10.0, 8.0, 4.0, 1.0, 3.0, 3.0, 1.5)";
 
     public int Count()
     {
@@ -84,7 +89,7 @@ public sealed partial class ModCatalogStore
     }
 
     /// <summary>Inserts or updates mods and their search entries in one transaction.</summary>
-    public void Upsert(IEnumerable<CatalogMod> mods, DateTimeOffset seenAt)
+    internal void Upsert(IEnumerable<CatalogMod> mods, DateTimeOffset seenAt)
     {
         using var db = Open();
         using var tx = db.BeginTransaction();
@@ -161,7 +166,7 @@ public sealed partial class ModCatalogStore
     }
 
     /// <summary>Removes mods a full sync did not see (deleted or hidden on ficsit.app).</summary>
-    public int DeleteNotSeenSince(DateTimeOffset since)
+    internal int DeleteNotSeenSince(DateTimeOffset since)
     {
         using var db = Open();
         using var tx = db.BeginTransaction();
@@ -172,23 +177,27 @@ public sealed partial class ModCatalogStore
         return removed;
     }
 
+    /// <summary>Null when the mod isn't in the catalogue.</summary>
     public CatalogMod? Get(string reference)
     {
         using var db = Open();
-        return db.QuerySingleOrDefault<ModRow>($"SELECT {ModColumns} FROM mods m WHERE m.reference = $Reference",
+        return db.QuerySingleOrDefault<ModRow>($"SELECT {MOD_COLUMNS} FROM mods m WHERE m.reference = $Reference",
             new { Reference = reference })?.ToMod();
     }
 
-    /// <summary>Recent releases from the local cache; metadata-only edits and undated entries are excluded.</summary>
+    /// <summary>
+    /// Recent releases from the local cache, newest first; metadata-only edits and undated entries are
+    /// excluded. <paramref name="limit"/> is clamped to the Dashboard setting's range.
+    /// </summary>
     public IReadOnlyList<CatalogMod> GetRecentlyUpdated(int limit)
     {
         using var db = Open();
         return db.Query<ModRow>($"""
-            SELECT {ModColumns} FROM mods m
+            SELECT {MOD_COLUMNS} FROM mods m
             WHERE m.last_version_date IS NOT NULL
             ORDER BY m.last_version_date DESC, m.name COLLATE NOCASE, m.reference COLLATE NOCASE
             LIMIT $Limit
-            """, new { Limit = Math.Clamp(limit, 1, 20) }).Select(r => r.ToMod()).ToList();
+            """, new { Limit = Math.Clamp(limit, AppSettings.MIN_DASHBOARD_LATEST_MODS_COUNT, AppSettings.MAX_DASHBOARD_LATEST_MODS_COUNT) }).Select(r => r.ToMod()).ToList();
     }
 
     /// <summary>
@@ -202,14 +211,14 @@ public sealed partial class ModCatalogStore
 
         using var db = Open();
         var rows = words.Count == 0
-            ? db.Query<ModRow>($"SELECT {ModColumns} FROM mods m ORDER BY m.popularity DESC LIMIT $Limit", new { Limit = limit })
+            ? db.Query<ModRow>($"SELECT {MOD_COLUMNS} FROM mods m ORDER BY m.popularity DESC LIMIT $Limit", new { Limit = limit })
             // Words are letters and digits only, so quoting them cannot break FTS5 syntax.
             : db.Query<ModRow>($"""
-                SELECT {ModColumns}
+                SELECT {MOD_COLUMNS}
                 FROM mods_fts JOIN mods m ON m.rowid = mods_fts.rowid
                 WHERE mods_fts MATCH $Match
                 ORDER BY (m.name = $Raw COLLATE NOCASE OR m.reference = $Raw COLLATE NOCASE) DESC,
-                         {Bm25}, m.popularity DESC
+                         {BM25}, m.popularity DESC
                 LIMIT $Limit
                 """,
                 new { Match = string.Join(' ', words.Select(w => $"\"{w}\"*")), Raw = query.Trim(), Limit = limit });
@@ -229,7 +238,11 @@ public sealed partial class ModCatalogStore
             .ToList();
     }
 
-    public void SaveVersions(string reference, IReadOnlyList<CatalogVersion> versions, DateTimeOffset fetchedAt)
+    /// <summary>
+    /// Caches a mod's version list, replacing any earlier one; <see cref="GetVersions"/> treats it as
+    /// fetched at <paramref name="fetchedAt"/>.
+    /// </summary>
+    internal void SaveVersions(string reference, IReadOnlyList<CatalogVersion> versions, DateTimeOffset fetchedAt)
     {
         using var db = Open();
         db.Execute("""
@@ -245,7 +258,7 @@ public sealed partial class ModCatalogStore
     }
 
     /// <returns>Cached versions fetched at or after <paramref name="notBefore"/>, else null.</returns>
-    public IReadOnlyList<CatalogVersion>? GetVersions(string reference, DateTimeOffset notBefore)
+    internal IReadOnlyList<CatalogVersion>? GetVersions(string reference, DateTimeOffset notBefore)
     {
         using var db = Open();
         var json = db.ExecuteScalar<string?>("SELECT json FROM mod_versions WHERE reference = $Reference AND fetched_at >= $NotBefore",
@@ -253,14 +266,16 @@ public sealed partial class ModCatalogStore
         return json is null ? null : JsonSerializer.Deserialize(json, CatalogJsonContext.Default.ListCatalogVersion);
     }
 
-    public DateTimeOffset? GetState(string key)
+    /// <summary>Sync timestamps by key, such as <see cref="CatalogSync"/>'s watermark and last-sync times.</summary>
+    internal DateTimeOffset? GetState(string key)
     {
         using var db = Open();
         var value = db.ExecuteScalar<string?>("SELECT value FROM sync_state WHERE key = $Key", new { Key = key });
         return value is null ? null : Parse(value);
     }
 
-    public void SetState(string key, DateTimeOffset value)
+    /// <inheritdoc cref="GetState"/>
+    internal void SetState(string key, DateTimeOffset value)
     {
         using var db = Open();
         db.Execute("""
@@ -270,7 +285,7 @@ public sealed partial class ModCatalogStore
     }
 
     // Aliased to ModRow's property names.
-    private const string ModColumns = """
+    private const string MOD_COLUMNS = """
         m.id AS Id, m.reference AS Reference, m.name AS Name, m.short_description AS ShortDescription,
         m.full_description AS FullDescription, m.logo AS Logo, m.authors AS Authors, m.tags AS Tags,
         m.downloads AS Downloads, m.popularity AS Popularity, m.hotness AS Hotness, m.views AS Views, m.latest AS Latest,

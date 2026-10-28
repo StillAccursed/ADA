@@ -37,10 +37,16 @@ public class AppPathsTests
         var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
 
         if (OperatingSystem.IsMacOS())
+        {
             Assert.Equal(Path.Combine(home, "Library", "Application Support", "ADA"), root);
+        }
         else if (OperatingSystem.IsLinux())
+        {
             Assert.Equal(Path.Combine(home, ".ada"), root);
+        }
         else if (OperatingSystem.IsWindows())
+        {
             Assert.Equal(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ADA"), root);
+        }
     }
 }

@@ -6,7 +6,7 @@ namespace ADA.Core.Catalog;
 /// <summary>The shapes ficsit.app allows for mod references and exact versions.</summary>
 public static partial class ModIdentifiers
 {
-    public const int MaxReferenceLength = 100;
+    internal const int MAX_REFERENCE_LENGTH = 100;
 
     /// <summary>A plain identifier such as <c>WeatherExtended</c>: letters, digits and underscores.</summary>
     public static bool IsValidReference(string? reference) => reference is not null && Reference().IsMatch(reference);

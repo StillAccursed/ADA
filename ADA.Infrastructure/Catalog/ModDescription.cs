@@ -80,14 +80,16 @@ public static partial class ModDescription
     }
 
     /// <summary>The https images a description shows (Markdown and HTML), in order, for the mod page's gallery.</summary>
-    public static IReadOnlyList<string> ImageUrls(string? markdown, int max = 30)
-    {
-        if (string.IsNullOrEmpty(markdown))
-        {
-            return [];
-        }
+    internal static IReadOnlyList<string> ImageUrls(string? markdown, int max = 30) =>
+        string.IsNullOrEmpty(markdown) ? [] : ImageUrlsInFormatted(Formatted(markdown), max);
 
-        var text = ContentRegion().Replace(Formatted(markdown), "\n");
+    /// <summary>
+    /// <see cref="ImageUrls"/> for text already returned by <see cref="Formatted"/>, so a caller that
+    /// shows the description doesn't format it twice. Images inside code blocks are not counted.
+    /// </summary>
+    public static IReadOnlyList<string> ImageUrlsInFormatted(string formatted, int max = 30)
+    {
+        var text = ContentRegion().Replace(formatted, "\n");
         return HtmlImageUrl().Matches(text)
             .Select(match => WebUtility.HtmlDecode(match.Groups["url"].Value))
             .Distinct(StringComparer.Ordinal)

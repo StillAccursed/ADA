@@ -1,16 +1,16 @@
 using System.Globalization;
+using ADA.Core.Settings;
+using ADA.Infrastructure.Settings;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
-using ADA.Core.Settings;
-using ADA.Infrastructure.Settings;
 
 namespace ADA.ViewModels;
 
 public partial class SettingsViewModel : ViewModelBase
 {
     // Clicking through the retries box saves once at the end, not on every step.
-    private static readonly TimeSpan SaveDelay = TimeSpan.FromMilliseconds(300);
+    private static readonly TimeSpan SAVE_DELAY = TimeSpan.FromMilliseconds(300);
 
     private readonly SettingsStore _store;
     private readonly ArchiveCache _archives;
@@ -18,22 +18,6 @@ public partial class SettingsViewModel : ViewModelBase
     private readonly bool _loading;
     private AppSettings _settings;
     private CancellationTokenSource? _pendingSave;
-
-    public SettingsViewModel(SettingsStore store, ArchiveCache archives, ILogger<SettingsViewModel> log)
-    {
-        _store = store;
-        _archives = archives;
-        _log = log;
-
-        _loading = true;
-        _settings = store.Current;
-        KeepDownloadedArchives = _settings.KeepDownloadedArchives;
-        DownloadRetries = _settings.DownloadRetries;
-        EndlessScroll = _settings.EndlessScroll;
-        ModsPageSize = _settings.ModsPageSize;
-        DashboardLatestModsCount = _settings.DashboardLatestModsCount;
-        _loading = false;
-    }
 
     [ObservableProperty]
     public partial bool KeepDownloadedArchives { get; set; }
@@ -47,7 +31,7 @@ public partial class SettingsViewModel : ViewModelBase
     public partial bool EndlessScroll { get; set; }
 
     /// <summary>Supported page sizes, used only when endless scrolling is off.</summary>
-    public IReadOnlyList<int> ModsPageSizes { get; } = Array.AsReadOnly(new[] { 25, 50, 100, 200, 500 });
+    public IReadOnlyList<int> ModsPageSizes => AppSettings.MODS_PAGE_SIZES;
 
     /// <summary>Results per page, retained when endless scrolling is enabled.</summary>
     [ObservableProperty]
@@ -61,12 +45,9 @@ public partial class SettingsViewModel : ViewModelBase
 
     public int MaxDashboardLatestModsCount => AppSettings.MAX_DASHBOARD_LATEST_MODS_COUNT;
 
-    /// <summary>Raised on the UI context after an archive deletion attempt, including partial deletion.</summary>
-    public event EventHandler? ArchivesChanged;
+    public int MinDownloadRetries => AppSettings.MIN_DOWNLOAD_RETRIES;
 
-    public int MinDownloadRetries => AppSettings.MinDownloadRetries;
-
-    public int MaxDownloadRetries => AppSettings.MaxDownloadRetries;
+    public int MaxDownloadRetries => AppSettings.MAX_DOWNLOAD_RETRIES;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasArchives))]
@@ -85,6 +66,22 @@ public partial class SettingsViewModel : ViewModelBase
 
     /// <summary>Completes when the most recent change has been written; for tests.</summary>
     internal Task PendingSave { get; private set; } = Task.CompletedTask;
+
+    public SettingsViewModel(SettingsStore store, ArchiveCache archives, ILogger<SettingsViewModel> log)
+    {
+        _store = store;
+        _archives = archives;
+        _log = log;
+
+        _loading = true;
+        _settings = store.Current;
+        KeepDownloadedArchives = _settings.KeepDownloadedArchives;
+        DownloadRetries = _settings.DownloadRetries;
+        EndlessScroll = _settings.EndlessScroll;
+        ModsPageSize = _settings.ModsPageSize;
+        DashboardLatestModsCount = _settings.DashboardLatestModsCount;
+        _loading = false;
+    }
 
     // Saved as soon as it changes; there is no separate "Save" step on this page.
     partial void OnKeepDownloadedArchivesChanged(bool value)
@@ -141,7 +138,7 @@ public partial class SettingsViewModel : ViewModelBase
     {
         try
         {
-            await Task.Delay(SaveDelay, ct);
+            await Task.Delay(SAVE_DELAY, ct);
             // Only this page's settings: others (e.g. the Mods page's layout) keep their current values.
             await Task.Run(() => _store.Update(current => current with
             {
@@ -173,7 +170,7 @@ public partial class SettingsViewModel : ViewModelBase
             ArchiveBytes = bytes;
             ArchiveSummary = count == 0
                 ? "No archives kept."
-                : $"{count.ToString("N0", CultureInfo.CurrentCulture)} archive{(count == 1 ? "" : "s")} using {FormatSize(bytes)}.";
+                : $"{count.ToString("N0", CultureInfo.CurrentCulture)} archive{(count == 1 ? "" : "s")} using {ByteSize.Format(bytes)}.";
         }
         catch (Exception e)
         {
@@ -195,21 +192,6 @@ public partial class SettingsViewModel : ViewModelBase
             ErrorText = $"Couldn't delete every archive: {e.Message}";
         }
         await RefreshAsync();
-        ArchivesChanged?.Invoke(this, EventArgs.Empty);
     }
 
-    internal static string FormatSize(long bytes)
-    {
-        string[] units = ["bytes", "KB", "MB", "GB", "TB"];
-        double size = bytes;
-        var unit = 0;
-        while (size >= 1024 && unit < units.Length - 1)
-        {
-            size /= 1024;
-            unit++;
-        }
-        return unit == 0
-            ? $"{bytes} bytes"
-            : $"{size.ToString(size < 10 ? "0.0" : "0", CultureInfo.CurrentCulture)} {units[unit]}";
-    }
 }

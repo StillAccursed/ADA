@@ -13,7 +13,9 @@ internal static partial class SearchText
     public static string ImageText(string? markdown)
     {
         if (string.IsNullOrEmpty(markdown))
+        {
             return "";
+        }
 
         var parts = new List<string>();
         foreach (Match m in MarkdownImage().Matches(markdown))
@@ -24,9 +26,14 @@ internal static partial class SearchText
         foreach (Match m in HtmlImage().Matches(markdown))
         {
             foreach (Match attr in HtmlTextAttribute().Matches(m.Value))
+            {
                 parts.Add(attr.Groups["value"].Value);
+            }
+
             if (HtmlSrc().Match(m.Value) is { Success: true } src)
+            {
                 parts.Add(FileNameWords(src.Groups["url"].Value));
+            }
         }
         return string.Join(' ', parts.Where(p => p.Length > 0));
     }
@@ -35,7 +42,9 @@ internal static partial class SearchText
     public static string Plain(string? markdown)
     {
         if (string.IsNullOrEmpty(markdown))
+        {
             return "";
+        }
 
         var text = MarkdownImage().Replace(markdown, " ");
         text = MarkdownLink().Replace(text, "${text}");

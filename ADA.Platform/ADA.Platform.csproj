@@ -13,4 +13,7 @@
     <PackageReference Include="CliWrap" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="ADA.Tests" />
+  </ItemGroup>
 </Project>

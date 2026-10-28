@@ -9,23 +9,31 @@ namespace ADA.Platform.Formats;
 /// <c>Engine/Binaries/Win64/FactoryGameEGS-Win64-Shipping.version</c>. This is the same for every
 /// store, unlike launcher build numbers.
 /// </summary>
-public static class GameBuildReader
+internal static class GameBuildReader
 {
     // Win64 for clients and Windows servers; Linux for the native Linux server (not yet observed).
-    private static readonly string[] BinaryFolders = ["Win64", "Linux"];
+    private static readonly string[] BINARY_FOLDERS = ["Win64", "Linux"];
 
+    /// <summary>
+    /// The build from the first readable <c>*-Shipping.version</c> file under
+    /// <c>Engine/Binaries/Win64</c> or <c>Linux</c> (folder names matched ignoring case). Null when there is none.
+    /// </summary>
     public static GameBuild? Read(string gamePath)
     {
-        foreach (var folder in BinaryFolders)
+        foreach (var folder in BINARY_FOLDERS)
         {
             var binaries = CaseInsensitivePath.Resolve(gamePath, ["Engine", "Binaries", folder]);
             if (binaries is null)
+            {
                 continue;
+            }
 
             foreach (var file in Directory.EnumerateFiles(binaries, "*-Shipping.version").Order(StringComparer.Ordinal))
             {
                 if (TryParse(file) is { } build)
+                {
                     return build;
+                }
             }
         }
         return null;
@@ -38,7 +46,9 @@ public static class GameBuildReader
             using var doc = JsonDocument.Parse(File.ReadAllText(file));
             var root = doc.RootElement;
             if (!root.TryGetProperty("Changelist", out var cl) || !cl.TryGetInt32(out var changelist) || changelist <= 0)
+            {
                 return null;
+            }
 
             var version = root.TryGetProperty("GameVersion", out var v) && v.ValueKind == JsonValueKind.String
                 ? v.GetString()

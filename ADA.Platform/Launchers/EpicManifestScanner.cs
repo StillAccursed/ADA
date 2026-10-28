@@ -8,22 +8,25 @@ namespace ADA.Platform.Launchers;
 /// Reads the Epic Games Launcher's per-game <c>*.item</c> manifests and keeps completed
 /// Satisfactory installs.
 /// </summary>
-public sealed class EpicManifestScanner(Func<string, string?> mapPath, GameHost host, string location)
+internal sealed class EpicManifestScanner(Func<string, string?> mapPath, GameHost host, string location)
 {
     // Epic's catalog namespace for Satisfactory (its codename is "Crab").
-    public const string CatalogNamespace = "crab";
+    public const string CATALOG_NAMESPACE = "crab";
 
+    /// <summary>Completed Satisfactory installs from the Epic manifests folder; empty if the folder doesn't exist.</summary>
     public IReadOnlyList<GameInstall> Scan(string manifestsHostPath)
     {
         var results = new List<GameInstall>();
         if (!Directory.Exists(manifestsHostPath))
+        {
             return results;
+        }
 
         foreach (var file in Directory.EnumerateFiles(manifestsHostPath, "*.item"))
         {
             var manifest = TryRead(file);
             if (manifest is null
-                || !string.Equals(manifest.CatalogNamespace, CatalogNamespace, StringComparison.OrdinalIgnoreCase)
+                || !string.Equals(manifest.CatalogNamespace, CATALOG_NAMESPACE, StringComparison.OrdinalIgnoreCase)
                 || manifest.IsIncompleteInstall
                 || string.IsNullOrWhiteSpace(manifest.InstallLocation))
             {
@@ -32,7 +35,9 @@ public sealed class EpicManifestScanner(Func<string, string?> mapPath, GameHost 
 
             var gamePath = mapPath(manifest.InstallLocation);
             if (gamePath is null || GameInstallValidator.InspectKind(gamePath) is not { } kind)
+            {
                 continue;
+            }
 
             results.Add(new GameInstall(gamePath, GameLauncher.Epic, host, kind, manifest.Version, location,
                 GameBuildReader.Read(gamePath)));

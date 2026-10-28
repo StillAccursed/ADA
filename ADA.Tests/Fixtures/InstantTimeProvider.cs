@@ -13,7 +13,9 @@ public sealed class InstantTimeProvider : TimeProvider
         get
         {
             lock (_delays)
+            {
                 return _delays.ToList();
+            }
         }
     }
 
@@ -22,7 +24,10 @@ public sealed class InstantTimeProvider : TimeProvider
         if (dueTime != Timeout.InfiniteTimeSpan)
         {
             lock (_delays)
+            {
                 _delays.Add(dueTime);
+            }
+
             dueTime = TimeSpan.Zero;
         }
         return base.CreateTimer(callback, state, dueTime, period);

@@ -29,22 +29,23 @@ public sealed class DashboardCardsTests : IDisposable
         _settings = new(_dir.Combine("settings.json"));
         _profileStore = new(_dir.Combine("Profiles"), _dir.Combine("profiles.json"));
         _service = new(_settings, new(new HttpClient(new FakeHttpHandler()), _dir.Combine("Archives")),
-            (_, _) => Task.FromResult<IReadOnlyList<CatalogVersion>>([]), _ => Task.FromResult(false));
+            new FakeVersionSource((_, _) => Task.FromResult<IReadOnlyList<CatalogVersion>>([])), _ => Task.FromResult(false));
         _profiles = new(_profileStore, _service);
-        _resolution = new((_, _) => Task.FromResult<IReadOnlyList<CatalogVersion>>([]), _service);
+        _resolution = new(new FakeVersionSource((_, _) => Task.FromResult<IReadOnlyList<CatalogVersion>>([])), _service);
     }
 
     public void Dispose() => _dir.Dispose();
 
     [Fact]
-    public async Task Refreshing_and_changing_the_limit_never_create_a_Default_profile()
+    public async Task Refreshing_and_changing_the_limit_never_create_a_profile_by_themselves()
     {
         _store.Upsert(Enumerable.Range(1, 8).Select(i => CatalogFixtures.Mod($"Mod{i}", lastVersion: DateTimeOffset.UtcNow.AddDays(-i))), DateTimeOffset.UtcNow);
         var vm = Dashboard();
         vm.SelectedInstall = Card("First");
         await vm.RefreshCardsAsync();
         Assert.Equal(5, vm.RecentMods.Count);
-        Assert.Equal("Default", vm.SelectedProfile?.Name);
+        Assert.Null(vm.SelectedProfile);
+        Assert.Empty(vm.Profiles);
         Assert.Empty(_profileStore.List());
 
         _settings.Save(new AppSettings(DashboardLatestModsCount: 2));
@@ -82,17 +83,55 @@ public sealed class DashboardCardsTests : IDisposable
         Assert.False(vm.CanChooseProfile);
         vm.SelectedProfile = new("Blocked", []);
         await vm.PendingProfileSwitch;
-        Assert.Equal("Default", await _profiles.ActiveNameAsync(card.Install));
-        Assert.Equal("Default", vm.SelectedProfile?.Name);
+        Assert.Null(await _profiles.ActiveNameAsync(card.Install));
+        Assert.Null(vm.SelectedProfile);
+    }
+
+    [Fact]
+    public async Task First_run_prompts_for_a_profile_and_creating_it_makes_it_active()
+    {
+        var vm = Dashboard();
+        var card = Card("First");
+        vm.SelectedInstall = card;
+        await vm.RefreshCardsAsync();
+
+        var prompt = Assert.IsType<CreateProfileViewModel>(vm.ProfilePrompt);
+        Assert.True(prompt.IsFirstProfile);
+        Assert.Equal("Profile 1", prompt.Name);
+        await prompt.CreateCommand.ExecuteAsync(null);
+        await vm.RefreshCardsAsync();
+
+        Assert.Null(vm.ProfilePrompt);
+        Assert.Equal("Profile 1", await _profiles.ActiveNameAsync(card.Install));
+        Assert.Equal("Profile 1", vm.SelectedProfile?.Name);
+        Assert.Equal("Profile 1", card.ProfileName);
+    }
+
+    [Fact]
+    public async Task A_dismissed_prompt_stays_closed_until_new_profile_is_chosen()
+    {
+        _profileStore.Save(new("Profile 1", []));
+        var vm = Dashboard();
+        vm.SelectedInstall = Card("First");
+        await vm.RefreshCardsAsync();
+        Assert.False(vm.ProfilePrompt!.IsFirstProfile);
+        Assert.Equal("Profile 2", vm.ProfilePrompt.Name);
+
+        vm.ProfilePrompt.DismissCommand.Execute(null);
+        await vm.RefreshCardsAsync();
+        Assert.Null(vm.ProfilePrompt);
+
+        vm.NewProfileCommand.Execute(null);
+        Assert.NotNull(vm.ProfilePrompt);
     }
 
     private DashboardViewModel Dashboard()
     {
         var catalog = new CatalogStatusViewModel(new CatalogSync(new FicsitApiClient(new HttpClient(new FakeHttpHandler())), _store),
             NullLogger<CatalogStatusViewModel>.Instance);
-        return new(new EmptyDetector(), catalog, game => new(game, _service, _resolution, _profiles, NullLogger<GameInstallViewModel>.Instance),
-            NullLogger<DashboardViewModel>.Instance, store: _store, settings: _settings, profiles: _profiles,
-            resolution: _resolution, storage: new(_dir.Combine("Archives")));
+        return DashboardFactory.Create(_dir, new EmptyDetector(),
+            game => new(game, _service, _resolution, _profiles, NullLogger<GameInstallViewModel>.Instance),
+            catalog, _store, _settings, _service, _profiles, _resolution);
     }
 
     private GameInstallViewModel Card(string folder)

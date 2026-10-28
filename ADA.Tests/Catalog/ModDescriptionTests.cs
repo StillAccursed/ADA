@@ -7,7 +7,7 @@ public class ModDescriptionTests
     [Fact]
     public void Formatted_keeps_markdown_and_structural_html_without_author_css()
     {
-        const string markdown = """
+        const string MARKDOWN = """
             # Features
 
             **Rain**, *snow* and `weather_enabled`.
@@ -22,7 +22,7 @@ public class ModDescriptionTests
             <div class="features" style="display: grid"><h2>Weather</h2><p>Storms &amp; wind</p></div>
             """;
 
-        var formatted = ModDescription.Formatted(markdown);
+        var formatted = ModDescription.Formatted(MARKDOWN);
 
         Assert.Contains("# Features", formatted);
         Assert.Contains("**Rain**, *snow* and `weather_enabled`.", formatted);
@@ -36,7 +36,7 @@ public class ModDescriptionTests
     [Fact]
     public void Formatted_removes_hidden_content_but_keeps_https_images_in_place()
     {
-        const string markdown = """
+        const string MARKDOWN = """
             <div><STYLE>.rp-title { display: inline-block; }</STYLE></div>
             <!-- implementation notes -->
             <script>window.alert('example');</script>
@@ -47,7 +47,7 @@ public class ModDescriptionTests
             ![Reference image][photo]
             """;
 
-        var formatted = ModDescription.Formatted(markdown);
+        var formatted = ModDescription.Formatted(MARKDOWN);
 
         Assert.Contains("# Refined Power", formatted);
         Assert.Contains("<b>Multiplayer Compatible</b><div>Everyone!</div>", formatted);
@@ -57,7 +57,7 @@ public class ModDescriptionTests
         Assert.Contains("<img src=\"https://example.com/banner.png\" alt=\"Banner\">", formatted);
         Assert.Contains("<img src=\"https://example.com/photo.png\" alt=\"Photo\">", formatted);
         Assert.DoesNotContain("![Reference image]", formatted);
-        Assert.Equal(["https://example.com/banner.png", "https://example.com/photo.png"], ModDescription.ImageUrls(markdown));
+        Assert.Equal(["https://example.com/banner.png", "https://example.com/photo.png"], ModDescription.ImageUrls(MARKDOWN));
     }
 
     [Theory]
@@ -108,7 +108,7 @@ public class ModDescriptionTests
     [Fact]
     public void Keeps_paragraphs_and_lists_but_drops_markup_images_and_urls()
     {
-        const string markdown = """
+        const string MARKDOWN = """
             # Weather Extended
 
             Adds **rain** and *snow*. See [the wiki](https://example.com/wiki).
@@ -120,7 +120,7 @@ public class ModDescriptionTests
             """;
 
         Assert.Equal("Weather Extended\n\nAdds rain and snow. See the wiki.\n\n• Fog\n• Storms & wind",
-            ModDescription.Readable(markdown));
+            ModDescription.Readable(MARKDOWN));
     }
 
     [Theory]
@@ -131,7 +131,7 @@ public class ModDescriptionTests
     [Fact]
     public void Gallery_takes_https_images_in_order_without_repeats()
     {
-        const string markdown = """
+        const string MARKDOWN = """
             ![one](https://example.com/1.png "title")
             <img alt="two" src="https://example.com/2.jpg">
             ![insecure](http://example.com/3.png)
@@ -139,16 +139,16 @@ public class ModDescriptionTests
             [not an image](https://example.com/page)
             """;
 
-        Assert.Equal(["https://example.com/1.png", "https://example.com/2.jpg"], ModDescription.ImageUrls(markdown));
+        Assert.Equal(["https://example.com/1.png", "https://example.com/2.jpg"], ModDescription.ImageUrls(MARKDOWN));
     }
 
     [Fact]
     public void Mixed_images_keep_their_positions_between_paragraphs()
     {
-        const string markdown = "Before\n\n![Banner](https://example.com/banner.png)\n\nBetween\n\n<img src='https://example.com/photo.png'>\n\nAfter";
+        const string MARKDOWN = "Before\n\n![Banner](https://example.com/banner.png)\n\nBetween\n\n<img src='https://example.com/photo.png'>\n\nAfter";
 
         Assert.Equal("Before\n\n<img src=\"https://example.com/banner.png\" alt=\"Banner\">\n\nBetween\n\n<img src=\"https://example.com/photo.png\" alt=\"\">\n\nAfter",
-            ModDescription.Formatted(markdown));
+            ModDescription.Formatted(MARKDOWN));
     }
 
     [Theory]
@@ -181,11 +181,11 @@ public class ModDescriptionTests
     [Fact]
     public void Html_images_keep_only_encoded_source_and_alt_attributes()
     {
-        const string markdown = "<IMG data-src='https://wrong.example/image.png' SRC='https://example.com/image.png?a=1&amp;b=2' alt='A &quot;photo&quot; &amp; more' width='9000' height='10' style='display:none' onerror='alert(1)' />";
+        const string MARKDOWN = "<IMG data-src='https://wrong.example/image.png' SRC='https://example.com/image.png?a=1&amp;b=2' alt='A &quot;photo&quot; &amp; more' width='9000' height='10' style='display:none' onerror='alert(1)' />";
 
         Assert.Equal("<img src=\"https://example.com/image.png?a=1&amp;b=2\" alt=\"A &quot;photo&quot; &amp; more\">",
-            ModDescription.Formatted(markdown));
-        Assert.Equal(["https://example.com/image.png?a=1&b=2"], ModDescription.ImageUrls(markdown));
+            ModDescription.Formatted(MARKDOWN));
+        Assert.Equal(["https://example.com/image.png?a=1&b=2"], ModDescription.ImageUrls(MARKDOWN));
     }
 
     [Theory]
@@ -200,7 +200,7 @@ public class ModDescriptionTests
     [Fact]
     public void Reference_images_resolve_case_and_whitespace_and_stay_in_gallery_order()
     {
-        const string markdown = """
+        const string MARKDOWN = """
             ![First][ Banner  Image ]
             <img src="https://example.com/second.png">
             ![Third][]
@@ -211,7 +211,7 @@ public class ModDescriptionTests
             [Fourth]: https://example.com/fourth.png
             """;
 
-        var formatted = ModDescription.Formatted(markdown);
+        var formatted = ModDescription.Formatted(MARKDOWN);
 
         Assert.Contains("<img src=\"https://example.com/first.png\" alt=\"First\">", formatted);
         Assert.Contains("<img src=\"https://example.com/third.png\" alt=\"Third\">", formatted);
@@ -219,14 +219,14 @@ public class ModDescriptionTests
         Assert.DoesNotContain("[banner image]:", formatted);
         Assert.DoesNotContain("![", formatted);
         Assert.Equal(["https://example.com/first.png", "https://example.com/second.png", "https://example.com/third.png", "https://example.com/fourth.png"],
-            ModDescription.ImageUrls(markdown));
-        Assert.Equal("", ModDescription.Readable(markdown));
+            ModDescription.ImageUrls(MARKDOWN));
+        Assert.Equal("", ModDescription.Readable(MARKDOWN));
     }
 
     [Fact]
     public void Code_and_hidden_images_do_not_enter_the_gallery_or_define_visible_references()
     {
-        const string markdown = """
+        const string MARKDOWN = """
             <!-- <img src="https://example.com/hidden.png"> -->
             `<img src="https://example.com/inline-example.png">`
             ```markdown
@@ -237,7 +237,7 @@ public class ModDescriptionTests
             ![Visible](https://example.com/visible.png)
             """;
 
-        Assert.Equal(["https://example.com/visible.png"], ModDescription.ImageUrls(markdown));
-        Assert.DoesNotContain("![Hidden]", ModDescription.Formatted(markdown));
+        Assert.Equal(["https://example.com/visible.png"], ModDescription.ImageUrls(MARKDOWN));
+        Assert.DoesNotContain("![Hidden]", ModDescription.Formatted(MARKDOWN));
     }
 }

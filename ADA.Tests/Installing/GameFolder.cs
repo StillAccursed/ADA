@@ -25,7 +25,10 @@ internal sealed class GameFolder
     {
         var folder = ModFolder(location);
         if (!Directory.Exists(folder))
+        {
             return null;
+        }
+
         return Directory.EnumerateFiles(folder, "*", SearchOption.AllDirectories)
             .ToDictionary(f => Path.GetRelativePath(folder, f).Replace('\\', '/'), File.ReadAllText);
     }

@@ -12,8 +12,6 @@ namespace ADA.Infrastructure.Profiles;
 /// </summary>
 public sealed partial class ProfileStore(string profilesFolder, string stateFile)
 {
-    public const string DefaultName = "Default";
-
     private readonly Lock _gate = new();
 
     /// <summary>Raised outside the store lock after a profile or active selection is saved, on the saving thread.</summary>
@@ -25,13 +23,18 @@ public sealed partial class ProfileStore(string profilesFolder, string stateFile
     public IReadOnlyList<ModProfile> List()
     {
         lock (_gate)
+        {
             return Files().Select(f => f.Profile).OrderBy(p => p.Name, StringComparer.CurrentCultureIgnoreCase).ToList();
+        }
     }
 
+    /// <summary>Null when no profile has this name (names match ignoring case).</summary>
     public ModProfile? Get(string name)
     {
         lock (_gate)
+        {
             return Find(name)?.Profile;
+        }
     }
 
     /// <summary>Creates or replaces the profile with this name (names match ignoring case).</summary>
@@ -51,20 +54,35 @@ public sealed partial class ProfileStore(string profilesFolder, string stateFile
     {
         var trimmed = name?.Trim();
         if (string.IsNullOrEmpty(trimmed))
+        {
             return "Give the profile a name.";
-        if (trimmed.Length > OlpFile.MaxNameLength)
-            return $"Profile names are at most {OlpFile.MaxNameLength} characters.";
+        }
+
+        if (trimmed.Length > OlpFile.MAX_NAME_LENGTH)
+        {
+            return $"Profile names are at most {OlpFile.MAX_NAME_LENGTH} characters.";
+        }
+
         return Get(trimmed) is null ? null : $"There's already a profile called \"{trimmed}\".";
     }
 
-    /// <summary>The profile the game uses; <see cref="DefaultName"/> until another is chosen.</summary>
-    public string ActiveName(string gamePath)
+    /// <summary>
+    /// The profile the game uses, or null until one is created or chosen for it. There is no
+    /// implicit fallback profile: an unsaved placeholder could otherwise be applied as an empty switch.
+    /// </summary>
+    internal string? ActiveName(string gamePath)
     {
         lock (_gate)
-            return LoadState().Active.GetValueOrDefault(gamePath) ?? DefaultName;
+        {
+            return LoadState().Active.GetValueOrDefault(gamePath);
+        }
     }
 
-    public void SetActive(string gamePath, string name)
+    /// <summary>
+    /// Records the game's active profile and raises <see cref="Changed"/>. Moves no mods; switching is
+    /// <see cref="GameProfiles"/>' job.
+    /// </summary>
+    internal void SetActive(string gamePath, string name)
     {
         lock (_gate)
         {
@@ -76,13 +94,16 @@ public sealed partial class ProfileStore(string profilesFolder, string stateFile
     }
 
     /// <summary>Mod folders the user chose to leave alone in this game, so they aren't asked about again.</summary>
-    public IReadOnlySet<string> LeftAlone(string gamePath)
+    internal IReadOnlySet<string> LeftAlone(string gamePath)
     {
         lock (_gate)
+        {
             return (LoadState().LeftAlone.GetValueOrDefault(gamePath) ?? []).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        }
     }
 
-    public void LeaveAlone(string gamePath, IEnumerable<string> locations)
+    /// <summary>Adds folders to the game's left-alone set, kept across sessions. Doesn't raise <see cref="Changed"/>.</summary>
+    internal void LeaveAlone(string gamePath, IEnumerable<string> locations)
     {
         lock (_gate)
         {
@@ -95,8 +116,11 @@ public sealed partial class ProfileStore(string profilesFolder, string stateFile
     private IEnumerable<(string Path, ModProfile Profile)> Files()
     {
         if (!Directory.Exists(Folder))
+        {
             yield break;
-        foreach (var path in Directory.EnumerateFiles(Folder, "*" + OlpFile.Extension))
+        }
+
+        foreach (var path in Directory.EnumerateFiles(Folder, "*" + OlpFile.EXTENSION))
         {
             ModProfile profile;
             try
@@ -116,7 +140,9 @@ public sealed partial class ProfileStore(string profilesFolder, string stateFile
         foreach (var file in Files())
         {
             if (string.Equals(file.Profile.Name, name.Trim(), StringComparison.OrdinalIgnoreCase))
+            {
                 return file;
+            }
         }
         return null;
     }
@@ -126,10 +152,16 @@ public sealed partial class ProfileStore(string profilesFolder, string stateFile
     {
         var stem = UnsafeFileNameChars().Replace(name.Trim(), "_");
         if (ReservedOnWindows().IsMatch(stem))
+        {
             stem = "_" + stem;
-        var path = Path.Combine(Folder, stem + OlpFile.Extension);
+        }
+
+        var path = Path.Combine(Folder, stem + OlpFile.EXTENSION);
         for (var n = 2; File.Exists(path); n++)
-            path = Path.Combine(Folder, $"{stem} ({n}){OlpFile.Extension}");
+        {
+            path = Path.Combine(Folder, $"{stem} ({n}){OlpFile.EXTENSION}");
+        }
+
         return path;
     }
 
@@ -141,7 +173,9 @@ public sealed partial class ProfileStore(string profilesFolder, string stateFile
             {
                 using var stream = File.OpenRead(stateFile);
                 if (JsonSerializer.Deserialize(stream, ProfileJsonContext.Default.ProfileState) is { } state)
+                {
                     return state with { Active = new(state.Active, StringComparer.Ordinal), LeftAlone = new(state.LeftAlone, StringComparer.Ordinal) };
+                }
             }
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or JsonException)

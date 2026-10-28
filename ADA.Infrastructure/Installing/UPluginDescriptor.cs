@@ -4,12 +4,12 @@ namespace ADA.Infrastructure.Installing;
 
 /// <param name="Name">The plugin (mod reference) this one depends on, e.g. <c>SML</c>.</param>
 /// <param name="SemVersion">Semver range, e.g. <c>^3.12.0</c>; null if the entry gives none.</param>
-public sealed record UPluginDependency(string Name, string? SemVersion, bool Optional);
+internal sealed record UPluginDependency(string Name, string? SemVersion, bool Optional);
 
 /// <summary>The fields of a <c>.uplugin</c> file that ADA uses (see <c>smod.md</c>).</summary>
 /// <param name="Reference">The file name without extension; also the mod's folder name.</param>
 /// <param name="GameFeature">True: installs under <c>Mods/GameFeatures/</c>; false or absent: <c>Mods/</c>.</param>
-public sealed record UPluginDescriptor(
+internal sealed record UPluginDescriptor(
     string Reference,
     string Version,
     string? FriendlyName,
@@ -18,7 +18,7 @@ public sealed record UPluginDescriptor(
     IReadOnlyList<UPluginDependency> Dependencies)
 {
     // Authors sometimes edit .uplugin files by hand.
-    private static readonly JsonDocumentOptions Lenient = new()
+    private static readonly JsonDocumentOptions LENIENT = new()
     {
         AllowTrailingCommas = true,
         CommentHandling = JsonCommentHandling.Skip,
@@ -29,7 +29,7 @@ public sealed record UPluginDescriptor(
     {
         try
         {
-            using var doc = JsonDocument.Parse(json, Lenient);
+            using var doc = JsonDocument.Parse(json, LENIENT);
             var root = doc.RootElement;
             var version = String(root, "SemVersion") ?? String(root, "VersionName")
                           ?? throw new InvalidModArchiveException($"{reference}.uplugin has no SemVersion.");
@@ -40,7 +40,9 @@ public sealed record UPluginDescriptor(
                 foreach (var plugin in plugins.EnumerateArray())
                 {
                     if (String(plugin, "Name") is { } name)
+                    {
                         dependencies.Add(new UPluginDependency(name, String(plugin, "SemVersion"), Bool(plugin, "Optional")));
+                    }
                 }
             }
 

@@ -4,7 +4,7 @@ namespace ADA.Infrastructure.IO;
 /// Replaces a file in one step: write a temporary file beside it, flush it to disk, then rename it
 /// over the original. A crash at any point leaves either the old file or the new one.
 /// </summary>
-public static class AtomicFile
+internal static class AtomicFile
 {
     public static void Write(string path, Action<Stream> write) => WriteAll([(path, write)]);
 
@@ -28,12 +28,16 @@ public static class AtomicFile
             }
 
             for (var i = 0; i < files.Count; i++)
+            {
                 File.Move(temps[i], files[i].Path, overwrite: true);
+            }
         }
         finally
         {
             foreach (var temp in temps.Where(File.Exists))
+            {
                 File.Delete(temp);
+            }
         }
     }
 }

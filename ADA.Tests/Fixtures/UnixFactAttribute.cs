@@ -9,6 +9,8 @@ public sealed class UnixFactAttribute : FactAttribute
     public UnixFactAttribute()
     {
         if (OperatingSystem.IsWindows())
+        {
             Skip = "Wine prefix fixtures need 'x:' file names, which Windows does not allow.";
+        }
     }
 }

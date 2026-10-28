@@ -1,9 +1,9 @@
 using System.Globalization;
+using ADA.Core.Catalog;
+using ADA.Infrastructure.Catalog;
 using Avalonia.Media.Imaging;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using ADA.Core.Catalog;
-using ADA.Infrastructure.Catalog;
 
 namespace ADA.ViewModels;
 
@@ -12,6 +12,7 @@ namespace ADA.ViewModels;
 public partial class ModItemViewModel(CatalogMod mod, Action<ModItemViewModel, bool>? setFavourite = null) : ViewModelBase
 {
     private string? _description;
+    private string? _formattedDescription;
 
     public CatalogMod Mod { get; } = mod;
 
@@ -57,9 +58,12 @@ public partial class ModItemViewModel(CatalogMod mod, Action<ModItemViewModel, b
     /// Markdown and structural HTML for the Overview, prepared on first use with HTTPS images and without
     /// author CSS. Falls back to the short description when the full description contains no content.
     /// </summary>
-    public string Description => _description ??= ModDescription.Formatted(Mod.FullDescription) is { Length: > 0 } text
+    public string Description => _description ??= FormattedDescription is { Length: > 0 } text
         ? text
         : Mod.ShortDescription;
+
+    /// <summary>The full description after <see cref="ModDescription.Formatted"/>; empty when it has no content. Formatted once.</summary>
+    internal string FormattedDescription => _formattedDescription ??= ModDescription.Formatted(Mod.FullDescription);
 
     /// <summary>Ficsit's current EA report for Stable, independent of the selected mod version and local game.</summary>
     public BranchCompatibilityViewModel StableCompatibility { get; } = new(mod.CompatibilityRelease);
@@ -231,7 +235,7 @@ public sealed class VersionRowViewModel(CatalogVersion version, bool supportsGam
 
     public bool IsInstalled { get; } = isInstalled;
 
-    public string? SizeText { get; } = size is { } bytes ? SettingsViewModel.FormatSize(bytes) : null;
+    public string? SizeText { get; } = size is { } bytes ? ByteSize.Format(bytes) : null;
 
     public string Changelog { get; } = ModDescription.Readable(version.Changelog) is { Length: > 0 } text ? text : "No changelog given.";
 }

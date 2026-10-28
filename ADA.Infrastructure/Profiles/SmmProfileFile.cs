@@ -7,15 +7,15 @@ using ADA.Infrastructure.IO;
 namespace ADA.Infrastructure.Profiles;
 
 /// <summary>Reads and writes <c>.smmprofile</c> files (see <c>smmprofile.md</c>).</summary>
-public static class SmmProfileFile
+internal static class SmmProfileFile
 {
-    public const string Extension = ".smmprofile";
-    public const int LockfileVersion = 1;
-    public const long MaxFileBytes = 16 * 1024 * 1024;
+    public const string EXTENSION = ".smmprofile";
+    public const int LOCKFILE_VERSION = 1;
+    public const long MAX_FILE_BYTES = 16 * 1024 * 1024;
 
     // The default encoder escapes characters such as '>' for safe embedding in HTML ("\u003E=0.0.0").
     // Profile files are only ever files, so write them as other tools do (">=0.0.0").
-    private static readonly SmmProfileJsonContext Writer = new(new JsonSerializerOptions
+    private static readonly SmmProfileJsonContext WRITER = new(new JsonSerializerOptions
     {
         WriteIndented = true,
         IndentSize = 2,
@@ -26,8 +26,11 @@ public static class SmmProfileFile
     public static SmmProfileDocument Read(string path)
     {
         var info = new FileInfo(path);
-        if (info.Length > MaxFileBytes)
-            throw new InvalidProfileException($"{info.Name} is {info.Length:N0} bytes; profiles are at most {MaxFileBytes:N0}.");
+        if (info.Length > MAX_FILE_BYTES)
+        {
+            throw new InvalidProfileException($"{info.Name} is {info.Length:N0} bytes; profiles are at most {MAX_FILE_BYTES:N0}.");
+        }
+
         using var stream = info.OpenRead();
         return Parse(stream);
     }
@@ -59,7 +62,7 @@ public static class SmmProfileFile
         SortOrdinally(doc);
         return stream =>
         {
-            JsonSerializer.Serialize(stream, doc, Writer.SmmProfileDocument);
+            JsonSerializer.Serialize(stream, doc, WRITER.SmmProfileDocument);
             stream.WriteByte((byte)'\n'); // other tools end the file with a newline
         };
     }
@@ -72,14 +75,19 @@ public static class SmmProfileFile
     private static void SortOrdinally(SmmProfileDocument doc)
     {
         if (doc.Profile?.Mods is { } mods)
+        {
             doc.Profile.Mods = new SortedDictionary<string, SmmProfileMod>(mods, StringComparer.Ordinal);
+        }
+
         if (doc.Lockfile?.Mods is { } locked)
         {
             doc.Lockfile.Mods = new SortedDictionary<string, SmmLockedMod>(locked, StringComparer.Ordinal);
             foreach (var mod in doc.Lockfile.Mods.Values)
             {
                 if (mod.Targets is { } targets)
+                {
                     mod.Targets = new SortedDictionary<string, SmmTarget>(targets, StringComparer.Ordinal);
+                }
             }
         }
     }
@@ -87,26 +95,44 @@ public static class SmmProfileFile
     private static void Validate(SmmProfileDocument? doc)
     {
         if (doc?.Profile is null || doc.Lockfile is null)
+        {
             throw new InvalidProfileException("Not a valid .smmprofile: \"profile\" and \"lockfile\" are required.");
+        }
+
         if (string.IsNullOrWhiteSpace(doc.Profile.Name))
+        {
             throw new InvalidProfileException("The profile has no name.");
-        if (doc.Lockfile.Version != LockfileVersion)
-            throw new InvalidProfileException($"Lockfile version {doc.Lockfile.Version} is not supported (expected {LockfileVersion}).");
+        }
+
+        if (doc.Lockfile.Version != LOCKFILE_VERSION)
+        {
+            throw new InvalidProfileException($"Lockfile version {doc.Lockfile.Version} is not supported (expected {LOCKFILE_VERSION}).");
+        }
 
         foreach (var (reference, mod) in doc.Profile.Mods ?? [])
         {
             if (!ModIdentifiers.IsValidReference(reference))
+            {
                 throw new InvalidProfileException($"\"{reference}\" is not a valid mod reference.");
+            }
+
             if (string.IsNullOrWhiteSpace(mod?.Version))
+            {
                 throw new InvalidProfileException($"{reference} has no version range.");
+            }
         }
 
         foreach (var (reference, mod) in doc.Lockfile.Mods ?? [])
         {
             if (!ModIdentifiers.IsValidReference(reference))
+            {
                 throw new InvalidProfileException($"\"{reference}\" is not a valid mod reference.");
+            }
+
             if (!ModIdentifiers.IsExactVersion(mod?.Version))
+            {
                 throw new InvalidProfileException($"{reference} has an invalid locked version \"{mod?.Version}\".");
+            }
         }
     }
 }
@@ -114,7 +140,7 @@ public static class SmmProfileFile
 // Wire shapes, field for field as observed in the sample. Unknown fields at each level are kept
 // in ExtensionData so a file read and written back loses nothing.
 
-public sealed class SmmProfileDocument
+internal sealed class SmmProfileDocument
 {
     [JsonPropertyName("profile")] public SmmProfileSection? Profile { get; set; }
     [JsonPropertyName("lockfile")] public SmmLockfile? Lockfile { get; set; }
@@ -122,7 +148,7 @@ public sealed class SmmProfileDocument
     [JsonExtensionData] public Dictionary<string, JsonElement>? Extra { get; set; }
 }
 
-public sealed class SmmProfileSection
+internal sealed class SmmProfileSection
 {
     [JsonPropertyName("mods")] public SortedDictionary<string, SmmProfileMod>? Mods { get; set; }
     [JsonPropertyName("name")] public string? Name { get; set; }
@@ -130,21 +156,21 @@ public sealed class SmmProfileSection
     [JsonExtensionData] public Dictionary<string, JsonElement>? Extra { get; set; }
 }
 
-public sealed class SmmProfileMod
+internal sealed class SmmProfileMod
 {
     [JsonPropertyName("version")] public string? Version { get; set; }
     [JsonPropertyName("enabled")] public bool Enabled { get; set; } = true;
     [JsonExtensionData] public Dictionary<string, JsonElement>? Extra { get; set; }
 }
 
-public sealed class SmmLockfile
+internal sealed class SmmLockfile
 {
     [JsonPropertyName("mods")] public SortedDictionary<string, SmmLockedMod>? Mods { get; set; }
     [JsonPropertyName("version")] public int Version { get; set; }
     [JsonExtensionData] public Dictionary<string, JsonElement>? Extra { get; set; }
 }
 
-public sealed class SmmLockedMod
+internal sealed class SmmLockedMod
 {
     [JsonPropertyName("dependencies")] public JsonElement? Dependencies { get; set; }
     [JsonPropertyName("targets")] public SortedDictionary<string, SmmTarget>? Targets { get; set; }
@@ -152,14 +178,14 @@ public sealed class SmmLockedMod
     [JsonExtensionData] public Dictionary<string, JsonElement>? Extra { get; set; }
 }
 
-public sealed class SmmTarget
+internal sealed class SmmTarget
 {
     [JsonPropertyName("hash")] public string? Hash { get; set; }
     [JsonPropertyName("link")] public string? Link { get; set; }
     [JsonExtensionData] public Dictionary<string, JsonElement>? Extra { get; set; }
 }
 
-public sealed class SmmMetadata
+internal sealed class SmmMetadata
 {
     [JsonPropertyName("gameVersion")] public int GameVersion { get; set; }
     [JsonExtensionData] public Dictionary<string, JsonElement>? Extra { get; set; }

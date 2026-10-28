@@ -9,12 +9,14 @@ namespace ADA.Platform.Detection;
 /// Linux: Steam (native, Flatpak, Snap) libraries, where Proton keeps the game files, and Epic
 /// installs managed by Heroic or Legendary.
 /// </summary>
-public sealed class LinuxDetector(string home) : IGameDetector
+internal sealed class LinuxDetector(string home) : IGameDetector
 {
+    /// <summary>Looks under the current user's home folder.</summary>
     public LinuxDetector() : this(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile))
     {
     }
 
+    /// <inheritdoc />
     public IReadOnlyList<GameInstall> Detect()
     {
         var results = new List<GameInstall>();
@@ -31,7 +33,9 @@ public sealed class LinuxDetector(string home) : IGameDetector
             .Where(Directory.Exists)
             .DistinctBy(r => new DirectoryInfo(r).ResolveLinkTarget(returnFinalTarget: true)?.FullName ?? r);
         foreach (var root in realRoots)
+        {
             results.AddRange(new SteamLibraryScanner(MapNative, GameHost.LinuxCompat, "Steam").Scan(root));
+        }
 
         string[] legendaryInstalled =
         [
@@ -40,7 +44,9 @@ public sealed class LinuxDetector(string home) : IGameDetector
             Path.Combine(home, ".config", "legendary", "installed.json"),
         ];
         foreach (var file in legendaryInstalled)
+        {
             results.AddRange(ScanLegendary(file));
+        }
 
         // Two roots can still list the same extra library.
         return results.DistinctBy(r => r.GamePath).ToList();
@@ -49,7 +55,9 @@ public sealed class LinuxDetector(string home) : IGameDetector
     private static IEnumerable<GameInstall> ScanLegendary(string installedJson)
     {
         if (!File.Exists(installedJson))
+        {
             yield break;
+        }
 
         JsonDocument doc;
         try
@@ -64,17 +72,23 @@ public sealed class LinuxDetector(string home) : IGameDetector
         using (doc)
         {
             if (doc.RootElement.ValueKind != JsonValueKind.Object)
+            {
                 yield break;
+            }
 
             foreach (var game in doc.RootElement.EnumerateObject())
             {
                 // Legendary keys games by Epic app name; Satisfactory's start with its codename "Crab".
                 if (!game.Name.StartsWith("Crab", StringComparison.OrdinalIgnoreCase))
+                {
                     continue;
+                }
 
                 var path = game.Value.TryGetProperty("install_path", out var p) ? p.GetString() : null;
                 if (path is null || GameInstallValidator.InspectKind(path) is not { } kind)
+                {
                     continue;
+                }
 
                 var version = game.Value.TryGetProperty("version", out var v) ? v.GetString() : null;
                 yield return new GameInstall(path, GameLauncher.Epic, GameHost.LinuxCompat, kind, version, "Heroic / Legendary",

@@ -10,7 +10,7 @@ public sealed class DashboardDiskStatusViewModel(DashboardStorageSnapshot? snaps
     public string ArchiveSize => Format(snapshot?.Archives);
 
     public string TotalSize => snapshot is { Mods.IsComplete: true, Archives.IsComplete: true }
-        ? SettingsViewModel.FormatSize(snapshot.Mods.Bytes + snapshot.Archives.Bytes) : "Unknown";
+        ? ByteSize.Format(snapshot.Mods.Bytes + snapshot.Archives.Bytes) : "Unknown";
 
     public string AvailableSpace => Size(snapshot?.GameVolume.AvailableBytes);
 
@@ -23,13 +23,13 @@ public sealed class DashboardDiskStatusViewModel(DashboardStorageSnapshot? snaps
 
     public string? Problem => snapshot?.Mods.Problem ?? snapshot?.Archives.Problem;
 
-    private static string Size(long? bytes) => bytes is { } size ? SettingsViewModel.FormatSize(size) : "Unknown";
+    private static string Size(long? bytes) => bytes is { } size ? ByteSize.Format(size) : "Unknown";
 
     private static string Format(FolderMeasurement? value) => value switch
     {
         null => "Measuring…",
-        { IsComplete: true } => SettingsViewModel.FormatSize(value.Bytes),
-        { Bytes: > 0 } => $"{SettingsViewModel.FormatSize(value.Bytes)} (partial)",
+        { IsComplete: true } => ByteSize.Format(value.Bytes),
+        { Bytes: > 0 } => $"{ByteSize.Format(value.Bytes)} (partial)",
         _ => "Unknown",
     };
 }

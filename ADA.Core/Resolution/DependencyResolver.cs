@@ -14,14 +14,20 @@ namespace ADA.Core.Resolution;
 /// mods, shallow dependencies), so a search that tries the most constrained mod first, and preferred
 /// then newest stable versions first, finds an answer quickly; a step limit guards the worst case.
 /// </remarks>
-public sealed class DependencyResolver(Func<string, CancellationToken, Task<IReadOnlyList<CatalogVersion>>> getVersions)
+public sealed class DependencyResolver(IModVersionSource versions)
 {
-    public const int DefaultStepLimit = 200_000;
-    private const int ParallelFetches = 8;
-    private const int MaxProblemsReported = 3;
+    internal const int DEFAULT_STEP_LIMIT = 200_000;
+    private const int PARALLEL_FETCHES = 8;
+    private const int MAX_PROBLEMS_REPORTED = 3;
 
-    public int StepLimit { get; init; } = DefaultStepLimit;
+    /// <summary>Search steps before giving up with a "too many version combinations" problem; tests lower it.</summary>
+    internal int StepLimit { get; init; } = DEFAULT_STEP_LIMIT;
 
+    /// <summary>
+    /// Picks one version of every requested mod and its dependencies that satisfies all constraints
+    /// in the request. Never throws for an unsolvable request: invalid references, invalid ranges,
+    /// conflicts and reaching <see cref="StepLimit"/> all come back as problems on the result.
+    /// </summary>
     public async Task<ResolveResult> ResolveAsync(ResolveRequest request, CancellationToken ct = default)
     {
         var problems = new List<string>();
@@ -29,14 +35,22 @@ public sealed class DependencyResolver(Func<string, CancellationToken, Task<IRea
         foreach (var requirement in request.Requested)
         {
             if (!ModIdentifiers.IsValidReference(requirement.Reference))
+            {
                 problems.Add($"\"{requirement.Reference}\" is not a valid mod reference.");
+            }
             else if (!TryParseRange(requirement.Range ?? "*", out var range))
+            {
                 problems.Add($"{requirement.Reference}: \"{requirement.Range}\" is not a valid version range.");
+            }
             else
+            {
                 requested.Add((requirement, range));
+            }
         }
         if (problems.Count > 0)
+        {
             return new ResolveResult([], problems);
+        }
 
         var catalog = await DiscoverAsync(requested.Select(r => r.Requirement.Reference), request, ct);
         return new Search(catalog, request, StepLimit, ct).Run(requested);
@@ -60,8 +74,8 @@ public sealed class DependencyResolver(Func<string, CancellationToken, Task<IRea
         {
             var fetched = new (string Reference, IReadOnlyList<CatalogVersion> Versions)[layer.Count];
             await Parallel.ForEachAsync(Enumerable.Range(0, layer.Count),
-                new ParallelOptions { MaxDegreeOfParallelism = ParallelFetches, CancellationToken = ct },
-                async (i, token) => fetched[i] = (layer[i], await getVersions(layer[i], token)));
+                new ParallelOptions { MaxDegreeOfParallelism = PARALLEL_FETCHES, CancellationToken = ct },
+                async (i, token) => fetched[i] = (layer[i], await versions.GetVersionsAsync(layer[i], ct: token)));
 
             var next = new List<string>();
             foreach (var (reference, versions) in fetched)
@@ -81,7 +95,9 @@ public sealed class DependencyResolver(Func<string, CancellationToken, Task<IRea
     private static ModCandidates Filter(string reference, IReadOnlyList<CatalogVersion> versions, ResolveRequest request)
     {
         if (versions.Count == 0)
+        {
             return new ModCandidates([], $"{reference} is not on ficsit.app.");
+        }
 
         var usable = new List<Candidate>();
         var noBuild = 0;
@@ -89,7 +105,10 @@ public sealed class DependencyResolver(Func<string, CancellationToken, Task<IRea
         foreach (var version in versions)
         {
             if (!SemVersion.TryParse(version.Version, SemVersionStyles.Any, out var semver))
+            {
                 continue;
+            }
+
             if (version.TargetFor(request.Platform) is null)
             {
                 noBuild++;
@@ -113,11 +132,15 @@ public sealed class DependencyResolver(Func<string, CancellationToken, Task<IRea
                 dependencies.Add(new Dependency(dep.ModReference, range, dep.Condition, dep.Optional));
             }
             if (valid)
+            {
                 usable.Add(new Candidate(version, semver, dependencies));
+            }
         }
 
         if (usable.Count > 0)
+        {
             return new ModCandidates(usable, null);
+        }
 
         if (wrongGame.Count > 0)
         {
@@ -158,7 +181,9 @@ public sealed class DependencyResolver(Func<string, CancellationToken, Task<IRea
         {
             var constraints = new Dictionary<string, List<Constraint>>(StringComparer.OrdinalIgnoreCase);
             foreach (var (requirement, range) in requested)
+            {
                 Add(constraints, requirement.Reference, new Constraint(range, requirement.Range ?? "any version", "requested", false));
+            }
 
             Dictionary<string, Candidate>? solution;
             try
@@ -174,7 +199,7 @@ public sealed class DependencyResolver(Func<string, CancellationToken, Task<IRea
             {
                 var problems = _failures
                     .OrderByDescending(f => f.Value)
-                    .Take(MaxProblemsReported)
+                    .Take(MAX_PROBLEMS_REPORTED)
                     .Select(f => f.Key)
                     .ToList();
                 return new ResolveResult([], problems.Count > 0 ? problems : ["No combination of versions works."]);
@@ -194,7 +219,10 @@ public sealed class DependencyResolver(Func<string, CancellationToken, Task<IRea
             foreach (var (reference, list) in constraints)
             {
                 if (chosen.ContainsKey(reference) || list.All(c => c.Optional))
+                {
                     continue;
+                }
+
                 var viable = Viable(reference, list);
                 if (options is null || viable.Count < options.Count)
                 {
@@ -202,11 +230,15 @@ public sealed class DependencyResolver(Func<string, CancellationToken, Task<IRea
                     options = viable;
                 }
                 if (viable.Count == 0)
+                {
                     break;
+                }
             }
 
             if (next is null)
+            {
                 return chosen;
+            }
 
             if (options!.Count == 0)
             {
@@ -217,7 +249,9 @@ public sealed class DependencyResolver(Func<string, CancellationToken, Task<IRea
             foreach (var option in options)
             {
                 if (++_steps > stepLimit)
+                {
                     throw new StepLimitException();
+                }
 
                 var from = $"{next} {option.Version.Version}";
                 var nextConstraints = Copy(constraints);
@@ -240,7 +274,9 @@ public sealed class DependencyResolver(Func<string, CancellationToken, Task<IRea
 
                 var nextChosen = new Dictionary<string, Candidate>(chosen, StringComparer.OrdinalIgnoreCase) { [next] = option };
                 if (Solve(nextChosen, nextConstraints) is { } solution)
+                {
                     return solution;
+                }
             }
             return null;
         }
@@ -249,7 +285,9 @@ public sealed class DependencyResolver(Func<string, CancellationToken, Task<IRea
         private List<Candidate> Viable(string reference, List<Constraint> constraints)
         {
             if (!catalog.TryGetValue(reference, out var mod))
+            {
                 return [];
+            }
 
             var preferred = request.Preferred?.GetValueOrDefault(reference);
             return mod.Candidates
@@ -301,31 +339,45 @@ public sealed class DependencyResolver(Func<string, CancellationToken, Task<IRea
             foreach (var (reference, candidate) in chosen)
             {
                 foreach (var dep in candidate.Dependencies.Where(d => chosen.ContainsKey(d.Reference)))
+                {
                     requiredBy[dep.Reference].Add($"{reference} {candidate.Version.Version}");
+                }
             }
 
             var ordered = new List<ResolvedMod>();
             var done = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             var visiting = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (var reference in chosen.Keys.Order(StringComparer.OrdinalIgnoreCase))
+            {
                 Visit(reference);
+            }
+
             return ordered;
 
             void Visit(string reference)
             {
                 // A dependency cycle cannot be ordered strictly; break it where it is found.
                 if (done.Contains(reference) || !visiting.Add(reference))
+                {
                     return;
+                }
+
                 foreach (var dep in chosen[reference].Dependencies
                              .Select(d => d.Reference)
                              .Where(chosen.ContainsKey)
                              .Order(StringComparer.OrdinalIgnoreCase))
+                {
                     Visit(dep);
+                }
+
                 visiting.Remove(reference);
                 done.Add(reference);
                 var reasons = requiredBy[reference].Order(StringComparer.Ordinal).ToList();
                 if (requested.Contains(reference))
+                {
                     reasons.Insert(0, "requested");
+                }
+
                 ordered.Add(new ResolvedMod(chosen[reference].Version, reasons));
             }
         }
@@ -333,7 +385,10 @@ public sealed class DependencyResolver(Func<string, CancellationToken, Task<IRea
         private static void Add(Dictionary<string, List<Constraint>> constraints, string reference, Constraint constraint)
         {
             if (!constraints.TryGetValue(reference, out var list))
+            {
                 constraints[reference] = list = [];
+            }
+
             list.Add(constraint);
         }
 

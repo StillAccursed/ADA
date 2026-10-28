@@ -1,6 +1,6 @@
+using ADA.ViewModels;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
-using ADA.ViewModels;
 
 namespace ADA.Views;
 
@@ -17,6 +17,8 @@ public partial class SettingsView : UserControl
     {
         base.OnLoaded(e);
         if (DataContext is SettingsViewModel vm)
+        {
             _ = vm.RefreshAsync();
+        }
     }
 }

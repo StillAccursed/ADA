@@ -8,7 +8,8 @@ using Polly.Retry;
 
 namespace ADA.Infrastructure.Ficsit;
 
-public sealed class FicsitApiException(string message, Exception? inner = null) : Exception(message, inner);
+/// <summary>ficsit.app couldn't be reached, returned an error, or sent a response ADA couldn't read.</summary>
+internal sealed class FicsitApiException(string message, Exception? inner = null) : Exception(message, inner);
 
 /// <summary>
 /// Reads the ficsit.app GraphQL API (<c>https://api.ficsit.app/v2/query</c>). The API's terms
@@ -17,38 +18,38 @@ public sealed class FicsitApiException(string message, Exception? inner = null) 
 public sealed class FicsitApiClient : IModCatalogSource
 {
     // The API caps list sizes; 100 keeps a full catalogue sync to a few dozen requests.
-    private const int VersionPageSize = 100;
-    private const int MaxAttempts = 4;
+    private const int VERSION_PAGE_SIZE = 100;
+    private const int MAX_ATTEMPTS = 4;
 
-    private static readonly Uri QueryEndpoint = new(FicsitApi.BaseAddress, "v2/query");
+    private static readonly Uri QUERY_ENDPOINT = new(FicsitApi.BASE_ADDRESS, "v2/query");
 
     // Sort orders are fixed per CatalogOrder, so they are part of the query text; everything that
     // varies is sent as a GraphQL variable. Not updated_at: ficsit.app rewrites it on every mod
     // routinely, so it is useless for change detection and, with thousands of identical values,
     // unstable for paging.
-    private const string LatestFields = "version game_version targets { targetName }";
+    private const string LATEST_FIELDS = "version game_version targets { targetName }";
 
-    private const string ModFields = $$"""
+    private const string MOD_FIELDS = $$"""
         count
         mods { id mod_reference name short_description full_description logo downloads popularity hotness
                updated_at last_version_date tags { name } authors { user { username } }
                compatibility { EA { state } EXP { state } } views
-               latestVersions { release { {{LatestFields}} } beta { {{LatestFields}} } alpha { {{LatestFields}} } } }
+               latestVersions { release { {{LATEST_FIELDS}} } beta { {{LATEST_FIELDS}} } alpha { {{LATEST_FIELDS}} } } }
         """;
 
-    private const string ModsByCreated = $$"""
+    private const string MODS_BY_CREATED = $$"""
         query Mods($offset: Int!, $limit: Int!) {
-          getMods(filter: { offset: $offset, limit: $limit, order_by: created_at, order: asc, hidden: false }) { {{ModFields}} }
+          getMods(filter: { offset: $offset, limit: $limit, order_by: created_at, order: asc, hidden: false }) { {{MOD_FIELDS}} }
         }
         """;
 
-    private const string ModsByLatestVersion = $$"""
+    private const string MODS_BY_LATEST_VERSION = $$"""
         query Mods($offset: Int!, $limit: Int!) {
-          getMods(filter: { offset: $offset, limit: $limit, order_by: last_version_date, order: desc, hidden: false }) { {{ModFields}} }
+          getMods(filter: { offset: $offset, limit: $limit, order_by: last_version_date, order: desc, hidden: false }) { {{MOD_FIELDS}} }
         }
         """;
 
-    private const string Versions = """
+    private const string VERSIONS = """
         query Versions($modReference: ModReference!, $offset: Int!, $limit: Int!) {
           getModByReference(modReference: $modReference) {
             versions(filter: { offset: $offset, limit: $limit, order_by: created_at, order: desc }) {
@@ -71,7 +72,7 @@ public sealed class FicsitApiClient : IModCatalogSource
         _retry = new ResiliencePipelineBuilder<HttpResponseMessage> { TimeProvider = time ?? TimeProvider.System }
             .AddRetry(new RetryStrategyOptions<HttpResponseMessage>
             {
-                MaxRetryAttempts = MaxAttempts - 1,
+                MaxRetryAttempts = MAX_ATTEMPTS - 1,
                 ShouldHandle = args => ValueTask.FromResult(
                     args.Outcome.Result is { } r ? IsTransient(r.StatusCode) : Retry.IsTransientException(args.Outcome.Exception, args.Context)),
                 DelayGenerator = args => ValueTask.FromResult<TimeSpan?>(
@@ -80,29 +81,36 @@ public sealed class FicsitApiClient : IModCatalogSource
             .Build();
     }
 
+    /// <inheritdoc />
     public async Task<CatalogPage> GetModsAsync(int offset, int limit, CatalogOrder order, CancellationToken ct = default)
     {
-        var query = order == CatalogOrder.CreatedAscending ? ModsByCreated : ModsByLatestVersion;
+        var query = order == CatalogOrder.CreatedAscending ? MODS_BY_CREATED : MODS_BY_LATEST_VERSION;
         var data = await QueryAsync(new GraphQlRequest<PageVariables>(query, new PageVariables(offset, limit)),
             FicsitJsonContext.Default.GraphQlRequestPageVariables, FicsitJsonContext.Default.GraphQlResponseModsData, ct);
         return new CatalogPage(data.GetMods.Mods.Select(Map).ToList(), data.GetMods.Count);
     }
 
+    /// <inheritdoc />
+    /// <exception cref="ArgumentException"><paramref name="modReference"/> is not a valid mod reference.</exception>
     public async Task<IReadOnlyList<CatalogVersion>> GetVersionsAsync(string modReference, CancellationToken ct = default)
     {
         if (!ModIdentifiers.IsValidReference(modReference))
+        {
             throw new ArgumentException($"'{modReference}' is not a valid mod reference.", nameof(modReference));
+        }
 
         var all = new List<CatalogVersion>();
-        for (var offset = 0; ; offset += VersionPageSize)
+        for (var offset = 0; ; offset += VERSION_PAGE_SIZE)
         {
-            var request = new GraphQlRequest<VersionVariables>(Versions, new VersionVariables(modReference, offset, VersionPageSize));
+            var request = new GraphQlRequest<VersionVariables>(VERSIONS, new VersionVariables(modReference, offset, VERSION_PAGE_SIZE));
             var data = await QueryAsync(request, FicsitJsonContext.Default.GraphQlRequestVersionVariables,
                 FicsitJsonContext.Default.GraphQlResponseModVersionsData, ct);
             var page = data.Mod?.Versions ?? [];
             all.AddRange(page.Select(v => Map(modReference, v)));
-            if (page.Count < VersionPageSize)
+            if (page.Count < VERSION_PAGE_SIZE)
+            {
                 return all;
+            }
         }
     }
 
@@ -113,14 +121,18 @@ public sealed class FicsitApiClient : IModCatalogSource
         try
         {
             using var response = await _retry.ExecuteAsync(
-                async token => await _http.PostAsJsonAsync(QueryEndpoint, request, requestType, token), ct);
+                async token => await _http.PostAsJsonAsync(QUERY_ENDPOINT, request, requestType, token), ct);
 
             if (!response.IsSuccessStatusCode)
+            {
                 throw new FicsitApiException($"ficsit.app returned HTTP {(int)response.StatusCode}.");
+            }
 
             var body = await response.Content.ReadFromJsonAsync(responseType, ct);
             if (body?.Data is { } data)
+            {
                 return data;
+            }
 
             var message = body?.Errors is { Count: > 0 } errors
                 ? string.Join("; ", errors.Select(e => e.Message))

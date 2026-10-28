@@ -27,4 +27,5 @@ internal static class DiskSpace
         : $"{bytes / (1024 * 1024):N0} MB";
 }
 
-public sealed class InsufficientSpaceException(string message) : IOException(message);
+/// <summary>The drive doesn't have room for the change; checked before anything is written.</summary>
+internal sealed class InsufficientSpaceException(string message) : IOException(message);

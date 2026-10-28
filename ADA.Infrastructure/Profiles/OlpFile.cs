@@ -7,21 +7,22 @@ using ADA.Infrastructure.IO;
 
 namespace ADA.Infrastructure.Profiles;
 
+/// <summary>A profile file, profile name or profile mod is invalid; the message says why and is shown as-is.</summary>
 public sealed class InvalidProfileException(string message) : Exception(message);
 
 /// <summary>
 /// Reads and writes ADA's <c>.olp</c> profile files:
 /// <c>{ "name": "...", "mods": [ { "name": "&lt;mod reference&gt;", "version": "&lt;exact version&gt;" } ] }</c>.
 /// </summary>
-public static class OlpFile
+internal static class OlpFile
 {
-    public const string Extension = ".olp";
-    public const int MaxMods = 5000;
-    public const long MaxFileBytes = 1024 * 1024;
-    public const int MaxNameLength = 100;
+    public const string EXTENSION = ".olp";
+    public const int MAX_MODS = 5000;
+    public const long MAX_FILE_BYTES = 1024 * 1024;
+    public const int MAX_NAME_LENGTH = 100;
 
     // Write profile names as typed ("Ryan's & Co"), not HTML-escaped ("Ryan\u0027s \u0026 Co").
-    private static readonly OlpJsonContext Writer = new(new JsonSerializerOptions
+    private static readonly OlpJsonContext WRITER = new(new JsonSerializerOptions
     {
         WriteIndented = true,
         IndentSize = 2,
@@ -32,8 +33,11 @@ public static class OlpFile
     public static ModProfile Read(string path)
     {
         var info = new FileInfo(path);
-        if (info.Length > MaxFileBytes)
-            throw new InvalidProfileException($"{info.Name} is {info.Length:N0} bytes; profiles are at most {MaxFileBytes:N0}.");
+        if (info.Length > MAX_FILE_BYTES)
+        {
+            throw new InvalidProfileException($"{info.Name} is {info.Length:N0} bytes; profiles are at most {MAX_FILE_BYTES:N0}.");
+        }
+
         using var stream = info.OpenRead();
         return Parse(stream);
     }
@@ -52,17 +56,30 @@ public static class OlpFile
         }
 
         if (doc is null)
+        {
             throw new InvalidProfileException("Not a valid profile: the file is empty.");
+        }
 
         var name = doc.Name?.Trim();
         if (string.IsNullOrEmpty(name))
+        {
             throw new InvalidProfileException("The profile has no name.");
-        if (name.Length > MaxNameLength)
-            throw new InvalidProfileException($"The profile name is longer than {MaxNameLength} characters.");
+        }
+
+        if (name.Length > MAX_NAME_LENGTH)
+        {
+            throw new InvalidProfileException($"The profile name is longer than {MAX_NAME_LENGTH} characters.");
+        }
+
         if (doc.Mods is null)
+        {
             throw new InvalidProfileException("The profile has no \"mods\" list.");
-        if (doc.Mods.Count > MaxMods)
-            throw new InvalidProfileException($"The profile lists {doc.Mods.Count:N0} mods; the limit is {MaxMods:N0}.");
+        }
+
+        if (doc.Mods.Count > MAX_MODS)
+        {
+            throw new InvalidProfileException($"The profile lists {doc.Mods.Count:N0} mods; the limit is {MAX_MODS:N0}.");
+        }
 
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var mods = new List<ProfileMod>(doc.Mods.Count);
@@ -70,11 +87,20 @@ public static class OlpFile
         {
             var mod = doc.Mods[i] ?? throw new InvalidProfileException($"Mod #{i + 1} is empty.");
             if (!ModIdentifiers.IsValidReference(mod.Name))
+            {
                 throw new InvalidProfileException($"Mod #{i + 1} has an invalid name \"{mod.Name}\"; names are mod references such as WeatherExtended.");
+            }
+
             if (!ModIdentifiers.IsExactVersion(mod.Version))
+            {
                 throw new InvalidProfileException($"{mod.Name} has an invalid version \"{mod.Version}\"; versions are exact, such as 1.1.0.");
+            }
+
             if (!seen.Add(mod.Name!))
+            {
                 throw new InvalidProfileException($"{mod.Name} is listed more than once.");
+            }
+
             mods.Add(new ProfileMod(mod.Name!, mod.Version!));
         }
 
@@ -95,12 +121,14 @@ public static class OlpFile
                 .ToList());
 
         // Validate what we are about to write by the same rules we read with.
-        using (var check = new MemoryStream(JsonSerializer.SerializeToUtf8Bytes(doc, Writer.OlpDocument)))
+        using (var check = new MemoryStream(JsonSerializer.SerializeToUtf8Bytes(doc, WRITER.OlpDocument)))
+        {
             Parse(check);
+        }
 
         return stream =>
         {
-            JsonSerializer.Serialize(stream, doc, Writer.OlpDocument);
+            JsonSerializer.Serialize(stream, doc, WRITER.OlpDocument);
             stream.WriteByte((byte)'\n');
         };
     }

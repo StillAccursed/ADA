@@ -6,7 +6,7 @@ The dashboard has five cards. At wide sizes, Installations and Disk Status occup
 
 The dropdown selects among installations ADA detected through launcher records. It does not allow typed paths or manual installation creation. Selection is shared with the Mods page, and rescanning retains the same installation by its game path while it still exists.
 
-The card shows build, host, location and managed-mod state. **Details and actions** contains repair, import and missing-dependency actions. Actionable conditions expand those details. The game-running banner and existing close-game confirmation remain above the cards.
+The card shows build, host, location and managed-mod state. **Details and actions** contains repair, import and missing-dependency actions. Details expand when a condition first needs attention; collapsing them keeps them collapsed until that condition clears and a new one appears. The game-running banner and existing close-game confirmation remain above the cards.
 
 ## Latest Updated Mods
 
@@ -28,9 +28,13 @@ Measurements run off the UI thread. Changes to selection or data supersede stale
 
 ## Profiles
 
+Satisfactory has no profiles of its own, so a switch moves the outgoing profile's mods out of the Mods folder and the chosen profile's mods in. Most people are expected to keep one profile per playthrough.
+
+There is no implicit "Default" profile. When the selected installation has no profile (always the case on first run), ADA opens **Create your first profile**, suggesting "Profile 1". Creating it saves the mods ADA manages in that installation and makes the profile active. **Not now** closes the prompt for that installation until the next launch; **New profile…** on the Profiles card opens it again at any time, e.g. to start a new playthrough's profile from the current mods.
+
 Active-profile selection applies to the installation selected in the Installations card. The Mods page's installation selector remains available; it is not an active-profile selector.
 
-Choosing another profile applies its exact saved versions, resolves required dependencies for the captured game build/platform, removes managed mods outside the result and leaves unrelated unmanaged files alone. Missing/incompatible versions and unmanaged collisions fail without silently choosing newer versions. The implicit Default profile is not written merely by viewing the dashboard; an explicit switch away saves it if needed.
+Choosing another profile applies its exact saved versions, resolves required dependencies for the captured game build/platform, removes managed mods outside the result and leaves unrelated unmanaged files alone. Missing/incompatible versions and unmanaged collisions fail without silently choosing newer versions. Every change is recorded into the active profile, so the outgoing mods are already saved. An installation with managed mods but no profile refuses to switch until one is created, since those mods would otherwise be removed with nothing to restore them from. Found mods can be added to the current profile only once one exists; before that they can go into a new profile.
 
 Selection is unavailable while the game is running, a check/switch is active, or mod requests for that installation are queued. The service also reserves the installation across planning, downloads, installation and activation, and the installer retains its cross-process file lock.
 

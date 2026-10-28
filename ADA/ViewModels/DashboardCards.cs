@@ -1,6 +1,5 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
-using CommunityToolkit.Mvvm.ComponentModel;
 using ADA.Core.Catalog;
 using ADA.Core.Profiles;
 using ADA.Core.Settings;
@@ -9,6 +8,8 @@ using ADA.Infrastructure.Installing;
 using ADA.Infrastructure.IO;
 using ADA.Infrastructure.Profiles;
 using ADA.Infrastructure.Settings;
+using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 
 namespace ADA.ViewModels;
 
@@ -27,17 +28,19 @@ public sealed class DashboardModViewModel(CatalogMod mod)
 
 public partial class DashboardViewModel
 {
-    private readonly ModCatalogStore? _store;
-    private readonly SettingsStore? _settings;
-    private readonly GameProfiles? _profiles;
-    private readonly ModResolutionService? _resolution;
-    private readonly DashboardStorageReader? _storage;
+    private readonly ModCatalogStore _store;
+    private readonly SettingsStore _settings;
+    private readonly GameProfiles _profiles;
+    private readonly ModResolutionService _resolution;
+    private readonly DashboardStorageReader _storage;
+
+    // Installations whose create-profile prompt was dismissed this session; "New profile" still opens it.
+    private readonly HashSet<string> _promptDismissed = new(StringComparer.Ordinal);
     private SynchronizationContext? _uiContext;
     private CancellationTokenSource? _cardRefresh;
     private bool _loadingProfiles;
     private int _cardRevision;
     private int _requestedRecentCount;
-    private bool _hasImplicitDefault;
 
     public ObservableCollection<DashboardModViewModel> RecentMods { get; } = [];
 
@@ -80,14 +83,21 @@ public partial class DashboardViewModel
     public string ProfilesText => $"{Profiles.Count} profile{(Profiles.Count == 1 ? "" : "s")}";
 
     public string ProfileModsText => SelectedProfile is { } profile
-        ? _hasImplicitDefault && profile.Name.Equals(ProfileStore.DefaultName, StringComparison.OrdinalIgnoreCase)
-            ? "Default has not been saved yet." : $"{profile.Mods.Count} mods in profile"
-        : "No profile selected";
+        ? $"{profile.Mods.Count} mod{(profile.Mods.Count == 1 ? "" : "s")} in profile"
+        : SelectedInstall is null ? "No installation selected" : "This installation has no profile yet.";
+
+    /// <summary>
+    /// The open create-profile prompt, or null. Set when the selected installation has no profile
+    /// (always the case on first run) and by <see cref="NewProfileCommand"/>; the main window shows
+    /// it as a dialog and it clears itself when closed.
+    /// </summary>
+    [ObservableProperty]
+    public partial CreateProfileViewModel? ProfilePrompt { get; private set; }
 
     public string LastCatalogUpdateText => Catalog.LastChecked?.ToLocalTime().ToString("g") ?? "Not checked yet";
 
     public bool CanChooseProfile => SelectedInstall is { IsBusy: false, IsSwitchingProfile: false, HasModOperations: false }
-        && !IsGameRunning && _profiles is not null && !_profiles.IsChanging(SelectedInstall.Install);
+        && !IsGameRunning && !_profiles.IsChanging(SelectedInstall.Install);
 
     /// <summary>Current actionable conditions, deduplicated without inventing notification history.</summary>
     public string Notifications
@@ -131,7 +141,7 @@ public partial class DashboardViewModel
     public async Task RefreshCardsAsync()
     {
         _uiContext ??= SynchronizationContext.Current;
-        var recentCount = _settings?.Current.DashboardLatestModsCount ?? AppSettings.DEFAULT_DASHBOARD_LATEST_MODS_COUNT;
+        var recentCount = _settings.Current.DashboardLatestModsCount;
         _requestedRecentCount = recentCount;
         _cardRefresh?.Cancel();
         var source = new CancellationTokenSource();
@@ -143,44 +153,38 @@ public partial class DashboardViewModel
         {
             // Coalesce bursty check/profile/operation notifications into one filesystem scan.
             await Task.Delay(100, ct);
-            var recentTask = Task.Run(() => _store?.GetRecentlyUpdated(recentCount), ct);
-            var profileTask = _profiles?.ListAsync() ?? Task.FromResult<IReadOnlyList<ModProfile>>([]);
-            var diskTask = ReadStorageAsync(game?.Install.ModsPath, ct);
+            var recentTask = Task.Run(() => _store.GetRecentlyUpdated(recentCount), ct);
+            var profileTask = _profiles.ListAsync();
+            var diskTask = _storage.ReadAsync(game?.Install.ModsPath, ct);
             await Task.WhenAll(recentTask, profileTask, diskTask);
             ct.ThrowIfCancellationRequested();
             if (revision != _cardRevision)
             {
                 return;
             }
-            if (await recentTask is { } recent)
+            var recent = await recentTask;
+            RecentMods.Clear();
+            foreach (var mod in recent)
             {
-                RecentMods.Clear();
-                foreach (var mod in recent)
-                {
-                    RecentMods.Add(new(mod));
-                }
-                RecentModsState = recent.Count == 0 ? "No cached releases yet." : "";
+                RecentMods.Add(new(mod));
             }
+            RecentModsState = recent.Count == 0 ? "No cached releases yet." : "";
             Disk = new(await diskTask);
             if (game?.IsSwitchingProfile != true)
             {
                 _loadingProfiles = true;
+                string? activeName;
                 try
                 {
-                    var activeName = game is null || _profiles is null
-                        ? ProfileStore.DefaultName : await _profiles.ActiveNameAsync(game.Install);
+                    activeName = game is null ? null : await _profiles.ActiveNameAsync(game.Install);
                     ct.ThrowIfCancellationRequested();
                     Profiles.Clear();
                     foreach (var profile in await profileTask)
                     {
                         Profiles.Add(profile);
                     }
-                    _hasImplicitDefault = !Profiles.Any(p => p.Name.Equals(ProfileStore.DefaultName, StringComparison.OrdinalIgnoreCase));
-                    if (_hasImplicitDefault)
-                    {
-                        Profiles.Insert(0, new(ProfileStore.DefaultName, []));
-                    }
-                    SelectedProfile = game is null ? null : Profiles.FirstOrDefault(p => p.Name.Equals(activeName, StringComparison.OrdinalIgnoreCase));
+                    SelectedProfile = activeName is null
+                        ? null : Profiles.FirstOrDefault(p => p.Name.Equals(activeName, StringComparison.OrdinalIgnoreCase));
                     if (game is not null)
                     {
                         game.ProfileName = activeName;
@@ -192,6 +196,10 @@ public partial class DashboardViewModel
                 finally
                 {
                     _loadingProfiles = false;
+                }
+                if (game is { IsBusy: false } && activeName is null && !_promptDismissed.Contains(game.Install.GamePath))
+                {
+                    OpenProfilePrompt(game);
                 }
             }
             CardError = null;
@@ -247,9 +255,45 @@ public partial class DashboardViewModel
         }
     }
 
+    /// <summary>Opens the create-profile prompt for the selected installation, even if it was dismissed.</summary>
+    [RelayCommand]
+    private void NewProfile()
+    {
+        if (SelectedInstall is not { } game || !CanChooseProfile)
+        {
+            ProfileNotice = "Wait for current operations to finish and close Satisfactory before creating a profile.";
+            return;
+        }
+        OpenProfilePrompt(game);
+    }
+
+    /// <summary>Shows one prompt at a time; dismissing it stops the automatic prompt for that installation.</summary>
+    private void OpenProfilePrompt(GameInstallViewModel game)
+    {
+        if (ProfilePrompt is not null)
+        {
+            return;
+        }
+        var prompt = new CreateProfileViewModel(game, _profiles, Profiles.Select(p => p.Name).ToList());
+        prompt.Closed += (_, created) =>
+        {
+            ProfilePrompt = null;
+            if (created)
+            {
+                ProfileNotice = $"{game.ProfileName} is active for {game.Install.DisplayName}.";
+            }
+            else
+            {
+                _promptDismissed.Add(game.Install.GamePath);
+            }
+            _ = RefreshCardsAsync();
+        };
+        ProfilePrompt = prompt;
+    }
+
     private async Task SwitchProfileAsync(GameInstallViewModel game, ModProfile profile)
     {
-        if (!CanChooseProfile || _profiles is null || _resolution is null)
+        if (!CanChooseProfile)
         {
             ProfileNotice = "Wait for current operations to finish and close Satisfactory before switching profiles.";
             await RefreshCardsAsync();
@@ -279,16 +323,11 @@ public partial class DashboardViewModel
         }
     }
 
-    private async Task<DashboardStorageSnapshot?> ReadStorageAsync(string? path, CancellationToken ct)
-    {
-        return _storage is null ? null : await _storage.ReadAsync(path, ct);
-    }
-
     private void OnCardSourceChanged(object? sender, EventArgs e)
     {
         void RefreshFromSource()
         {
-            if (ReferenceEquals(sender, _settings) && _settings?.Current.DashboardLatestModsCount == _requestedRecentCount)
+            if (ReferenceEquals(sender, _settings) && _settings.Current.DashboardLatestModsCount == _requestedRecentCount)
             {
                 return;
             }

@@ -1,65 +1,11 @@
 using System.Security.Cryptography;
 using System.Text.Json;
-using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Logging.Abstractions;
 using ADA.Core.Catalog;
 using ADA.Infrastructure.IO;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace ADA.Infrastructure.Installing;
-
-/// <summary>A change to apply to one game's mods. An install over an installed mod is an update.</summary>
-public abstract record ModChange
-{
-    /// <param name="ArchivePath">A verified <c>.smod</c> (see <c>ArchiveDownloader</c>).</param>
-    public sealed record Install(string ArchivePath, TargetPlatform Platform, bool IncludeDebugSymbols = true) : ModChange;
-
-    public sealed record Uninstall(string Reference) : ModChange;
-}
-
-public enum InstallStage
-{
-    Downloading,
-    Extracting,
-    Committing,
-}
-
-public sealed record InstallProgress(string Reference, InstallStage Stage, int FilesDone, int FilesTotal);
-
-public class InstallException(string message, Exception? inner = null) : Exception(message, inner);
-
-public sealed class GameRunningException()
-    : InstallException("Satisfactory is running. Close the game before changing mods; it locks mod files.");
-
-public sealed record TransactionResult(IReadOnlyList<InstalledMod> Installed, IReadOnlyList<string> Uninstalled);
-
-/// <param name="RolledForward">Verified changes that were completed.</param>
-/// <param name="Discarded">Unverified changes that were dropped; those mods are as they were.</param>
-public sealed record RecoveryResult(
-    bool HadInterruptedTransaction,
-    IReadOnlyList<string> RolledForward,
-    IReadOnlyList<string> Discarded,
-    IReadOnlyList<string> RolledBack)
-{
-    public static readonly RecoveryResult Clean = new(false, [], [], []);
-}
-
-public enum ModHealth
-{
-    Ok,
-    Damaged,
-    Missing,
-}
-
-public sealed record ModCheck(string Reference, ModHealth Health, IReadOnlyList<string> Problems);
-
-/// <param name="Unmanaged">Mod folders ADA did not install; left alone.</param>
-public sealed record CheckResult(IReadOnlyList<ModCheck> Mods, IReadOnlyList<string> Unmanaged)
-{
-    public IEnumerable<ModCheck> NeedingRepair => Mods.Where(m => m.Health != ModHealth.Ok);
-}
-
-/// <summary>Thrown by test checkpoints to stop the engine dead, as a crash or power cut would.</summary>
-internal sealed class SimulatedCrashException(string checkpoint) : Exception("Simulated crash at " + checkpoint);
 
 /// <summary>
 /// Installs, updates and uninstalls mods in one game so that <c>Mods</c> only ever changes by
@@ -71,22 +17,10 @@ internal sealed class SimulatedCrashException(string checkpoint) : Exception("Si
 /// journal alone, because a crash can land between a rename and the journal entry recording it.
 /// That makes recovery safe to run any number of times.
 /// </remarks>
-/// <summary>A mod folder in the game that ADA didn't install (e.g. Satisfactory Mod Manager did), read from its <c>.uplugin</c>.</summary>
-/// <param name="Location">Relative to <c>FactoryGame</c>, e.g. <c>Mods/X</c>.</param>
-/// <param name="Dependencies">Mods its <c>.uplugin</c> requires (optional ones left out).</param>
-public sealed record FoundMod(string Reference, string Version, string? FriendlyName, string Location,
-    IReadOnlyList<string> Dependencies);
-
-/// <param name="Unreadable">Folders that aren't recognisable mods, and why; never adopted.</param>
-public sealed record FoundMods(IReadOnlyList<FoundMod> Mods, IReadOnlyDictionary<string, string> Unreadable)
-{
-    public static readonly FoundMods None = new([], new Dictionary<string, string>());
-}
-
 public sealed class ModInstaller
 {
     // Room left on the drive beyond the mod itself, for the journal, records and the filesystem.
-    private const long FreeSpaceMargin = 64L * 1024 * 1024;
+    private const long FREE_SPACE_MARGIN = 64L * 1024 * 1024;
 
     private readonly GameModFolders _folders;
     private readonly Func<bool> _isGameRunning;
@@ -96,27 +30,8 @@ public sealed class ModInstaller
     private readonly RequestedModsStore _requested;
     private readonly ILogger _log;
 
-    /// <param name="gameRoot">The folder containing <c>FactoryGame</c>.</param>
-    /// <param name="isGameRunning">Checked before every transaction, on the thread running it.</param>
-    public ModInstaller(string gameRoot, Func<bool> isGameRunning) : this(gameRoot, isGameRunning, null)
-    {
-    }
-
-    /// <param name="checkpoint">Called at every step; crash tests throw from it.</param>
-    /// <param name="log">Receives cleanup failures after an installation has already committed.</param>
-    internal ModInstaller(string gameRoot, Func<bool> isGameRunning, Action<string>? checkpoint, ILogger? log = null)
-    {
-        _folders = new GameModFolders(gameRoot);
-        _isGameRunning = isGameRunning;
-        _checkpoint = checkpoint ?? (_ => { });
-        _records = new InstalledModsStore(_folders.InstalledRecord);
-        _journal = new JournalStore(_folders.Journal);
-        _requested = new RequestedModsStore(_folders.RequestedRecord);
-        _log = log ?? NullLogger.Instance;
-    }
-
     /// <summary>A journal remains for interrupted changes or committed changes awaiting cleanup.</summary>
-    public bool HasInterruptedTransaction => _journal.Exists;
+    internal bool HasInterruptedTransaction => _journal.Exists;
 
     /// <summary>A committed profile switch still needs its active-profile metadata finalised.</summary>
     internal bool HasPendingProfileActivation => File.Exists(_folders.ProfileActivation)
@@ -139,11 +54,30 @@ public sealed class ModInstaller
         }
     }
 
+    /// <param name="gameRoot">The folder containing <c>FactoryGame</c>.</param>
+    /// <param name="isGameRunning">Checked before every transaction, on the thread running it.</param>
+    public ModInstaller(string gameRoot, Func<bool> isGameRunning) : this(gameRoot, isGameRunning, null)
+    {
+    }
+
+    /// <param name="checkpoint">Called at every step; crash tests throw from it.</param>
+    /// <param name="log">Receives cleanup failures after an installation has already committed.</param>
+    internal ModInstaller(string gameRoot, Func<bool> isGameRunning, Action<string>? checkpoint, ILogger? log = null)
+    {
+        _folders = new GameModFolders(gameRoot);
+        _isGameRunning = isGameRunning;
+        _checkpoint = checkpoint ?? (_ => { });
+        _records = new InstalledModsStore(_folders.InstalledRecord);
+        _journal = new JournalStore(_folders.Journal);
+        _requested = new RequestedModsStore(_folders.RequestedRecord);
+        _log = log ?? NullLogger.Instance;
+    }
+
     /// <summary>
     /// Records which mods the user asked for. Callers save additions before installing and removals
     /// after, so a crash in between never leaves a wanted mod looking unneeded.
     /// </summary>
-    public void SaveRequested(IEnumerable<string> references)
+    internal void SaveRequested(IEnumerable<string> references)
     {
         _folders.EnsureWorkFolder();
         _requested.Save(references);
@@ -157,7 +91,7 @@ public sealed class ModInstaller
     /// <exception cref="GameRunningException">The game is running.</exception>
     /// <exception cref="InvalidModArchiveException">An archive fails validation; nothing was changed.</exception>
     /// <exception cref="InstallException">A change failed before commitment and was rolled back.</exception>
-    public TransactionResult Apply(IReadOnlyList<ModChange> changes, IProgress<InstallProgress>? progress = null,
+    internal TransactionResult Apply(IReadOnlyList<ModChange> changes, IProgress<InstallProgress>? progress = null,
         CancellationToken ct = default)
         => ApplyCore(changes, progress, ct, null);
 
@@ -170,7 +104,9 @@ public sealed class ModInstaller
         CancellationToken ct, ProfileActivation? activation)
     {
         if (_isGameRunning())
+        {
             throw new GameRunningException();
+        }
 
         _folders.EnsureWorkFolder();
         using var _ = AcquireLock();
@@ -178,10 +114,7 @@ public sealed class ModInstaller
         {
             RecoverLocked();
         }
-        if (HasPendingProfileActivation)
-        {
-            throw new InstallException("Profile activation pending. Recheck this installation before changing mods.");
-        }
+        ThrowIfProfileActivationPending("changing mods");
 
         var installed = _records.Load();
         var archives = new List<ModArchive>();
@@ -250,7 +183,9 @@ public sealed class ModInstaller
         finally
         {
             foreach (var archive in archives)
+            {
                 archive.Dispose();
+            }
         }
     }
 
@@ -259,15 +194,32 @@ public sealed class ModInstaller
     /// touches the game's mods. A committed journal only retries cleanup; cleanup failures leave
     /// the journal for a later retry and do not change live mod folders or installed records.
     /// </summary>
-    public RecoveryResult Recover()
+    internal RecoveryResult Recover()
     {
         // ADA has never changed this game: nothing to recover, and nothing to create on launch.
         if (!Directory.Exists(_folders.Work))
-            return RecoveryResult.Clean;
+        {
+            return RecoveryResult.CLEAN;
+        }
 
         _folders.EnsureWorkFolder();
         using var _ = AcquireLock();
         return RecoverLocked();
+    }
+
+    /// <summary>
+    /// Refuses <paramref name="action"/> while an interrupted transaction or a committed profile
+    /// switch still needs finishing; the next check (<see cref="Recover"/> then profile
+    /// reconciliation) settles both.
+    /// </summary>
+    /// <param name="action">What the caller is about to do, completing "… before {action}."</param>
+    /// <exception cref="InstallException">Recovery or profile activation is pending.</exception>
+    internal void ThrowIfUnsettled(string action)
+    {
+        if (HasInterruptedTransaction || HasPendingProfileActivation)
+        {
+            throw new InstallException($"Recheck this installation to finish pending recovery before {action}.");
+        }
     }
 
     /// <summary>
@@ -289,21 +241,35 @@ public sealed class ModInstaller
         {
             throw new InstallException("Profile activation pending; transaction cleanup must finish first.");
         }
-        using var stream = File.OpenRead(_folders.ProfileActivation);
-        var activation = JsonSerializer.Deserialize(stream, InstallJsonContext.Default.ProfileActivation)
-            ?? throw new InstallException("The pending profile activation record is unreadable.");
-        stream.Dispose();
+        ProfileActivation activation;
+        using (var stream = File.OpenRead(_folders.ProfileActivation))
+        {
+            activation = JsonSerializer.Deserialize(stream, InstallJsonContext.Default.ProfileActivation)
+                ?? throw new InstallException("The pending profile activation record is unreadable.");
+        }
         activate(activation.Name);
         _requested.Save(activation.Requested);
         _checkpoint("profile-activated");
         File.Delete(_folders.ProfileActivation);
     }
 
+    /// <summary>
+    /// <see cref="ThrowIfUnsettled"/> for callers holding the game lock that have just recovered: a
+    /// journal that cleanup could not remove does not block them, only a pending profile activation.
+    /// </summary>
+    private void ThrowIfProfileActivationPending(string action)
+    {
+        if (HasPendingProfileActivation)
+        {
+            throw new InstallException($"Recheck this installation to finish pending recovery before {action}.");
+        }
+    }
+
     private void SaveProfileActivation(ProfileActivation? activation)
     {
         if (activation is not null)
         {
-            ADA.Infrastructure.IO.AtomicFile.Write(_folders.ProfileActivation,
+            AtomicFile.Write(_folders.ProfileActivation,
                 stream => JsonSerializer.Serialize(stream, activation, InstallJsonContext.Default.ProfileActivation));
             _checkpoint("profile-activation-pending");
         }
@@ -332,11 +298,17 @@ public sealed class ModInstaller
             {
                 var info = new FileInfo(Path.Combine(folder, file.Path.Replace('/', Path.DirectorySeparatorChar)));
                 if (!info.Exists)
+                {
                     problems.Add($"{file.Path} is missing.");
+                }
                 else if (info.Length != file.Size)
+                {
                     problems.Add($"{file.Path} has the wrong size.");
+                }
                 else if ((full || info.LastWriteTimeUtc != file.LastWriteUtc) && HashFile(info.FullName) != file.Sha256)
+                {
                     problems.Add($"{file.Path} has changed.");
+                }
             }
             results.Add(new ModCheck(mod.Reference, problems.Count == 0 ? ModHealth.Ok : ModHealth.Damaged, problems));
         }
@@ -346,12 +318,17 @@ public sealed class ModInstaller
         foreach (var (folder, prefix) in new[] { (_folders.Mods, "Mods/"), (_folders.GameFeatures, "Mods/GameFeatures/") })
         {
             if (!Directory.Exists(folder))
+            {
                 continue;
+            }
+
             foreach (var dir in Directory.EnumerateDirectories(folder))
             {
                 var location = prefix + Path.GetFileName(dir);
                 if (location != "Mods/GameFeatures" && !known.Contains(location))
+                {
                     unmanaged.Add(location);
+                }
             }
         }
         unmanaged.Sort(StringComparer.OrdinalIgnoreCase);
@@ -363,7 +340,7 @@ public sealed class ModInstaller
     /// Mod folders ADA didn't install, with their name and version from each <c>.uplugin</c>.
     /// Only reads; nothing outside the game's mod folders is looked at.
     /// </summary>
-    public FoundMods FindUnmanaged()
+    internal FoundMods FindUnmanaged()
     {
         var mods = new List<FoundMod>();
         var unreadable = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -425,7 +402,10 @@ public sealed class ModInstaller
             foreach (var dependency in plugin.Dependencies.Where(d => !d.Optional && !installed.ContainsKey(d.Name)))
             {
                 if (!missing.TryGetValue(dependency.Name, out var neededBy))
+                {
                     missing[dependency.Name] = neededBy = [];
+                }
+
                 neededBy.Add(mod.Reference);
             }
         }
@@ -438,7 +418,7 @@ public sealed class ModInstaller
     /// file is moved or changed, so this is safe while the game runs.
     /// </summary>
     /// <returns>What was recorded. Folders that changed since <see cref="FindUnmanaged"/> are skipped.</returns>
-    public IReadOnlyList<InstalledMod> Adopt(IReadOnlyList<FoundMod> mods, CancellationToken ct = default)
+    internal IReadOnlyList<InstalledMod> Adopt(IReadOnlyList<FoundMod> mods, CancellationToken ct = default)
     {
         _folders.EnsureWorkFolder();
         using var _ = AcquireLock();
@@ -446,10 +426,7 @@ public sealed class ModInstaller
         {
             RecoverLocked();
         }
-        if (HasPendingProfileActivation)
-        {
-            throw new InstallException("Profile activation pending. Recheck this installation before importing mods.");
-        }
+        ThrowIfProfileActivationPending("importing mods");
 
         var installed = _records.Load();
         var current = FindUnmanaged().Mods.ToDictionary(m => m.Location, StringComparer.OrdinalIgnoreCase);
@@ -457,7 +434,9 @@ public sealed class ModInstaller
         foreach (var mod in mods)
         {
             if (!current.TryGetValue(mod.Location, out var now) || now.Version != mod.Version || installed.ContainsKey(mod.Reference))
+            {
                 continue;
+            }
 
             var folder = _folders.Absolute(mod.Location);
             var files = new List<InstalledFile>();
@@ -476,7 +455,10 @@ public sealed class ModInstaller
 
         // One write: either every folder is taken over, or (after a crash) none is.
         if (adopted.Count > 0)
+        {
             _records.Save(installed);
+        }
+
         return adopted;
     }
 
@@ -503,8 +485,10 @@ public sealed class ModInstaller
                     foreach (var candidate in new[] { location, GameModFolders.LocationFor(reference, !archive.Descriptor.GameFeature) })
                     {
                         if (candidate != old?.Location && Directory.Exists(_folders.Absolute(candidate)))
-                            throw new InstallException($"{candidate} already exists and was not installed by ADA.");
-                    }
+                            {
+                                throw new InstallException($"{candidate} already exists and was not installed by ADA.");
+                            }
+                        }
 
                     plan.Add(new PlannedStep(new JournalStep(reference, old?.Location, location, StepState.Planned, old, null), archive));
                     break;
@@ -519,7 +503,9 @@ public sealed class ModInstaller
             }
 
             if (!seen.Add(plan[^1].Step.Reference))
+            {
                 throw new InstallException($"{plan[^1].Step.Reference} appears more than once in one transaction.");
+            }
         }
         return plan;
     }
@@ -529,7 +515,10 @@ public sealed class ModInstaller
         IProgress<InstallProgress>? progress, CancellationToken ct)
     {
         if (Directory.Exists(destination))
+        {
             DeleteTree(destination);
+        }
+
         Directory.CreateDirectory(destination);
         var root = Path.GetFullPath(destination) + Path.DirectorySeparatorChar;
 
@@ -540,7 +529,10 @@ public sealed class ModInstaller
             var entry = archive.Entries[i];
             var target = Path.GetFullPath(Path.Combine(destination, entry.RelativePath.Replace('/', Path.DirectorySeparatorChar)));
             if (!target.StartsWith(root, StringComparison.Ordinal))
+            {
                 throw new InvalidModArchiveException($"Unsafe path in archive: '{entry.RelativePath}'.");
+            }
+
             Directory.CreateDirectory(Path.GetDirectoryName(target)!);
 
             // Hash what we write as we write it, flush it, then read it back from disk and compare.
@@ -558,7 +550,10 @@ public sealed class ModInstaller
                         // The archive's declared sizes are what the free-space and size checks used;
                         // an entry that inflates past its own is a zip bomb or corrupt, so stop at once.
                         if (written + read > entry.Size)
+                        {
                             throw new InvalidModArchiveException($"{entry.RelativePath} extracts to more than its declared {entry.Size:N0} bytes.");
+                        }
+
                         hash.AppendData(buffer, 0, read);
                         file.Write(buffer, 0, read);
                         written += read;
@@ -569,9 +564,14 @@ public sealed class ModInstaller
             }
 
             if (written != entry.Size)
+            {
                 throw new InstallException($"{reference}: {entry.RelativePath} extracted {written:N0} of {entry.Size:N0} bytes.");
+            }
+
             if (HashFile(target) != expected)
+            {
                 throw new InstallException($"{reference}: {entry.RelativePath} did not read back the same as it was written.");
+            }
 
             var info = new FileInfo(target);
             files.Add(new InstalledFile(entry.RelativePath, info.Length, expected, info.LastWriteTimeUtc));
@@ -592,7 +592,10 @@ public sealed class ModInstaller
         {
             // Uninstall: move the mod out of Mods; it is deleted with the transaction folder.
             if (oldLive is not null && Directory.Exists(oldLive) && !Directory.Exists(oldStaged))
+            {
                 MoveFolder(oldLive, oldStaged, $"moved-out:{step.Reference}");
+            }
+
             installed.Remove(step.Reference);
         }
         else
@@ -601,9 +604,15 @@ public sealed class ModInstaller
             if (Directory.Exists(newStaged))
             {
                 if (oldLive is not null && Directory.Exists(oldLive) && !Directory.Exists(oldStaged))
+                {
                     MoveFolder(oldLive, oldStaged, $"moved-out:{step.Reference}");
+                }
+
                 if (Directory.Exists(newLive))
+                {
                     throw new InstallException($"{step.NewLocation} appeared while installing; refusing to overwrite it.");
+                }
+
                 Directory.CreateDirectory(Path.GetDirectoryName(newLive)!);
                 MoveFolder(newStaged, newLive, $"moved-in:{step.Reference}");
             }
@@ -643,7 +652,9 @@ public sealed class ModInstaller
                 var newIsLive = !Directory.Exists(newStaged) && !Directory.Exists(trash) && Directory.Exists(newLive)
                                 && (step.OldLocation != step.NewLocation || Directory.Exists(oldStaged));
                 if (newIsLive)
+                {
                     MoveFolder(newLive, trash, $"rolled-out:{step.Reference}");
+                }
             }
 
             // Put the old version back.
@@ -658,9 +669,13 @@ public sealed class ModInstaller
             }
 
             if (step.OldRecord is not null)
+            {
                 installed[step.Reference] = step.OldRecord;
+            }
             else
+            {
                 installed.Remove(step.Reference);
+            }
         }
 
         _records.Save(installed);
@@ -676,8 +691,11 @@ public sealed class ModInstaller
         {
             // A crash after the journal was removed but before the work folder was cleaned.
             foreach (var stray in Directory.EnumerateDirectories(_folders.Work, "txn-*"))
+            {
                 DeleteTree(stray);
-            return RecoveryResult.Clean;
+            }
+
+            return RecoveryResult.CLEAN;
         }
 
         if (journal.Committed)
@@ -729,7 +747,10 @@ public sealed class ModInstaller
         _checkpoint("cleanup-started");
         var folder = _folders.Transaction(txn);
         if (Directory.Exists(folder))
+        {
             DeleteTree(folder);
+        }
+
         _checkpoint("work-cleaned");
         _journal.Delete();
         _checkpoint("journal-removed");
@@ -748,7 +769,7 @@ public sealed class ModInstaller
     {
         try
         {
-            DiskSpace.Require(_folders.FactoryGame, archives.Sum(a => a.UncompressedBytes) + FreeSpaceMargin, "these mods");
+            DiskSpace.Require(_folders.FactoryGame, archives.Sum(a => a.UncompressedBytes) + FREE_SPACE_MARGIN, "these mods");
         }
         catch (InsufficientSpaceException e)
         {
@@ -782,7 +803,9 @@ public sealed class ModInstaller
         {
             var attributes = File.GetAttributes(file);
             if (attributes.HasFlag(FileAttributes.ReadOnly))
+            {
                 File.SetAttributes(file, attributes & ~FileAttributes.ReadOnly);
+            }
         }
         Directory.Delete(path, recursive: true);
     }

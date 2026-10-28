@@ -1,9 +1,14 @@
 using System.Collections.ObjectModel;
+using ADA.Core.Games;
+using ADA.Infrastructure.Catalog;
+using ADA.Infrastructure.Installing;
+using ADA.Infrastructure.IO;
+using ADA.Infrastructure.Profiles;
+using ADA.Infrastructure.Settings;
+using ADA.Platform.Detection;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
-using ADA.Core.Games;
-using ADA.Platform.Detection;
 
 namespace ADA.ViewModels;
 
@@ -57,16 +62,19 @@ public partial class DashboardViewModel : ViewModelBase
 
     public bool ShowCloseOffer => IsGameRunning && !ConfirmingClose && !IsClosingGame;
 
+    /// <summary>
+    /// Subscribes to settings, profile, installation, archive and catalogue changes so the cards
+    /// refresh themselves; those events are marshalled to the UI context captured here or by
+    /// <see cref="AttachUiContext"/>.
+    /// </summary>
+    /// <param name="findRunning">Process lookup; tests replace it. Defaults to <see cref="GameProcesses.FindRunningAsync"/>.</param>
+    /// <param name="watchInterval">How often <see cref="WatchGameAsync"/> checks; three seconds by default.</param>
     public DashboardViewModel(IGameDetector detector, CatalogStatusViewModel catalog,
         Func<GameInstall, GameInstallViewModel> installViewModel, ILogger<DashboardViewModel> log,
+        ModCatalogStore store, SettingsStore settings, GameProfiles profiles, ModResolutionService resolution,
+        DashboardStorageReader storage, ModInstallService installs, ArchiveCache archives,
         Func<CancellationToken, Task<IReadOnlyList<GameProcess>>>? findRunning = null,
-        TimeSpan? watchInterval = null,
-        ADA.Infrastructure.Catalog.ModCatalogStore? store = null,
-        ADA.Infrastructure.Settings.SettingsStore? settings = null,
-        ADA.Infrastructure.Profiles.GameProfiles? profiles = null,
-        ADA.Infrastructure.Installing.ModResolutionService? resolution = null,
-        ADA.Infrastructure.IO.DashboardStorageReader? storage = null,
-        ADA.Infrastructure.Installing.ModInstallService? installs = null)
+        TimeSpan? watchInterval = null)
     {
         _detector = detector;
         Catalog = catalog;
@@ -80,22 +88,11 @@ public partial class DashboardViewModel : ViewModelBase
         _resolution = resolution;
         _storage = storage;
         _uiContext = SynchronizationContext.Current;
-        if (settings is not null)
-        {
-            settings.Changed += OnCardSourceChanged;
-        }
-        if (profiles is not null)
-        {
-            profiles.Changed += OnCardSourceChanged;
-        }
-        if (installs is not null)
-        {
-            installs.Changed += OnCardSourceChanged;
-        }
-        if (catalog is not null)
-        {
-            catalog.PropertyChanged += OnCatalogChanged;
-        }
+        settings.Changed += OnCardSourceChanged;
+        profiles.Changed += OnCardSourceChanged;
+        installs.Changed += OnCardSourceChanged;
+        archives.Changed += OnCardSourceChanged;
+        catalog.PropertyChanged += OnCatalogChanged;
     }
 
     /// <summary>Looks for mod updates in every game; run after the catalogue has been checked. Never throws.</summary>
@@ -134,8 +131,16 @@ public partial class DashboardViewModel : ViewModelBase
         OnPropertyChanged(nameof(GameStateText));
     }
 
+    /// <summary>
+    /// Recomputes the Dashboard's summaries when an installation's state changes. Progress text is
+    /// skipped: it changes many times a second during downloads and affects none of them.
+    /// </summary>
     private void OnInstallChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
+        if (e.PropertyName == nameof(GameInstallViewModel.ProgressText))
+        {
+            return;
+        }
         HasUpdates = Installs.Any(i => i.HasUpdates);
         OnPropertyChanged(nameof(CanChooseProfile));
         OnPropertyChanged(nameof(Notifications));

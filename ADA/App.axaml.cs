@@ -1,11 +1,11 @@
+using ADA.Platform.Storage;
+using ADA.ViewModels;
+using ADA.Views;
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using Avalonia.Threading;
 using Microsoft.Extensions.DependencyInjection;
-using ADA.Platform.Storage;
-using ADA.ViewModels;
-using ADA.Views;
 using Serilog;
 using Serilog.Events;
 

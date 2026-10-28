@@ -1,11 +1,11 @@
 using System.Net;
 using System.Security.Cryptography;
-using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Logging.Abstractions;
 using ADA.Core.Catalog;
 using ADA.Core.Settings;
 using ADA.Infrastructure.Ficsit;
 using ADA.Infrastructure.Net;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Polly;
 using Polly.Retry;
 
@@ -14,7 +14,7 @@ namespace ADA.Infrastructure.Downloads;
 public sealed record DownloadProgress(int Attempt, int MaxAttempts, long BytesReceived, long? TotalBytes);
 
 /// <summary>Every attempt failed; <see cref="Attempts"/> says why each one did.</summary>
-public sealed class ArchiveDownloadException(string message, IReadOnlyList<string> attempts)
+internal sealed class ArchiveDownloadException(string message, IReadOnlyList<string> attempts)
     : Exception(message + " " + string.Join(" ", attempts))
 {
     public IReadOnlyList<string> Attempts { get; } = attempts;
@@ -31,15 +31,15 @@ public sealed class ArchiveDownloadException(string message, IReadOnlyList<strin
 /// </remarks>
 public sealed class ArchiveDownloader
 {
-    private const int BufferSize = 81920;
-    private static readonly TimeSpan MaxBackoff = TimeSpan.FromSeconds(30);
+    private const int BUFFER_SIZE = 81920;
+    private static readonly TimeSpan MAX_BACKOFF = TimeSpan.FromSeconds(30);
 
     // No total time limit (a multi-GB mod on a slow line takes as long as it takes), but a
     // connection that sends nothing for this long is dead and the attempt is retried.
-    public static readonly TimeSpan DefaultStallTimeout = TimeSpan.FromSeconds(60);
+    internal static readonly TimeSpan DEFAULT_STALL_TIMEOUT = TimeSpan.FromSeconds(60);
 
     // Often enough for a smooth progress bar, rarely enough not to flood the UI thread.
-    private static readonly TimeSpan ProgressInterval = TimeSpan.FromMilliseconds(100);
+    private static readonly TimeSpan PROGRESS_INTERVAL = TimeSpan.FromMilliseconds(100);
 
     private readonly HttpClient _http;
     private readonly Uri _baseAddress;
@@ -49,7 +49,7 @@ public sealed class ArchiveDownloader
     public string ArchivesFolder { get; }
 
     /// <summary>How long a download may go without receiving any data before the attempt fails.</summary>
-    public TimeSpan StallTimeout { get; init; } = DefaultStallTimeout;
+    internal TimeSpan StallTimeout { get; init; } = DEFAULT_STALL_TIMEOUT;
 
     /// <param name="time">Drives retry waits; tests pass one that doesn't sleep.</param>
     public ArchiveDownloader(HttpClient http, string archivesFolder, Uri? baseAddress = null, TimeProvider? time = null,
@@ -57,12 +57,16 @@ public sealed class ArchiveDownloader
     {
         _http = http;
         ArchivesFolder = archivesFolder;
-        _baseAddress = baseAddress ?? FicsitApi.BaseAddress;
+        _baseAddress = baseAddress ?? FicsitApi.BASE_ADDRESS;
         _time = time ?? TimeProvider.System;
         _log = log ?? NullLogger<ArchiveDownloader>.Instance;
     }
 
-    public string PathFor(string modReference, string version, TargetPlatform platform) =>
+    /// <summary>
+    /// Where this version's archive for this platform is (or would be) stored; the reference and
+    /// version are made safe for file names.
+    /// </summary>
+    internal string PathFor(string modReference, string version, TargetPlatform platform) =>
         Path.Combine(ArchivesFolder, SafeName(modReference), $"{SafeName(version)}-{platform}.smod");
 
     /// <param name="retries">Retries after the first attempt; clamped to 0–8.</param>
@@ -77,11 +81,14 @@ public sealed class ArchiveDownloader
         if (File.Exists(path))
         {
             if (await VerifyAsync(path, target, ct) is null)
+            {
                 return path;
+            }
+
             File.Delete(path);
         }
 
-        retries = Math.Clamp(retries, AppSettings.MinDownloadRetries, AppSettings.MaxDownloadRetries);
+        retries = Math.Clamp(retries, AppSettings.MIN_DOWNLOAD_RETRIES, AppSettings.MAX_DOWNLOAD_RETRIES);
         var maxAttempts = 1 + retries;
         var failures = new List<string>();
         try
@@ -124,7 +131,7 @@ public sealed class ArchiveDownloader
                     || Retry.IsTransientException(args.Outcome.Exception, args.Context)
                     || args.Outcome.Exception is IOException),
                 DelayGenerator = args => ValueTask.FromResult<TimeSpan?>(Retry.Backoff(args.AttemptNumber,
-                    (args.Outcome.Exception as AttemptFailedException)?.RetryAfter, MaxBackoff)),
+                    (args.Outcome.Exception as AttemptFailedException)?.RetryAfter, MAX_BACKOFF)),
             });
         }
         return builder.Build();
@@ -142,7 +149,9 @@ public sealed class ArchiveDownloader
                 HttpCompletionOption.ResponseHeadersRead, stall.Token);
 
             if (response.StatusCode == HttpStatusCode.TooManyRequests)
+            {
                 throw new AttemptFailedException("server busy.", retryAfter: response.Headers.RetryAfter?.Delta ?? TimeSpan.Zero);
+            }
 
             if (!response.IsSuccessStatusCode)
             {
@@ -157,23 +166,27 @@ public sealed class ArchiveDownloader
             using (var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256))
             {
                 await using (var source = await response.Content.ReadAsStreamAsync(ct))
-                await using (var file = new FileStream(part, FileMode.Create, FileAccess.Write, FileShare.None, BufferSize, useAsync: true))
+                await using (var file = new FileStream(part, FileMode.Create, FileAccess.Write, FileShare.None, BUFFER_SIZE, useAsync: true))
                 {
-                    var buffer = new byte[BufferSize];
+                    var buffer = new byte[BUFFER_SIZE];
                     int read;
                     while (true)
                     {
                         stall.CancelAfter(StallTimeout);
                         if ((read = await source.ReadAsync(buffer, stall.Token)) == 0)
+                        {
                             break;
+                        }
 
                         received += read;
                         if (target.Size is { } expected && received > expected)
+                        {
                             throw new AttemptFailedException($"size mismatch (more than the expected {expected:N0} bytes).");
+                        }
 
                         hash.AppendData(buffer, 0, read);
                         await file.WriteAsync(buffer.AsMemory(0, read), ct);
-                        if (progress is not null && _time.GetElapsedTime(lastReport) >= ProgressInterval)
+                        if (progress is not null && _time.GetElapsedTime(lastReport) >= PROGRESS_INTERVAL)
                         {
                             progress.Report(new DownloadProgress(attempt, maxAttempts, received, target.Size));
                             lastReport = _time.GetTimestamp();
@@ -185,11 +198,15 @@ public sealed class ArchiveDownloader
                 progress?.Report(new DownloadProgress(attempt, maxAttempts, received, target.Size));
 
                 if (target.Size is { } size && received != size)
+                {
                     throw new AttemptFailedException($"size mismatch ({received:N0} of {size:N0} bytes).");
+                }
 
                 var actual = Convert.ToHexStringLower(hash.GetHashAndReset());
                 if (target.Hash is { } expectedHash && !string.Equals(actual, expectedHash, StringComparison.OrdinalIgnoreCase))
+                {
                     throw new AttemptFailedException("hash mismatch.");
+                }
             }
 
             File.Move(part, path, overwrite: true);
@@ -202,20 +219,27 @@ public sealed class ArchiveDownloader
         {
             // Never leave a partial or rejected download behind.
             if (File.Exists(part))
+            {
                 File.Delete(part);
+            }
         }
     }
 
     /// <returns>Null if the file matches; otherwise why not.</returns>
-    public static async Task<string?> VerifyAsync(string path, VersionTarget target, CancellationToken ct = default)
+    internal static async Task<string?> VerifyAsync(string path, VersionTarget target, CancellationToken ct = default)
     {
         var info = new FileInfo(path);
         if (target.Size is { } size && info.Length != size)
+        {
             return "size mismatch";
-        if (target.Hash is null)
-            return null;
+        }
 
-        await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, BufferSize, useAsync: true);
+        if (target.Hash is null)
+        {
+            return null;
+        }
+
+        await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, BUFFER_SIZE, useAsync: true);
         var actual = Convert.ToHexStringLower(await SHA256.HashDataAsync(stream, ct));
         return string.Equals(actual, target.Hash, StringComparison.OrdinalIgnoreCase) ? null : "hash mismatch";
     }

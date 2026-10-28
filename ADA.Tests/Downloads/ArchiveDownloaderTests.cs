@@ -8,12 +8,12 @@ namespace ADA.Tests.Downloads;
 
 public sealed class ArchiveDownloaderTests : IDisposable
 {
-    private static readonly byte[] Good = "PK this stands in for a real .smod archive"u8.ToArray();
-    private static readonly byte[] Corrupt = "PK this stands in for a real .smod archivX"u8.ToArray(); // same size, one byte differs
-    private static readonly byte[] Short = Good[..10];
+    private static readonly byte[] GOOD = "PK this stands in for a real .smod archive"u8.ToArray();
+    private static readonly byte[] CORRUPT = "PK this stands in for a real .smod archivX"u8.ToArray(); // same size, one byte differs
+    private static readonly byte[] SHORT = GOOD[..10];
 
-    private static readonly VersionTarget Target = new(
-        TargetPlatform.Windows, "/v1/version/abc/Windows/download", Good.Length, Convert.ToHexStringLower(SHA256.HashData(Good)));
+    private static readonly VersionTarget TARGET = new(
+        TargetPlatform.Windows, "/v1/version/abc/Windows/download", GOOD.Length, Convert.ToHexStringLower(SHA256.HashData(GOOD)));
 
     private readonly TempDir _dir = new();
     private readonly FakeHttpHandler _handler = new();
@@ -25,7 +25,7 @@ public sealed class ArchiveDownloaderTests : IDisposable
 
     public void Dispose() => _dir.Dispose();
 
-    private Task<string> Get(int retries = 5) => _downloader.GetAsync("WeatherExtended", "1.1.0", Target, retries);
+    private Task<string> Get(int retries = 5) => _downloader.GetAsync("WeatherExtended", "1.1.0", TARGET, retries);
 
     private string[] FilesOnDisk() =>
         Directory.EnumerateFiles(_dir.Combine("Archives"), "*", SearchOption.AllDirectories)
@@ -35,34 +35,34 @@ public sealed class ArchiveDownloaderTests : IDisposable
     [Fact]
     public async Task Downloads_and_verifies_into_the_archive_path()
     {
-        _handler.RespondBytes(Good);
+        _handler.RespondBytes(GOOD);
 
         var path = await Get();
 
         Assert.Equal(_dir.Combine("Archives", "WeatherExtended", "1.1.0-Windows.smod"), path);
-        Assert.Equal(Good, await File.ReadAllBytesAsync(path));
+        Assert.Equal(GOOD, await File.ReadAllBytesAsync(path));
         Assert.Equal(["WeatherExtended/1.1.0-Windows.smod"], FilesOnDisk());
     }
 
     [Fact]
     public async Task Hash_mismatch_is_downloaded_again()
     {
-        _handler.RespondBytes(Corrupt).RespondBytes(Good);
+        _handler.RespondBytes(CORRUPT).RespondBytes(GOOD);
 
         var path = await Get();
 
-        Assert.Equal(Good, await File.ReadAllBytesAsync(path));
+        Assert.Equal(GOOD, await File.ReadAllBytesAsync(path));
         Assert.Single(_time.Delays);
     }
 
     [Fact]
     public async Task Size_mismatch_is_downloaded_again()
     {
-        _handler.RespondBytes(Short).RespondBytes(Good.Concat(Good).ToArray()).RespondBytes(Good);
+        _handler.RespondBytes(SHORT).RespondBytes(GOOD.Concat(GOOD).ToArray()).RespondBytes(GOOD);
 
         var path = await Get();
 
-        Assert.Equal(Good, await File.ReadAllBytesAsync(path));
+        Assert.Equal(GOOD, await File.ReadAllBytesAsync(path));
         Assert.Equal(2, _time.Delays.Count);
     }
 
@@ -72,7 +72,7 @@ public sealed class ArchiveDownloaderTests : IDisposable
         _handler.Throw(new HttpRequestException("connection reset"))
             .Throw(new TaskCanceledException("timeout"))
             .Fail(HttpStatusCode.BadGateway)
-            .RespondBytes(Good);
+            .RespondBytes(GOOD);
 
         await Get();
 
@@ -83,7 +83,9 @@ public sealed class ArchiveDownloaderTests : IDisposable
     public async Task Gives_up_after_the_configured_retries_and_leaves_nothing_behind()
     {
         for (var i = 0; i < 3; i++)
-            _handler.RespondBytes(Corrupt);
+        {
+            _handler.RespondBytes(CORRUPT);
+        }
 
         var e = await Assert.ThrowsAsync<ArchiveDownloadException>(() => Get(retries: 2));
 
@@ -101,7 +103,9 @@ public sealed class ArchiveDownloaderTests : IDisposable
     public async Task Attempts_are_one_plus_retries_within_limits(int retries, int expectedAttempts)
     {
         for (var i = 0; i < 10; i++)
+        {
             _handler.Throw(new HttpRequestException("offline"));
+        }
 
         var e = await Assert.ThrowsAsync<ArchiveDownloadException>(() => Get(retries));
 
@@ -123,12 +127,12 @@ public sealed class ArchiveDownloaderTests : IDisposable
     [Fact]
     public async Task A_kept_archive_that_still_matches_is_reused_without_downloading()
     {
-        _handler.RespondBytes(Good);
+        _handler.RespondBytes(GOOD);
         await Get();
 
         var path = await Get();
 
-        Assert.Equal(Good, await File.ReadAllBytesAsync(path));
+        Assert.Equal(GOOD, await File.ReadAllBytesAsync(path));
         Assert.Equal(0, _handler.Remaining);
         Assert.Single(_handler.RequestBodies); // only the first call reached the network
     }
@@ -138,12 +142,12 @@ public sealed class ArchiveDownloaderTests : IDisposable
     {
         var path = _downloader.PathFor("WeatherExtended", "1.1.0", TargetPlatform.Windows);
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-        await File.WriteAllBytesAsync(path, Corrupt);
-        _handler.RespondBytes(Good);
+        await File.WriteAllBytesAsync(path, CORRUPT);
+        _handler.RespondBytes(GOOD);
 
         await Get();
 
-        Assert.Equal(Good, await File.ReadAllBytesAsync(path));
+        Assert.Equal(GOOD, await File.ReadAllBytesAsync(path));
     }
 
     [Theory]
@@ -152,7 +156,7 @@ public sealed class ArchiveDownloaderTests : IDisposable
     [InlineData("Mod", "1.0/0")]
     public async Task Rejects_names_that_could_escape_the_archive_folder(string reference, string version)
     {
-        await Assert.ThrowsAsync<ArgumentException>(() => _downloader.GetAsync(reference, version, Target, 0));
+        await Assert.ThrowsAsync<ArgumentException>(() => _downloader.GetAsync(reference, version, TARGET, 0));
     }
 
     [Fact]
@@ -179,15 +183,15 @@ public sealed class ArchiveDownloaderTests : IDisposable
     [Fact]
     public async Task A_download_that_stops_sending_data_is_retried()
     {
-        var handler = new StallingThenGoodHandler(Good);
+        var handler = new StallingThenGoodHandler(GOOD);
         var downloader = new ArchiveDownloader(new HttpClient(handler), _dir.Combine("Archives"), time: _time)
         {
             StallTimeout = TimeSpan.FromMilliseconds(200),
         };
 
-        var path = await downloader.GetAsync("WeatherExtended", "1.1.0", Target, 1);
+        var path = await downloader.GetAsync("WeatherExtended", "1.1.0", TARGET, 1);
 
-        Assert.Equal(Good, await File.ReadAllBytesAsync(path));
+        Assert.Equal(GOOD, await File.ReadAllBytesAsync(path));
         Assert.Equal(2, handler.Requests);
     }
 

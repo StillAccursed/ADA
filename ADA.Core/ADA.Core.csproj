@@ -9,4 +9,7 @@
     <PackageReference Include="Semver" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="ADA.Tests" />
+  </ItemGroup>
 </Project>

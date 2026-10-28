@@ -1,6 +1,6 @@
+using ADA.Core.Catalog;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
-using ADA.Core.Catalog;
 
 namespace ADA.Infrastructure.Catalog;
 
@@ -12,57 +12,62 @@ public sealed record SyncResult(bool WasFullSync, int ModsUpdated, int ModsRemov
 /// the mods that released a version since the last sync.
 /// </summary>
 public sealed class CatalogSync(IModCatalogSource source, ModCatalogStore store, TimeProvider? clock = null,
-    ILogger<CatalogSync>? log = null)
+    ILogger<CatalogSync>? log = null) : IModVersionSource
 {
-    public const int PageSize = 100;
+    internal const int PAGE_SIZE = 100;
 
-    internal const string LastFullSyncKey = "last_full_sync";
-    internal const string WatermarkKey = "latest_version_watermark";
-    internal const string LastCheckedKey = "last_checked";
+    internal const string LAST_FULL_SYNC_KEY = "last_full_sync";
+    internal const string WATERMARK_KEY = "latest_version_watermark";
+    internal const string LAST_CHECKED_KEY = "last_checked";
 
-    private static readonly TimeSpan FullSyncInterval = TimeSpan.FromDays(1);
+    private static readonly TimeSpan FULL_SYNC_INTERVAL = TimeSpan.FromDays(1);
 
     // Re-read a little before the watermark in case two releases share a timestamp.
-    private static readonly TimeSpan Overlap = TimeSpan.FromMinutes(10);
+    private static readonly TimeSpan OVERLAP = TimeSpan.FromMinutes(10);
 
     // Cached version lists older than this are fetched again even if the mod looks unchanged.
-    private static readonly TimeSpan VersionCacheLifetime = TimeSpan.FromHours(6);
+    private static readonly TimeSpan VERSION_CACHE_LIFETIME = TimeSpan.FromHours(6);
 
     private readonly TimeProvider _clock = clock ?? TimeProvider.System;
     private readonly ILogger _log = log ?? NullLogger<CatalogSync>.Instance;
 
+    /// <summary>
+    /// Brings the local catalogue up to date: a full pass when none is recorded or the last is more
+    /// than a day old, otherwise an incremental pass from the watermark. <see cref="LastChecked"/>
+    /// only moves forward when the sync succeeds; failures propagate.
+    /// </summary>
     public async Task<SyncResult> SyncAsync(CancellationToken ct = default)
     {
         var now = _clock.GetUtcNow();
-        var lastFull = store.GetState(LastFullSyncKey);
-        var watermark = store.GetState(WatermarkKey);
+        var lastFull = store.GetState(LAST_FULL_SYNC_KEY);
+        var watermark = store.GetState(WATERMARK_KEY);
 
-        var result = lastFull is null || watermark is null || now - lastFull > FullSyncInterval
+        var result = lastFull is null || watermark is null || now - lastFull > FULL_SYNC_INTERVAL
             ? await FullSyncAsync(now, ct)
             : await IncrementalSyncAsync(now, watermark.Value, ct);
 
         // Only recorded on success, so a failed check never claims the catalogue is current.
-        store.SetState(LastCheckedKey, now);
+        store.SetState(LAST_CHECKED_KEY, now);
         _log.LogInformation("Catalogue {Kind} sync: {Updated} mods updated, {Removed} removed",
             result.WasFullSync ? "full" : "incremental", result.ModsUpdated, result.ModsRemoved);
         return result;
     }
 
     /// <summary>When the catalogue last finished a successful check against ficsit.app.</summary>
-    public DateTimeOffset? LastChecked => store.GetState(LastCheckedKey);
+    public DateTimeOffset? LastChecked => store.GetState(LAST_CHECKED_KEY);
 
     public int ModCount => store.Count();
 
     /// <summary>Versions for a mod, from cache when fresh, otherwise from the API.</summary>
-    public Task<IReadOnlyList<CatalogVersion>> GetVersionsAsync(string modReference, CancellationToken ct = default) =>
-        GetVersionsAsync(modReference, refresh: false, ct);
-
     /// <param name="refresh">Skip the cache, e.g. for changelogs missing from lists cached before they were fetched.</param>
-    public async Task<IReadOnlyList<CatalogVersion>> GetVersionsAsync(string modReference, bool refresh, CancellationToken ct = default)
+    public async Task<IReadOnlyList<CatalogVersion>> GetVersionsAsync(string modReference, bool refresh = false,
+        CancellationToken ct = default)
     {
         var now = _clock.GetUtcNow();
-        if (!refresh && store.GetVersions(modReference, now - VersionCacheLifetime) is { } cached)
+        if (!refresh && store.GetVersions(modReference, now - VERSION_CACHE_LIFETIME) is { } cached)
+        {
             return cached;
+        }
 
         var versions = await source.GetVersionsAsync(modReference, ct);
         store.SaveVersions(modReference, versions, now);
@@ -75,41 +80,47 @@ public sealed class CatalogSync(IModCatalogSource source, ModCatalogStore store,
         var total = 0;
         DateTimeOffset? newestRelease = null;
 
-        for (var offset = 0; ; offset += PageSize)
+        for (var offset = 0; ; offset += PAGE_SIZE)
         {
-            var page = await source.GetModsAsync(offset, PageSize, CatalogOrder.CreatedAscending, ct);
+            var page = await source.GetModsAsync(offset, PAGE_SIZE, CatalogOrder.CreatedAscending, ct);
             total = page.TotalCount;
             if (page.Mods.Count == 0)
+            {
                 break;
+            }
 
             store.Upsert(page.Mods, startedAt);
             foreach (var mod in page.Mods)
             {
                 seen.Add(mod.Id);
                 if (mod.LastVersionDate is { } released && (newestRelease is null || released > newestRelease))
+                {
                     newestRelease = released;
+                }
             }
 
             if (offset + page.Mods.Count >= page.TotalCount)
+            {
                 break;
+            }
         }
 
         // Prune only after a pass that provably saw every mod. If the listing shifted while paging,
         // keep everything rather than delete a mod we merely missed; the next pass will catch up.
         var removed = seen.Count >= total ? store.DeleteNotSeenSince(startedAt) : 0;
-        store.SetState(LastFullSyncKey, startedAt);
-        store.SetState(WatermarkKey, newestRelease ?? startedAt);
+        store.SetState(LAST_FULL_SYNC_KEY, startedAt);
+        store.SetState(WATERMARK_KEY, newestRelease ?? startedAt);
         return new SyncResult(true, seen.Count, removed);
     }
 
     private async Task<SyncResult> IncrementalSyncAsync(DateTimeOffset now, DateTimeOffset watermark, CancellationToken ct)
     {
-        var since = watermark - Overlap;
+        var since = watermark - OVERLAP;
         var updated = 0;
         DateTimeOffset? newestRelease = null;
-        for (var offset = 0; ; offset += PageSize)
+        for (var offset = 0; ; offset += PAGE_SIZE)
         {
-            var page = await source.GetModsAsync(offset, PageSize, CatalogOrder.LatestVersionDescending, ct);
+            var page = await source.GetModsAsync(offset, PAGE_SIZE, CatalogOrder.LatestVersionDescending, ct);
             var released = page.Mods.Where(m => m.LastVersionDate > since).ToList();
             if (released.Count > 0)
             {
@@ -121,11 +132,16 @@ public sealed class CatalogSync(IModCatalogSource source, ModCatalogStore store,
 
             // Pages are newest release first: once a page reaches older releases, the rest are too.
             if (released.Count < page.Mods.Count || offset + page.Mods.Count >= page.TotalCount)
+            {
                 break;
+            }
         }
 
         if (newestRelease is { } n)
-            store.SetState(WatermarkKey, n);
+        {
+            store.SetState(WATERMARK_KEY, n);
+        }
+
         return new SyncResult(false, updated, 0);
     }
 }

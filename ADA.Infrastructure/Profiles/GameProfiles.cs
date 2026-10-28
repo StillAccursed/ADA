@@ -1,9 +1,9 @@
-using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Logging.Abstractions;
 using ADA.Core.Catalog;
 using ADA.Core.Games;
 using ADA.Core.Profiles;
 using ADA.Infrastructure.Installing;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace ADA.Infrastructure.Profiles;
 
@@ -28,13 +28,43 @@ public sealed class GameProfiles(ProfileStore store, ModInstallService installs,
         remove => store.Changed -= value;
     }
 
-    public Task<string> ActiveNameAsync(GameInstall game) => Task.Run(() => store.ActiveName(game.GamePath));
+    /// <summary>The game's active profile, or null when none has been created or chosen for it yet.</summary>
+    public Task<string?> ActiveNameAsync(GameInstall game) => Task.Run(() => store.ActiveName(game.GamePath));
 
     /// <summary>Whether a check or mutation currently reserves this installation.</summary>
     public bool IsChanging(GameInstall game) => installs.IsChanging(game);
 
-    /// <summary>Lists saved profiles without creating the implicit Default profile.</summary>
+    /// <summary>Lists saved profiles, sorted by name. Empty until the user creates the first one.</summary>
     public Task<IReadOnlyList<ModProfile>> ListAsync() => Task.Run(store.List);
+
+    /// <summary>
+    /// Saves the mods ADA manages in <paramref name="game"/> as a new profile and makes it the game's
+    /// active profile. Used for a game's first profile, and to start a new playthrough's profile
+    /// from what is installed. Holds the installation for the whole read-and-save.
+    /// </summary>
+    /// <exception cref="InvalidProfileException">The name is empty, too long or already used.</exception>
+    /// <exception cref="InstallationBusyException">Another operation holds this installation.</exception>
+    /// <exception cref="InstallException">Recovery or a profile switch is still pending.</exception>
+    public async Task<ModProfile> CreateAsync(GameInstall game, string name, CancellationToken ct = default)
+    {
+        name = name.Trim();
+        using var operation = installs.BeginOperation(game);
+        await ReconcileAsync(game);
+        return await Task.Run(() =>
+        {
+            if (store.ProblemWithNewName(name) is { } problem)
+            {
+                throw new InvalidProfileException(problem);
+            }
+            var installer = installs.InstallerFor(game);
+            installer.ThrowIfUnsettled("creating a profile");
+            var profile = new ModProfile(name, ToProfileMods(installer.Installed.Values, out _));
+            store.Save(profile);
+            store.SetActive(game.GamePath, name);
+            _log.LogInformation("Created profile {Profile} with {Count} mods for {Game}", name, profile.Mods.Count, game.GamePath);
+            return profile;
+        }, ct);
+    }
 
     /// <summary>
     /// Applies an immutable saved profile snapshot, then activates its name. Exact-version failures
@@ -44,26 +74,20 @@ public sealed class GameProfiles(ProfileStore store, ModInstallService installs,
         IProgress<ModInstallProgress>? progress = null, CancellationToken ct = default)
     {
         var snapshot = profile with { Mods = profile.Mods.ToArray() };
-        if (string.IsNullOrWhiteSpace(snapshot.Name) || snapshot.Name.Length > OlpFile.MaxNameLength)
+        if (string.IsNullOrWhiteSpace(snapshot.Name) || snapshot.Name.Length > OlpFile.MAX_NAME_LENGTH)
         {
             throw new InvalidProfileException("The profile name is empty or too long.");
         }
         await installs.ApplyProfileAsync(game, async () =>
         {
-            var plan = await resolution.PlanProfileAsync(game, snapshot, ct);
-            if (plan.Succeeded)
-            {
-                // The implicit Default becomes a saved profile only on an explicit switch away.
-                await Task.Run(() =>
-                {
-                    var current = store.ActiveName(game.GamePath);
-                    if (store.Get(current) is null)
-                    {
-                        store.Save(new(current, ToProfileMods(installs.InstallerFor(game).Installed.Values, out _)));
-                    }
-                }, ct);
-            }
-            return plan;
+            // Without an active profile the installed mods are saved nowhere, and switching would
+            // remove them for good. Every change is recorded into the active profile, so with one
+            // the outgoing mods are already saved.
+            var unsaved = await Task.Run(() => store.ActiveName(game.GamePath) is null
+                && installs.InstallerFor(game).Installed.Count > 0, ct);
+            return unsaved
+                ? ModChangePlan.Failed(["Create a profile for the installed mods before switching, so they can be restored later."])
+                : await resolution.PlanProfileAsync(game, snapshot, ct);
         },
             snapshot.Name, name => store.SetActive(game.GamePath, name), progress, ct);
     }
@@ -82,19 +106,21 @@ public sealed class GameProfiles(ProfileStore store, ModInstallService installs,
         return found with { Mods = found.Mods.Where(m => !leftAlone.Contains(m.Location)).ToList() };
     }
 
-    /// <summary>Rewrites the active profile as exactly what ADA has installed; called after every change.</summary>
+    /// <summary>
+    /// Rewrites the active profile as exactly what ADA has installed; called after every change.
+    /// Does nothing while the game has no profile: <see cref="CreateAsync"/> captures the mods then.
+    /// </summary>
     public async Task RecordInstalledAsync(GameInstall game)
     {
         await ReconcileAsync(game);
         await Task.Run(() =>
         {
             var installer = installs.InstallerFor(game);
-            if (installer.HasInterruptedTransaction || installer.HasPendingProfileActivation)
+            installer.ThrowIfUnsettled("recording this profile");
+            if (store.ActiveName(game.GamePath) is { } name)
             {
-                throw new InstallException("Finish pending recovery before recording this profile.");
+                store.Save(new ModProfile(name, ToProfileMods(installer.Installed.Values, out _)));
             }
-            var name = store.ActiveName(game.GamePath);
-            store.Save(new ModProfile(name, ToProfileMods(installer.Installed.Values, out _)));
         });
     }
 
@@ -115,10 +141,14 @@ public sealed class GameProfiles(ProfileStore store, ModInstallService installs,
     {
         name = name.Trim();
         if (await Task.Run(() => store.ProblemWithNewName(name), ct) is { } problem)
+        {
             throw new InvalidProfileException(problem);
+        }
 
         if (switchTo)
+        {
             return await AdoptIntoAsync(game, found, name, ct);
+        }
 
         var mods = found.Select(m => new ProfileMod(m.Reference, m.Version)).ToList();
         var profile = new ModProfile(name, mods.Where(m => ModIdentifiers.IsExactVersion(m.Version)).ToList());
@@ -132,15 +162,26 @@ public sealed class GameProfiles(ProfileStore store, ModInstallService installs,
             mods.Where(m => !ModIdentifiers.IsExactVersion(m.Version)).Select(m => m.Name).ToList());
     }
 
+    /// <summary>
+    /// Takes the found mods over and records them in a profile, holding the installation from the
+    /// first read to the last write so no other operation sees adopted mods missing from records.
+    /// </summary>
     /// <param name="switchTo">A new profile to make active once the mods are taken over; null for the current one.</param>
+    /// <exception cref="InvalidProfileException">No new profile was given and the game has none yet.</exception>
     private async Task<FoundModsImport> AdoptIntoAsync(GameInstall game, IReadOnlyList<FoundMod> found, string? switchTo,
         CancellationToken ct)
     {
+        using var operation = installs.BeginOperation(game);
+        if (switchTo is null && await ActiveNameAsync(game) is null)
+        {
+            throw new InvalidProfileException("Create a profile for this installation first, or import the mods into a new one.");
+        }
+
         // Read before adopting: with no record yet, every installed mod counts as asked for, which
         // would otherwise include the dependencies just taken over.
         var installer = installs.InstallerFor(game);
         var requestedBefore = await Task.Run(() => installer.Requested, ct);
-        var adopted = await installs.AdoptAsync(game, found, ct);
+        var adopted = await installs.AdoptReservedAsync(game, found, ct);
         return await Task.Run(() =>
         {
 
@@ -151,11 +192,14 @@ public sealed class GameProfiles(ProfileStore store, ModInstallService installs,
             var picked = adopted.Select(a => a.Reference).Where(r => !required.Contains(r));
             installer.SaveRequested(requestedBefore.Concat(picked));
 
-            var name = switchTo ?? store.ActiveName(game.GamePath);
+            var name = switchTo ?? store.ActiveName(game.GamePath)!;
             var profile = new ModProfile(name, ToProfileMods(installer.Installed.Values, out var skipped));
             store.Save(profile);
             if (switchTo is not null)
+            {
                 store.SetActive(game.GamePath, switchTo);
+            }
+
             _log.LogInformation("Took over {Count} found mods in {Game} into profile {Profile}", adopted.Count, game.GamePath, name);
             return new FoundModsImport(profile, adopted, skipped);
         }, ct);

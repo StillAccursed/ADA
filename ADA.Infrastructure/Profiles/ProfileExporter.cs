@@ -7,7 +7,7 @@ using ADA.Infrastructure.Threading;
 namespace ADA.Infrastructure.Profiles;
 
 [Flags]
-public enum ProfileFormats
+internal enum ProfileFormats
 {
     /// <summary>ADA's own format.</summary>
     Olp = 1,
@@ -23,9 +23,9 @@ public enum ProfileFormats
 /// complete on its own (Satisfactory Mod Manager imports only that file), so its lockfile is filled
 /// with each mod's download link and hash from the ficsit.app catalogue.
 /// </summary>
-public sealed class ProfileExporter(Func<string, CancellationToken, Task<IReadOnlyList<CatalogVersion>>> getVersions)
+internal sealed class ProfileExporter(IModVersionSource versions)
 {
-    private const int ParallelLookups = 4;
+    private const int PARALLEL_LOOKUPS = 4;
 
     /// <param name="basePath">Path without extension; each format adds its own.</param>
     /// <param name="gameChangelist">The game build the profile is for, written to <c>metadata.gameVersion</c>.</param>
@@ -42,9 +42,14 @@ public sealed class ProfileExporter(Func<string, CancellationToken, Task<IReadOn
 
         var files = new List<(string Path, Action<Stream> Write)>();
         if (formats.HasFlag(ProfileFormats.Olp))
-            files.Add((basePath + OlpFile.Extension, OlpFile.Serializer(profile)));
+        {
+            files.Add((basePath + OlpFile.EXTENSION, OlpFile.Serializer(profile)));
+        }
+
         if (smm is not null)
-            files.Add((basePath + SmmProfileFile.Extension, SmmProfileFile.Serializer(smm)));
+        {
+            files.Add((basePath + SmmProfileFile.EXTENSION, SmmProfileFile.Serializer(smm)));
+        }
 
         await Task.Run(() => AtomicFile.WriteAll(files), ct);
         return files.Select(f => f.Path).ToList();
@@ -62,8 +67,8 @@ public sealed class ProfileExporter(Func<string, CancellationToken, Task<IReadOn
         var locked = new SortedDictionary<string, SmmLockedMod>(StringComparer.Ordinal);
         var problems = new List<string>();
 
-        var found = await Concurrently.MapAsync(profile.Mods, ParallelLookups, async (mod, token) =>
-            (await getVersions(mod.Name, token)).FirstOrDefault(v => v.Version == mod.Version), ct);
+        var found = await Concurrently.MapAsync(profile.Mods, PARALLEL_LOOKUPS, async (mod, token) =>
+            (await versions.GetVersionsAsync(mod.Name, ct: token)).FirstOrDefault(v => v.Version == mod.Version), ct);
 
         for (var i = 0; i < profile.Mods.Count; i++)
         {
@@ -96,12 +101,14 @@ public sealed class ProfileExporter(Func<string, CancellationToken, Task<IReadOn
         }
 
         if (problems.Count > 0)
+        {
             throw new InvalidProfileException("Can't export as .smmprofile: " + string.Join(" ", problems));
+        }
 
         return new SmmProfileDocument
         {
             Profile = new SmmProfileSection { Name = profile.Name, Mods = profileMods, RequiredTargets = [requiredTarget.ToString()] },
-            Lockfile = new SmmLockfile { Version = SmmProfileFile.LockfileVersion, Mods = locked },
+            Lockfile = new SmmLockfile { Version = SmmProfileFile.LOCKFILE_VERSION, Mods = locked },
             Metadata = new SmmMetadata { GameVersion = gameChangelist },
         };
     }

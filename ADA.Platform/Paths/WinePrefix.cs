@@ -3,7 +3,7 @@ namespace ADA.Platform.Paths;
 /// <summary>
 /// Translates Windows launcher paths inside a Wine prefix into host paths.
 /// </summary>
-public sealed class WinePrefix(string prefixPath)
+internal sealed class WinePrefix(string prefixPath)
 {
     public string PrefixPath { get; } = prefixPath;
 

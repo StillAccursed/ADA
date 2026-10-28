@@ -7,7 +7,7 @@ public class WineRegistryFileTests
 {
     // Shape copied from a real CrossOver system.reg: escaped backslashes, timestamp after the key,
     // a #time line, and non-string values mixed in.
-    private const string Hive = """
+    private const string HIVE = """
         WINE REGISTRY Version 2
         ;; All keys relative to \\Machine
 
@@ -25,7 +25,7 @@ public class WineRegistryFileTests
     public void Reads_string_value_and_unescapes_it()
     {
         using var dir = new TempDir();
-        var reg = dir.WriteFile("system.reg", Hive);
+        var reg = dir.WriteFile("system.reg", HIVE);
 
         Assert.Equal(@"C:\ProgramData\Epic\EpicGamesLauncher\Data\",
             WineRegistryFile.ReadString(reg, @"Software\Epic Games\EpicGamesLauncher", "AppDataPath"));
@@ -39,7 +39,7 @@ public class WineRegistryFileTests
     public void Ignores_values_under_other_keys_and_non_string_values()
     {
         using var dir = new TempDir();
-        var reg = dir.WriteFile("system.reg", Hive);
+        var reg = dir.WriteFile("system.reg", HIVE);
 
         Assert.Null(WineRegistryFile.ReadString(reg, @"Software\Valve\Steam", "InstallPath"));
         Assert.Null(WineRegistryFile.ReadString(reg, @"Software\Epic Games\EpicGamesLauncher", "Flags"));

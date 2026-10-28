@@ -1,8 +1,8 @@
 using System.Globalization;
+using ADA.Infrastructure.Catalog;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
-using ADA.Infrastructure.Catalog;
 
 namespace ADA.ViewModels;
 
@@ -58,7 +58,9 @@ public partial class CatalogStatusViewModel(CatalogSync sync, ILogger<CatalogSta
         {
             // Skip a tick while one is still running (e.g. a slow first download).
             if (!IsChecking)
+            {
                 await RefreshCommand.ExecuteAsync(null);
+            }
         } while (await timer.WaitForNextTickAsync(ct));
     }
 

@@ -27,7 +27,9 @@ internal sealed class InstalledModsStore(string path)
     public Dictionary<string, InstalledMod> Load()
     {
         if (!File.Exists(path))
+        {
             return new Dictionary<string, InstalledMod>(StringComparer.OrdinalIgnoreCase);
+        }
 
         using var stream = File.OpenRead(path);
         var list = JsonSerializer.Deserialize(stream, InstallJsonContext.Default.ListInstalledMod) ?? [];
@@ -51,7 +53,9 @@ internal sealed class RequestedModsStore(string path)
     public HashSet<string>? Load()
     {
         if (!File.Exists(path))
+        {
             return null;
+        }
 
         using var stream = File.OpenRead(path);
         var list = JsonSerializer.Deserialize(stream, InstallJsonContext.Default.ListString) ?? [];
@@ -107,7 +111,10 @@ internal sealed class JournalStore(string path)
     public Journal? Load()
     {
         if (!File.Exists(path))
+        {
             return null;
+        }
+
         using var stream = File.OpenRead(path);
         return JsonSerializer.Deserialize(stream, InstallJsonContext.Default.Journal);
     }
@@ -118,7 +125,9 @@ internal sealed class JournalStore(string path)
     public void Delete()
     {
         if (File.Exists(path))
+        {
             File.Delete(path);
+        }
     }
 }
 

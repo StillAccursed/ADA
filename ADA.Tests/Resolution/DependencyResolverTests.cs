@@ -1,11 +1,12 @@
 using ADA.Core.Catalog;
 using ADA.Core.Resolution;
+using ADA.Tests.Fixtures;
 
 namespace ADA.Tests.Resolution;
 
 public sealed class DependencyResolverTests
 {
-    private const int Game = 513885;
+    private const int GAME = 513885;
 
     private readonly Dictionary<string, List<CatalogVersion>> _catalog = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<string> _fetched = [];
@@ -23,7 +24,10 @@ public sealed class DependencyResolverTests
             return new VersionDependency(parts[0], parts[1], optional);
         }).ToList();
         if (!_catalog.TryGetValue(reference, out var list))
+        {
             _catalog[reference] = list = [];
+        }
+
         list.Add(new CatalogVersion($"{reference}-{version}", reference, version, game, stability, false,
             DateTimeOffset.UnixEpoch, targets, dependencies));
     }
@@ -32,18 +36,21 @@ public sealed class DependencyResolverTests
 
     private Task<ResolveResult> Resolve(IReadOnlyDictionary<string, string>? preferred, params string[] requested)
     {
-        var resolver = new DependencyResolver((reference, _) =>
+        var resolver = new DependencyResolver(new FakeVersionSource((reference, _) =>
         {
             lock (_fetched)
+            {
                 _fetched.Add(reference);
+            }
+
             return Task.FromResult<IReadOnlyList<CatalogVersion>>(_catalog.GetValueOrDefault(reference) ?? []);
-        });
+        }));
         var requirements = requested.Select(r =>
         {
             var parts = r.Split(' ', 2);
             return new ModRequirement(parts[0], parts.Length > 1 ? parts[1] : null);
         }).ToList();
-        return resolver.ResolveAsync(new ResolveRequest(requirements, Game, TargetPlatform.Windows, preferred));
+        return resolver.ResolveAsync(new ResolveRequest(requirements, GAME, TargetPlatform.Windows, preferred));
     }
 
     private static string[] Picked(ResolveResult r) => r.Mods.Select(m => $"{m.Reference} {m.Version.Version}").ToArray();
@@ -276,12 +283,12 @@ public sealed class DependencyResolverTests
         }
         Publish("Last", "1.0.0", deps: "Lib ^2.0.0"); // forces every combination to fail
 
-        var resolver = new DependencyResolver((r, _) => Task.FromResult<IReadOnlyList<CatalogVersion>>(_catalog.GetValueOrDefault(r) ?? []))
+        var resolver = new DependencyResolver(new FakeVersionSource((r, _) => Task.FromResult<IReadOnlyList<CatalogVersion>>(_catalog.GetValueOrDefault(r) ?? [])))
         {
             StepLimit = 3,
         };
         var result = await resolver.ResolveAsync(new ResolveRequest(
-            [.. Enumerable.Range(0, 6).Select(i => new ModRequirement($"M{i}")), new ModRequirement("Last")], Game, TargetPlatform.Windows));
+            [.. Enumerable.Range(0, 6).Select(i => new ModRequirement($"M{i}")), new ModRequirement("Last")], GAME, TargetPlatform.Windows));
 
         Assert.False(result.Succeeded);
     }

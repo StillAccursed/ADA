@@ -6,7 +6,7 @@ namespace ADA.Tests.Detection;
 
 public class CrossOverDetectorTests
 {
-    private const string SystemReg = """
+    private const string SYSTEM_REG = """
         WINE REGISTRY Version 2
 
         [Software\\Epic Games\\EpicGamesLauncher] 1792336927
@@ -32,7 +32,7 @@ public class CrossOverDetectorTests
         var game = dir.CreateGame("home/Games/Satisfactory");
 
         var bottle = dir.Combine("Bottles", "Epic Games Store");
-        dir.WriteFile("Bottles/Epic Games Store/system.reg", SystemReg);
+        dir.WriteFile("Bottles/Epic Games Store/system.reg", SYSTEM_REG);
         dir.WriteFile("Bottles/Epic Games Store/drive_c/ProgramData/Epic/EpicGamesLauncher/Data/Manifests/ABC.item", item);
         Directory.CreateDirectory(Path.Combine(bottle, "dosdevices"));
         Directory.CreateSymbolicLink(Path.Combine(bottle, "dosdevices", "y:"), home);

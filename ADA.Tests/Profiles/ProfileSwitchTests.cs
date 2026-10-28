@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using ADA.Core.Catalog;
 using ADA.Core.Games;
 using ADA.Core.Profiles;
@@ -7,7 +8,6 @@ using ADA.Infrastructure.Profiles;
 using ADA.Infrastructure.Settings;
 using ADA.Tests.Fixtures;
 using ADA.Tests.Installing;
-using System.Security.Cryptography;
 
 namespace ADA.Tests.Profiles;
 
@@ -32,10 +32,11 @@ public sealed class ProfileSwitchTests : IDisposable
         var settings = new SettingsStore(_dir.Combine("settings.json"));
         settings.Save(new(DownloadRetries: 0));
         _service = new(settings, new(new HttpClient(_http), _dir.Combine("Archives")),
-            (reference, _) => Task.FromResult<IReadOnlyList<CatalogVersion>>(_catalog.GetValueOrDefault(reference) ?? []),
+            new FakeVersionSource((reference, _) => Task.FromResult<IReadOnlyList<CatalogVersion>>(_catalog.GetValueOrDefault(reference) ?? [])),
             _ => Task.FromResult(_running));
         _profiles = new(_store, _service);
-        _resolution = new((reference, _) => Task.FromResult<IReadOnlyList<CatalogVersion>>(_catalog.GetValueOrDefault(reference) ?? []), _service);
+        _resolution = new(new FakeVersionSource((reference, _) => Task.FromResult<IReadOnlyList<CatalogVersion>>(_catalog.GetValueOrDefault(reference) ?? [])), _service);
+        _store.SetActive(_game.Root, "Current");
     }
 
     public void Dispose() => _dir.Dispose();
@@ -54,7 +55,7 @@ public sealed class ProfileSwitchTests : IDisposable
 
         Assert.Equal("Target", _store.ActiveName(_game.Root));
         Assert.Equal("2.0.0", Installer().Installed["A"].Version);
-        Assert.Equal("1.0.0", Assert.Single(_store.Get("Default")!.Mods).Version);
+        Assert.Equal("1.0.0", Assert.Single(_store.Get("Current")!.Mods).Version);
         Assert.False(Installer().HasPendingProfileActivation);
         Assert.Equal(["A"], Installer().Requested);
     }
@@ -63,6 +64,7 @@ public sealed class ProfileSwitchTests : IDisposable
     public async Task An_empty_profile_removes_managed_mods_and_leaves_foreign_files_alone()
     {
         await _service.InstallAsync(_install, [Publish("A", "1.0.0")]);
+        await _profiles.RecordInstalledAsync(_install);
         Directory.CreateDirectory(_game.ModFolder("Mods/Foreign"));
         File.WriteAllText(_game.ModFolder("Mods/Foreign/readme.txt"), "Keep me");
 
@@ -71,7 +73,35 @@ public sealed class ProfileSwitchTests : IDisposable
         Assert.Empty(Installer().Installed);
         Assert.Equal("Keep me", File.ReadAllText(_game.ModFolder("Mods/Foreign/readme.txt")));
         Assert.Equal("Empty", _store.ActiveName(_game.Root));
-        Assert.Equal("1.0.0", Assert.Single(_store.Get("Default")!.Mods).Version);
+        Assert.Equal("1.0.0", Assert.Single(_store.Get("Current")!.Mods).Version);
+    }
+
+    [Fact]
+    public async Task Switching_without_a_profile_refuses_to_discard_the_installed_mods()
+    {
+        var store = new ProfileStore(_dir.Combine("Fresh"), _dir.Combine("fresh.json"));
+        var profiles = new GameProfiles(store, _service);
+        await _service.InstallAsync(_install, [Publish("A", "1.0.0")]);
+
+        var error = await Assert.ThrowsAsync<InstallException>(() => profiles.SwitchAsync(_install, new("Empty", []), _resolution));
+
+        Assert.Contains("Create a profile", error.Message);
+        Assert.Equal("1.0.0", Installer().Installed["A"].Version);
+        Assert.Null(store.ActiveName(_game.Root));
+    }
+
+    [Fact]
+    public async Task Creating_a_profile_saves_the_installed_mods_and_activates_it()
+    {
+        var store = new ProfileStore(_dir.Combine("Fresh"), _dir.Combine("fresh.json"));
+        var profiles = new GameProfiles(store, _service);
+        await _service.InstallAsync(_install, [Publish("A", "1.0.0")]);
+
+        await profiles.CreateAsync(_install, "  Playthrough 1 ");
+
+        Assert.Equal("Playthrough 1", store.ActiveName(_game.Root));
+        Assert.Equal("1.0.0", Assert.Single(store.Get("Playthrough 1")!.Mods).Version);
+        await Assert.ThrowsAsync<InvalidProfileException>(() => profiles.CreateAsync(_install, "playthrough 1"));
     }
 
     [Fact]
@@ -82,7 +112,7 @@ public sealed class ProfileSwitchTests : IDisposable
 
         await Assert.ThrowsAsync<InstallException>(() => _profiles.SwitchAsync(_install, new("Missing", [new("A", "2.0.0")]), _resolution));
 
-        Assert.Equal("Default", _store.ActiveName(_game.Root));
+        Assert.Equal("Current", _store.ActiveName(_game.Root));
         Assert.Equal("1.0.0", Installer().Installed["A"].Version);
         Assert.False(Installer().HasPendingProfileActivation);
     }
@@ -97,7 +127,7 @@ public sealed class ProfileSwitchTests : IDisposable
 
         await Assert.ThrowsAnyAsync<Exception>(() => _profiles.SwitchAsync(_install, new("Offline", [new("A", "2.0.0")]), _resolution));
 
-        Assert.Equal("Default", _store.ActiveName(_game.Root));
+        Assert.Equal("Current", _store.ActiveName(_game.Root));
         Assert.Equal("1.0.0", Installer().Installed["A"].Version);
     }
 
@@ -108,8 +138,8 @@ public sealed class ProfileSwitchTests : IDisposable
         await Assert.ThrowsAsync<GameRunningException>(() => _profiles.SwitchAsync(_install, new("Empty", []), _resolution));
         _running = false;
         using var operation = _service.BeginOperation(_install);
-        await Assert.ThrowsAsync<InstallException>(() => _profiles.SwitchAsync(_install, new("Empty", []), _resolution));
-        Assert.Equal("Default", _store.ActiveName(_game.Root));
+        await Assert.ThrowsAsync<InstallationBusyException>(() => _profiles.SwitchAsync(_install, new("Empty", []), _resolution));
+        Assert.Equal("Current", _store.ActiveName(_game.Root));
     }
 
     [Fact]
@@ -122,7 +152,7 @@ public sealed class ProfileSwitchTests : IDisposable
         await Assert.ThrowsAsync<InstallException>(() => _profiles.SwitchAsync(_install, new("Target", [new("A", "1.0.0")]), _resolution));
 
         Assert.Equal(remaining, _http.Remaining);
-        Assert.Equal("Default", _store.ActiveName(_game.Root));
+        Assert.Equal("Current", _store.ActiveName(_game.Root));
     }
 
     [Fact]
@@ -137,7 +167,7 @@ public sealed class ProfileSwitchTests : IDisposable
 
         Assert.Equal(downloads, _http.Remaining);
         Assert.Equal("1.0.0", Installer().Installed["A"].Version);
-        Assert.Equal("Default", _store.ActiveName(_game.Root));
+        Assert.Equal("Current", _store.ActiveName(_game.Root));
     }
 
     [Fact]
@@ -168,7 +198,7 @@ public sealed class ProfileSwitchTests : IDisposable
     public async Task A_committed_journal_without_an_activation_marker_cannot_overwrite_the_old_profile()
     {
         Installer().Apply([new ModChange.Install(Archive("1.0.0"), TargetPlatform.Windows)]);
-        _store.Save(new("Default", [new("A", "1.0.0")]));
+        _store.Save(new("Current", [new("A", "1.0.0")]));
         var next = Archive("2.0.0");
         Assert.Throws<SimulatedCrashException>(() => Installer(point =>
         {
@@ -179,11 +209,11 @@ public sealed class ProfileSwitchTests : IDisposable
         }).ApplyProfile([new ModChange.Install(next, TargetPlatform.Windows)], new("Target", ["A"])));
 
         await Assert.ThrowsAsync<InstallException>(() => _profiles.RecordInstalledAsync(_install));
-        Assert.Equal("1.0.0", Assert.Single(_store.Get("Default")!.Mods).Version);
+        Assert.Equal("1.0.0", Assert.Single(_store.Get("Current")!.Mods).Version);
         Installer().Recover();
         await _profiles.RecordInstalledAsync(_install);
         Assert.Equal("Target", _store.ActiveName(_game.Root));
-        Assert.Equal("1.0.0", Assert.Single(_store.Get("Default")!.Mods).Version);
+        Assert.Equal("1.0.0", Assert.Single(_store.Get("Current")!.Mods).Version);
     }
 
     [Theory]
@@ -199,7 +229,7 @@ public sealed class ProfileSwitchTests : IDisposable
         var old = Archive("1.0.0");
         var next = Archive("2.0.0");
         Installer().Apply([new ModChange.Install(old, TargetPlatform.Windows)]);
-        _store.Save(new("Default", [new("A", "1.0.0")]));
+        _store.Save(new("Current", [new("A", "1.0.0")]));
         _store.Save(new("Target", [new("A", "2.0.0")]));
         Assert.Throws<SimulatedCrashException>(() => Installer(point =>
         {
@@ -212,9 +242,9 @@ public sealed class ProfileSwitchTests : IDisposable
         Installer().Recover();
         await _profiles.RecordInstalledAsync(_install);
 
-        Assert.Equal(committed ? "Target" : "Default", _store.ActiveName(_game.Root));
+        Assert.Equal(committed ? "Target" : "Current", _store.ActiveName(_game.Root));
         Assert.Equal(committed ? "2.0.0" : "1.0.0", Installer().Installed["A"].Version);
-        Assert.Equal("1.0.0", Assert.Single(_store.Get("Default")!.Mods).Version);
+        Assert.Equal("1.0.0", Assert.Single(_store.Get("Current")!.Mods).Version);
         Assert.False(Installer().HasPendingProfileActivation);
     }
 

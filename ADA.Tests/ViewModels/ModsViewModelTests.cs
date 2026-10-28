@@ -1,5 +1,4 @@
 using System.Security.Cryptography;
-using Microsoft.Extensions.Logging.Abstractions;
 using ADA.Core.Catalog;
 using ADA.Core.Games;
 using ADA.Core.Settings;
@@ -14,6 +13,7 @@ using ADA.Platform.Detection;
 using ADA.Tests.Fixtures;
 using ADA.Tests.Installing;
 using ADA.ViewModels;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace ADA.Tests.ViewModels;
 
@@ -42,7 +42,10 @@ public sealed class ModsViewModelTests : IDisposable
         var link = $"/v1/version/{reference}-{version}/Windows/download";
         _http.RespondBytes(bytes, link);
         if (!_versions.TryGetValue(reference, out var list))
+        {
             _versions[reference] = list = [];
+        }
+
         list.Add(new CatalogVersion($"{reference}-{version}", reference, version, ">=513885", VersionStability.Release, false,
             DateTimeOffset.UnixEpoch,
             [new VersionTarget(TargetPlatform.Windows, link, bytes.Length, Convert.ToHexStringLower(SHA256.HashData(bytes)))], deps));
@@ -65,19 +68,18 @@ public sealed class ModsViewModelTests : IDisposable
         var installs = new ModInstallService(
             new SettingsStore(_dir.Combine("settings.json")),
             new ArchiveDownloader(new HttpClient(_http), _dir.Combine("Archives")),
-            GetVersions,
+            new FakeVersionSource(GetVersions),
             _ => Task.FromResult(_gameRunning));
         var profiles = new GameProfiles(new ProfileStore(_dir.Combine("Profiles"), _dir.Combine("profiles.json")), installs);
         var catalog = new CatalogStatusViewModel(
             new CatalogSync(new FicsitApiClient(new HttpClient(new FakeHttpHandler())), _store),
             NullLogger<CatalogStatusViewModel>.Instance);
-        var dashboard = new DashboardViewModel(
-            new KnownGames(otherGame is null ? [install] : [install, CreateInstall(otherGame.Root)]), catalog,
-            game => new GameInstallViewModel(game, installs, new ModResolutionService(GetVersions, installs), profiles, NullLogger<GameInstallViewModel>.Instance),
-            NullLogger<DashboardViewModel>.Instance,
-            _ => Task.FromResult<IReadOnlyList<GameProcess>>([]));
+        var dashboard = DashboardFactory.Create(_dir,
+            new KnownGames(otherGame is null ? [install] : [install, CreateInstall(otherGame.Root)]),
+            game => new GameInstallViewModel(game, installs, new ModResolutionService(new FakeVersionSource(GetVersions), installs), profiles, NullLogger<GameInstallViewModel>.Instance),
+            catalog, _store, installs: installs, profiles: profiles);
         dashboardReady?.Invoke(dashboard);
-        var page = new ModsViewModel(_store, (r, _, ct) => GetVersions(r, ct), new ModResolutionService(resolveVersions ?? GetVersions, installs), installs, profiles, dashboard,
+        var page = new ModsViewModel(_store, new FakeVersionSource(GetVersions), new ModResolutionService(new FakeVersionSource(resolveVersions ?? GetVersions), installs), installs, profiles, dashboard,
             new ModLogos(new HttpClient(new FakeHttpHandler())), new FavouritesStore(_dir.Combine("favourites.json")),
             NullLogger<ModsViewModel>.Instance, settingsStore ?? Settings);
 

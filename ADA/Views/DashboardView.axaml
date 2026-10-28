@@ -132,6 +132,8 @@
                             <ComboBox.ItemTemplate><DataTemplate x:DataType="profiles:ModProfile"><TextBlock Text="{Binding Name}" TextWrapping="Wrap" /></DataTemplate></ComboBox.ItemTemplate>
                         </ComboBox>
                         <TextBlock Classes="secondary" Text="{Binding ProfilesText}" /><TextBlock Classes="secondary" Text="{Binding ProfileModsText}" />
+                        <Button Content="New profile…" Command="{Binding NewProfileCommand}" IsEnabled="{Binding CanChooseProfile}"
+                                ToolTip.Tip="Save the installed mods as a new profile, e.g. for a new playthrough" />
                         <TextBlock Classes="secondary" Text="Close Satisfactory and wait for current operations to finish before switching." IsVisible="{Binding !CanChooseProfile}" FontSize="12" />
                         <TextBlock Classes="value" Text="{Binding ProfileNotice}" IsVisible="{Binding ProfileNotice, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
                     </StackPanel></Border>

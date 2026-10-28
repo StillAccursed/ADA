@@ -1,9 +1,9 @@
-using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Logging.Abstractions;
 using ADA.Core.Catalog;
 using ADA.Core.Games;
 using ADA.Core.Profiles;
 using ADA.Core.Resolution;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Semver;
 
 namespace ADA.Infrastructure.Installing;
@@ -48,12 +48,12 @@ public sealed record ModChangePlan(
 /// using that game's build and platform, and keeping what is already installed where it still fits.
 /// </summary>
 public sealed class ModResolutionService(
-    Func<string, CancellationToken, Task<IReadOnlyList<CatalogVersion>>> getVersions,
+    IModVersionSource versions,
     ModInstallService installs,
     ILogger<ModResolutionService>? log = null)
 {
     private readonly ILogger _log = log ?? NullLogger<ModResolutionService>.Instance;
-    private readonly DependencyResolver _resolver = new(getVersions);
+    private readonly DependencyResolver _resolver = new(versions);
 
     /// <param name="preferred">
     /// Versions to keep where they fit (e.g. a profile's lockfile). Defaults to what ADA has
@@ -159,7 +159,10 @@ public sealed class ModResolutionService(
         if (older.Count > 0)
         {
             foreach (var (reference, version) in older)
+            {
                 keep[reference] = version;
+            }
+
             plan = await PlanAsync(game, _ => { }, "", removing: false, ct, keep);
         }
         return plan with { Uninstall = [] };
@@ -174,14 +177,13 @@ public sealed class ModResolutionService(
         IProgress<ModInstallProgress>? progress = null, CancellationToken ct = default)
     {
         if (!plan.Succeeded)
+        {
             throw new InvalidOperationException("Can't apply a plan that has problems.");
+        }
 
         using var operation = installs.BeginOperation(game);
         var installer = installs.InstallerFor(game);
-        if (installer.HasPendingProfileActivation || installer.HasInterruptedTransaction)
-        {
-            throw new InstallException("Finish pending recovery before changing mods.");
-        }
+        installer.ThrowIfUnsettled("changing mods");
         await Task.Run(() => installer.SaveRequested(installer.Requested.Concat(plan.Requested)), ct);
 
         // Only the record changes (a dependency is now asked for): no transaction needed.
@@ -207,13 +209,17 @@ public sealed class ModResolutionService(
         var before = requested.ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         if (removing && !installed.ContainsKey(reference))
+        {
             return ModChangePlan.Failed([$"{reference} isn't installed by ADA in this game."]);
+        }
 
         change(requested);
         var resolved = await ResolveAsync(game, requested.Select(r => new ModRequirement(r, ranges?.GetValueOrDefault(r))).ToList(),
             preferred, ct);
         if (!resolved.Succeeded)
+        {
             return ModChangePlan.Failed(resolved.Problems);
+        }
 
         var chosen = resolved.Mods.ToDictionary(m => m.Reference, StringComparer.OrdinalIgnoreCase);
         if (removing && chosen.TryGetValue(reference, out var stillNeeded))

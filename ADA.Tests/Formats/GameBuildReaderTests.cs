@@ -6,7 +6,7 @@ namespace ADA.Tests.Formats;
 public class GameBuildReaderTests
 {
     // Trimmed from a real Epic install's Engine/Binaries/Win64/FactoryGameEGS-Win64-Shipping.version.
-    private const string VersionFile = """
+    private const string VERSION_FILE = """
         {
         	"MajorVersion": 5,
         	"MinorVersion": 6,
@@ -22,7 +22,7 @@ public class GameBuildReaderTests
     {
         using var dir = new TempDir();
         var game = dir.CreateGame("Satisfactory");
-        dir.WriteFile("Satisfactory/Engine/Binaries/Win64/FactoryGameEGS-Win64-Shipping.version", VersionFile);
+        dir.WriteFile("Satisfactory/Engine/Binaries/Win64/FactoryGameEGS-Win64-Shipping.version", VERSION_FILE);
 
         var build = GameBuildReader.Read(game);
 
@@ -41,7 +41,9 @@ public class GameBuildReaderTests
         using var dir = new TempDir();
         var game = dir.CreateGame("Satisfactory");
         if (content is not null)
+        {
             dir.WriteFile("Satisfactory/Engine/Binaries/Win64/FactoryGameEGS-Win64-Shipping.version", content);
+        }
 
         Assert.Null(GameBuildReader.Read(game));
     }

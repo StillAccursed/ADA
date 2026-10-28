@@ -80,7 +80,9 @@ public sealed class CrashSafetyTests : IDisposable
         return point =>
         {
             if (++seen == n)
+            {
                 throw new SimulatedCrashException(point);
+            }
         };
     }
 
@@ -178,7 +180,9 @@ public sealed class CrashSafetyTests : IDisposable
         {
             then?.Invoke(point);
             if (point == "moved-in:C")
+            {
                 throw new IOException("disk said no");
+            }
         };
 
         var points = new List<string>();

@@ -36,7 +36,7 @@ public sealed class ModInstallServiceTests : IDisposable
     private ModInstallService Service() => new(
         _settings,
         new ArchiveDownloader(new HttpClient(_http), _archives, time: new InstantTimeProvider()),
-        (reference, _) => Task.FromResult<IReadOnlyList<CatalogVersion>>(_catalog.GetValueOrDefault(reference) ?? []),
+        new FakeVersionSource((reference, _) => Task.FromResult<IReadOnlyList<CatalogVersion>>(_catalog.GetValueOrDefault(reference) ?? [])),
         _ => Task.FromResult(_gameRunning));
 
     /// <summary>Publishes a mod version on the fake ficsit.app; returns the catalogue entry.</summary>
@@ -51,7 +51,10 @@ public sealed class ModInstallServiceTests : IDisposable
             DateTimeOffset.UnixEpoch,
             [new VersionTarget(TargetPlatform.Windows, link, bytes.Length, Convert.ToHexStringLower(SHA256.HashData(bytes)))], deps ?? []);
         if (!_catalog.TryGetValue(reference, out var list))
+        {
             _catalog[reference] = list = [];
+        }
+
         list.Add(entry);
         return entry;
     }
@@ -59,7 +62,9 @@ public sealed class ModInstallServiceTests : IDisposable
     private void Serve(params CatalogVersion[] versions)
     {
         foreach (var v in versions)
+        {
             _http.RespondBytes(_files[v.Targets[0].DownloadPath], v.Targets[0].DownloadPath);
+        }
     }
 
     private string[] KeptArchives() =>
@@ -68,7 +73,7 @@ public sealed class ModInstallServiceTests : IDisposable
             : [];
 
     private ModResolutionService Resolver() => new(
-        (reference, _) => Task.FromResult<IReadOnlyList<CatalogVersion>>(_catalog.GetValueOrDefault(reference) ?? []),
+        new FakeVersionSource((reference, _) => Task.FromResult<IReadOnlyList<CatalogVersion>>(_catalog.GetValueOrDefault(reference) ?? [])),
         Service());
 
     [Fact]
@@ -384,7 +389,9 @@ public sealed class ModInstallServiceTests : IDisposable
         var crashing = new ModInstaller(_game.Root, () => false, cp =>
         {
             if (cp == "ready:A")
+            {
                 throw new SimulatedCrashException(cp);
+            }
         });
         Assert.Throws<SimulatedCrashException>(() => crashing.Apply([new ModChange.Install(archive, TargetPlatform.Windows)]));
 

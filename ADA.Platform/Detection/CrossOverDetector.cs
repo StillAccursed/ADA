@@ -9,7 +9,7 @@ namespace ADA.Platform.Detection;
 /// macOS: looks inside every CrossOver bottle for the Windows Steam and Epic launchers and the games
 /// they have recorded.
 /// </summary>
-public sealed class CrossOverDetector(string bottlesRoot) : IGameDetector
+internal sealed class CrossOverDetector(string bottlesRoot) : IGameDetector
 {
     public static string DefaultBottlesRoot => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
@@ -19,17 +19,22 @@ public sealed class CrossOverDetector(string bottlesRoot) : IGameDetector
     {
     }
 
+    /// <inheritdoc />
     public IReadOnlyList<GameInstall> Detect()
     {
         if (!Directory.Exists(bottlesRoot))
+        {
             return [];
+        }
 
         var results = new List<GameInstall>();
         foreach (var bottle in Directory.EnumerateDirectories(bottlesRoot))
         {
             var prefix = new WinePrefix(bottle);
             if (!File.Exists(prefix.SystemRegistry))
+            {
                 continue;
+            }
 
             var location = $"CrossOver bottle \"{Path.GetFileName(bottle)}\"";
             results.AddRange(DetectEpic(prefix, location));

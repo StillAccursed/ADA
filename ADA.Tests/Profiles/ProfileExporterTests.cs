@@ -12,7 +12,7 @@ public sealed class ProfileExporterTests : IDisposable
     private readonly TempDir _dir = new();
     private readonly Dictionary<string, List<CatalogVersion>> _catalog = new(StringComparer.OrdinalIgnoreCase);
 
-    private static readonly ModProfile Atria = new("Atria",
+    private static readonly ModProfile ATRIA = new("Atria",
     [
         new ProfileMod("WeatherExtended", "1.1.0"),
         new ProfileMod("SML", "3.12.0"),
@@ -27,7 +27,7 @@ public sealed class ProfileExporterTests : IDisposable
     public void Dispose() => _dir.Dispose();
 
     private ProfileExporter Exporter() =>
-        new((reference, _) => Task.FromResult<IReadOnlyList<CatalogVersion>>(_catalog.GetValueOrDefault(reference) ?? []));
+        new(new FakeVersionSource((reference, _) => Task.FromResult<IReadOnlyList<CatalogVersion>>(_catalog.GetValueOrDefault(reference) ?? [])));
 
     private void Publish(string reference, string version, params TargetPlatform[] platforms)
     {
@@ -35,13 +35,16 @@ public sealed class ProfileExporterTests : IDisposable
             .Select(p => new VersionTarget(p, $"/v1/version/{reference}{version}/{p}/download", 100, $"hash-{reference}-{p}"))
             .ToList();
         if (!_catalog.TryGetValue(reference, out var list))
+        {
             _catalog[reference] = list = [];
+        }
+
         list.Add(new CatalogVersion($"{reference}{version}", reference, version, ">=513885", VersionStability.Release, false,
             DateTimeOffset.UnixEpoch, targets, []));
     }
 
     private Task<IReadOnlyList<string>> Export(ProfileFormats formats, ModProfile? profile = null) =>
-        Exporter().ExportAsync(profile ?? Atria, _dir.Combine("Atria"), formats, 513885, TargetPlatform.Windows);
+        Exporter().ExportAsync(profile ?? ATRIA, _dir.Combine("Atria"), formats, 513885, TargetPlatform.Windows);
 
     [Fact]
     public async Task Exports_olp_only()
@@ -118,7 +121,7 @@ public sealed class ProfileExporterTests : IDisposable
     [Fact]
     public async Task A_version_missing_from_the_catalogue_writes_neither_file()
     {
-        var profile = Atria with { Mods = [.. Atria.Mods, new ProfileMod("Gone", "1.0.0")] };
+        var profile = ATRIA with { Mods = [.. ATRIA.Mods, new ProfileMod("Gone", "1.0.0")] };
 
         var e = await Assert.ThrowsAsync<InvalidProfileException>(() => Export(ProfileFormats.Both, profile));
 
@@ -131,7 +134,7 @@ public sealed class ProfileExporterTests : IDisposable
     public async Task A_mod_without_a_build_for_the_target_is_reported()
     {
         var e = await Assert.ThrowsAsync<InvalidProfileException>(() =>
-            Exporter().ExportAsync(Atria, _dir.Combine("Server"), ProfileFormats.SmmProfile, 513885, TargetPlatform.LinuxServer));
+            Exporter().ExportAsync(ATRIA, _dir.Combine("Server"), ProfileFormats.SmmProfile, 513885, TargetPlatform.LinuxServer));
 
         Assert.Contains("WeatherExtended 1.1.0 has no LinuxServer build", e.Message);
     }
@@ -139,7 +142,7 @@ public sealed class ProfileExporterTests : IDisposable
     [Fact]
     public void Smmprofile_round_trip_keeps_unknown_fields()
     {
-        const string original = """
+        const string ORIGINAL = """
             {
               "profile": { "mods": { "SML": { "version": ">=0.0.0", "enabled": true, "pinned": true } },
                            "name": "P", "required_targets": ["Windows"], "colour": "orange" },
@@ -148,21 +151,23 @@ public sealed class ProfileExporterTests : IDisposable
               "futureSection": { "a": 1 }
             }
             """;
-        var doc = SmmProfileFile.Parse(new MemoryStream(Encoding.UTF8.GetBytes(original)));
+        var doc = SmmProfileFile.Parse(new MemoryStream(Encoding.UTF8.GetBytes(ORIGINAL)));
         var path = _dir.Combine("round.smmprofile");
 
         SmmProfileFile.Write(path, doc);
         var text = File.ReadAllText(path);
 
         foreach (var kept in new[] { "\"pinned\": true", "\"colour\": \"orange\"", "\"exportedBy\": \"something newer\"", "\"futureSection\"" })
+        {
             Assert.Contains(kept, text);
+        }
     }
 
     [Fact]
     public void Smmprofile_keys_are_written_in_character_code_order()
     {
         // Culture-aware sorting would put AutomatedInhalers first; other tools write AutoLink first.
-        const string json = """
+        const string JSON = """
             { "profile": { "mods": { "AutomatedInhalers": { "version": ">=0.0.0", "enabled": true },
                                      "AutoLink": { "version": ">=0.0.0", "enabled": true } },
                            "name": "P", "required_targets": ["Windows"] },
@@ -170,7 +175,7 @@ public sealed class ProfileExporterTests : IDisposable
             """;
         var path = _dir.Combine("order.smmprofile");
 
-        SmmProfileFile.Write(path, SmmProfileFile.Parse(new MemoryStream(Encoding.UTF8.GetBytes(json))));
+        SmmProfileFile.Write(path, SmmProfileFile.Parse(new MemoryStream(Encoding.UTF8.GetBytes(JSON))));
         var text = File.ReadAllText(path);
 
         Assert.True(text.IndexOf("\"AutoLink\"", StringComparison.Ordinal) < text.IndexOf("\"AutomatedInhalers\"", StringComparison.Ordinal));

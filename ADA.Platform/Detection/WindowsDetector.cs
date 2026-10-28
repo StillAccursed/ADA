@@ -1,14 +1,15 @@
 using System.Runtime.Versioning;
-using Microsoft.Win32;
 using ADA.Core.Games;
 using ADA.Platform.Launchers;
+using Microsoft.Win32;
 
 namespace ADA.Platform.Detection;
 
 /// <summary>Windows: finds Steam and Epic through their registry keys.</summary>
 [SupportedOSPlatform("windows")]
-public sealed class WindowsDetector : IGameDetector
+internal sealed class WindowsDetector : IGameDetector
 {
+    /// <inheritdoc />
     public IReadOnlyList<GameInstall> Detect()
     {
         var results = new List<GameInstall>();
@@ -16,7 +17,9 @@ public sealed class WindowsDetector : IGameDetector
         var steamRoot = ReadString(Registry.LocalMachine, @"SOFTWARE\WOW6432Node\Valve\Steam", "InstallPath")
                         ?? ReadString(Registry.CurrentUser, @"Software\Valve\Steam", "SteamPath");
         if (steamRoot is not null)
+        {
             results.AddRange(new SteamLibraryScanner(MapNative, GameHost.Windows, "Steam").Scan(steamRoot));
+        }
 
         var epicData = ReadString(Registry.LocalMachine, @"SOFTWARE\WOW6432Node\Epic Games\EpicGamesLauncher", "AppDataPath")
                        ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),

@@ -62,7 +62,10 @@ public sealed class SmodBuilder(string reference, string version)
             """;
         Add(zip, $"{prefix}{reference}.uplugin", uplugin);
         foreach (var (file, content) in _files)
+        {
             Add(zip, prefix + file, content);
+        }
+
         return path;
     }
 

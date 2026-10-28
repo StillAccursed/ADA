@@ -20,7 +20,9 @@ public sealed class FakeHttpHandler : HttpMessageHandler
         get
         {
             lock (_gate)
+            {
                 return _requestBodies.ToList();
+            }
         }
     }
 
@@ -43,7 +45,9 @@ public sealed class FakeHttpHandler : HttpMessageHandler
         get
         {
             lock (_gate)
+            {
                 return _responses.Count + _byPath.Values.Sum(q => q.Count);
+            }
         }
     }
 
@@ -52,11 +56,17 @@ public sealed class FakeHttpHandler : HttpMessageHandler
         lock (_gate)
         {
             if (path is null)
+            {
                 _responses.Enqueue(response);
+            }
             else if (_byPath.TryGetValue(path, out var queue))
+            {
                 queue.Enqueue(response);
+            }
             else
+            {
                 _byPath[path] = new Queue<Func<HttpResponseMessage>>([response]);
+            }
         }
         return this;
     }
@@ -70,11 +80,17 @@ public sealed class FakeHttpHandler : HttpMessageHandler
             _requestBodies.Add(body);
             var path = request.RequestUri?.AbsolutePath ?? "";
             if (_byPath.TryGetValue(path, out var queue) && queue.Count > 0)
+            {
                 next = queue.Dequeue();
+            }
             else if (_responses.Count > 0)
+            {
                 next = _responses.Dequeue();
+            }
             else
+            {
                 throw new InvalidOperationException("No canned response left for " + request.RequestUri);
+            }
         }
         return next();
     }

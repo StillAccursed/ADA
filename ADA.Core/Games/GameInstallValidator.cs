@@ -6,7 +6,7 @@ namespace ADA.Core.Games;
 /// </summary>
 public static class GameInstallValidator
 {
-    private static readonly string[] KnownExecutables =
+    private static readonly string[] KNOWN_EXECUTABLES =
     [
         "FactoryGameSteam.exe",
         "FactoryGameEGS.exe",
@@ -15,15 +15,18 @@ public static class GameInstallValidator
         "FactoryServer.sh",
     ];
 
+    /// <summary>True when <see cref="InspectKind"/> recognises the folder as a client or server install.</summary>
     public static bool LooksLikeGame(string gamePath) => InspectKind(gamePath) is not null;
 
     /// <returns>The kind of install at <paramref name="gamePath"/>, or null if it is not one.</returns>
     public static GameKind? InspectKind(string gamePath)
     {
         if (!Directory.Exists(Path.Combine(gamePath, "FactoryGame", "Binaries")))
+        {
             return null;
+        }
 
-        var exe = KnownExecutables.FirstOrDefault(e => File.Exists(Path.Combine(gamePath, e)));
+        var exe = KNOWN_EXECUTABLES.FirstOrDefault(e => File.Exists(Path.Combine(gamePath, e)));
         return exe switch
         {
             null => null,

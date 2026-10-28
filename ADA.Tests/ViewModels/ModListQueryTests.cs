@@ -6,9 +6,9 @@ namespace ADA.Tests.ViewModels;
 
 public class ModListQueryTests
 {
-    private static readonly HashSet<string> None = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly HashSet<string> NONE = new(StringComparer.OrdinalIgnoreCase);
 
-    private static readonly CatalogMod[] Mods =
+    private static readonly CatalogMod[] MODS =
     [
         CatalogFixtures.Mod("Alpha", tags: ["Logistics", "QoL"], popularity: 5, views: 900, downloads: 10, hotness: 1,
             lastVersion: new DateTimeOffset(2026, 3, 1, 0, 0, 0, TimeSpan.Zero)),
@@ -29,7 +29,7 @@ public class ModListQueryTests
 
     private static string[] Run(ModFilter filter = ModFilter.All, string[]? tags = null, bool all = false,
         ModSort sort = ModSort.BestMatch, ModListContext? context = null) =>
-        ModListQuery.Apply(Mods, filter, tags ?? [], all, sort, context ?? Context()).Select(m => m.Reference).ToArray();
+        ModListQuery.Apply(MODS, filter, tags ?? [], all, sort, context ?? Context()).Select(m => m.Reference).ToArray();
 
     [Fact]
     public void Compatible_means_the_newest_version_supports_this_build_and_platform() =>

@@ -29,7 +29,7 @@ public sealed class GameProfilesTests : IDisposable
     private ModInstallService Installs() => new(
         new SettingsStore(_dir.Combine("settings.json")),
         new ArchiveDownloader(new HttpClient(new FakeHttpHandler()), _dir.Combine("Archives")),
-        (_, _) => Task.FromResult<IReadOnlyList<CatalogVersion>>([]),
+        new FakeVersionSource((_, _) => Task.FromResult<IReadOnlyList<CatalogVersion>>([])),
         _ => Task.FromResult(false));
 
     private GameProfiles Profiles() => new(_store, Installs());
@@ -71,6 +71,7 @@ public sealed class GameProfilesTests : IDisposable
         PlaceForeign("Mods/GameFeatures/MapZoom", "2.1.0", "SML");
         var dll = _game.ModFolder("Mods/GameFeatures/MapZoom/Binaries/mod.dll");
         var writtenAt = File.GetLastWriteTimeUtc(dll);
+        await Profiles().CreateAsync(_install, "Playthrough");
 
         var result = await Profiles().ImportToCurrentAsync(_install, await Found());
 
@@ -82,8 +83,8 @@ public sealed class GameProfilesTests : IDisposable
 
         // SML is there because MapZoom needs it, so it goes once nothing does.
         Assert.Equal(["MapZoom"], Installer().Requested);
-        Assert.Equal(ProfileStore.DefaultName, result.Profile.Name);
-        Assert.Equal(["MapZoom 2.1.0", "SML 3.12.0"], _store.Get("Default")!.Mods.Select(m => $"{m.Name} {m.Version}"));
+        Assert.Equal("Playthrough", result.Profile.Name);
+        Assert.Equal(["MapZoom 2.1.0", "SML 3.12.0"], _store.Get("Playthrough")!.Mods.Select(m => $"{m.Name} {m.Version}"));
         Assert.Empty(await Found());
     }
 
@@ -108,7 +109,7 @@ public sealed class GameProfilesTests : IDisposable
 
         Assert.Empty(result.Adopted);
         Assert.Empty(Installer().Installed);
-        Assert.Equal(ProfileStore.DefaultName, _store.ActiveName(_game.Root));
+        Assert.Null(_store.ActiveName(_game.Root));
         Assert.Equal(["SML"], _store.Get("Later")!.Mods.Select(m => m.Name));
         Assert.Empty(await Found());
         Assert.NotNull(_game.Read("Mods/SML"));

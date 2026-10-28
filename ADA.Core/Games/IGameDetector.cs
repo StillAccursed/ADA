@@ -1,5 +1,6 @@
 namespace ADA.Core.Games;
 
+/// <summary>Finds Satisfactory installs on one OS; <c>GameDetection.ForCurrentOS</c> picks the right one.</summary>
 public interface IGameDetector
 {
     /// <summary>

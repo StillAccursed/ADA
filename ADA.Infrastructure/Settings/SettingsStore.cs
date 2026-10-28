@@ -17,7 +17,7 @@ public sealed class SettingsStore(string settingsPath)
     /// </summary>
     public event EventHandler? Changed;
 
-    public string SettingsPath { get; } = settingsPath;
+    internal string SettingsPath { get; } = settingsPath;
 
     /// <summary>The settings in effect: read from disk once, then kept in memory and updated by <see cref="Save"/>.</summary>
     public AppSettings Current

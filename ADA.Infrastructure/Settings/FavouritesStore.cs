@@ -15,7 +15,9 @@ public sealed class FavouritesStore(string path)
         get
         {
             lock (_gate)
+            {
                 return new HashSet<string>(Load(), StringComparer.OrdinalIgnoreCase);
+            }
         }
     }
 
@@ -37,7 +39,10 @@ public sealed class FavouritesStore(string path)
     private HashSet<string> Load()
     {
         if (_favourites is not null)
+        {
             return _favourites;
+        }
+
         try
         {
             if (File.Exists(path))

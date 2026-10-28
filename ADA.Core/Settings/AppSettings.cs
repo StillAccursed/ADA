@@ -7,17 +7,23 @@ namespace ADA.Core.Settings;
 /// </param>
 /// <param name="DownloadRetries">
 /// How many times a failed download is retried after the first attempt (network errors, wrong
-/// size, wrong hash). Clamped to <see cref="MinDownloadRetries"/>–<see cref="MaxDownloadRetries"/>.
+/// size, wrong hash). Clamped to <see cref="MIN_DOWNLOAD_RETRIES"/>–<see cref="MAX_DOWNLOAD_RETRIES"/>.
 /// </param>
 /// <param name="ModsView">The Mods page's layout (List, Grid or Card), as last chosen; null for the default.</param>
 /// <param name="ModsSort">The Mods page's sort, as last chosen; null for the default.</param>
 /// <param name="ModsFilter">The Mods page's filter, as last chosen; null for the default.</param>
 /// <param name="EndlessScroll">Reveal more matching mods while scrolling instead of using pages.</param>
-/// <param name="ModsPageSize">Mods per page when endless scrolling is off; unsupported values use 50.</param>
-/// <param name="DashboardLatestModsCount">Recent releases displayed on the dashboard, between 1 and 20.</param>
+/// <param name="ModsPageSize">
+/// Mods per page when endless scrolling is off; one of <see cref="MODS_PAGE_SIZES"/>, otherwise
+/// <see cref="DEFAULT_MODS_PAGE_SIZE"/>.
+/// </param>
+/// <param name="DashboardLatestModsCount">
+/// Recent releases displayed on the dashboard, clamped to
+/// <see cref="MIN_DASHBOARD_LATEST_MODS_COUNT"/>–<see cref="MAX_DASHBOARD_LATEST_MODS_COUNT"/>.
+/// </param>
 public sealed record AppSettings(
     bool KeepDownloadedArchives = true,
-    int DownloadRetries = AppSettings.DefaultDownloadRetries,
+    int DownloadRetries = AppSettings.DEFAULT_DOWNLOAD_RETRIES,
     string? ModsView = null,
     string? ModsSort = null,
     string? ModsFilter = null,
@@ -25,23 +31,24 @@ public sealed record AppSettings(
     int ModsPageSize = AppSettings.DEFAULT_MODS_PAGE_SIZE,
     int DashboardLatestModsCount = AppSettings.DEFAULT_DASHBOARD_LATEST_MODS_COUNT)
 {
-    public const int DefaultDownloadRetries = 5;
-    public const int MinDownloadRetries = 0;
-    public const int MaxDownloadRetries = 8;
-    public const int DEFAULT_MODS_PAGE_SIZE = 50;
-    public const int DEFAULT_DASHBOARD_LATEST_MODS_COUNT = 5;
+    internal const int DEFAULT_DOWNLOAD_RETRIES = 5;
+    public const int MIN_DOWNLOAD_RETRIES = 0;
+    public const int MAX_DOWNLOAD_RETRIES = 8;
+    internal const int DEFAULT_MODS_PAGE_SIZE = 50;
+    internal const int DEFAULT_DASHBOARD_LATEST_MODS_COUNT = 5;
     public const int MIN_DASHBOARD_LATEST_MODS_COUNT = 1;
     public const int MAX_DASHBOARD_LATEST_MODS_COUNT = 20;
+
+    /// <summary>The page sizes the Settings page offers; any other saved value falls back to the default.</summary>
+    public static readonly IReadOnlyList<int> MODS_PAGE_SIZES = Array.AsReadOnly([25, 50, 100, 200, 500]);
 
     public static AppSettings Default { get; } = new();
 
     /// <summary>The same settings with any out-of-range values (e.g. from a hand-edited file) pulled back into range.</summary>
     public AppSettings Normalized() => this with
     {
-        DownloadRetries = Math.Clamp(DownloadRetries, MinDownloadRetries, MaxDownloadRetries),
-        ModsPageSize = ModsPageSize is 25 or 50 or 100 or 200 or 500
-            ? ModsPageSize
-            : DEFAULT_MODS_PAGE_SIZE,
+        DownloadRetries = Math.Clamp(DownloadRetries, MIN_DOWNLOAD_RETRIES, MAX_DOWNLOAD_RETRIES),
+        ModsPageSize = MODS_PAGE_SIZES.Contains(ModsPageSize) ? ModsPageSize : DEFAULT_MODS_PAGE_SIZE,
         DashboardLatestModsCount = Math.Clamp(DashboardLatestModsCount,
             MIN_DASHBOARD_LATEST_MODS_COUNT, MAX_DASHBOARD_LATEST_MODS_COUNT),
     };

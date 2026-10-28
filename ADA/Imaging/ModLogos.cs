@@ -12,11 +12,10 @@ namespace ADA.Imaging;
 /// </summary>
 public sealed class ModLogos(HttpClient http, ILogger<ModLogos>? log = null)
 {
-
     // Logos are uploaded by mod authors; anything this large is not a logo.
-    private const long MaxBytes = 8L * 1024 * 1024;
+    private const long MAX_BYTES = 8L * 1024 * 1024;
 
-    private const int MaxCached = 400;
+    private const int MAX_CACHED = 400;
 
     private readonly ILogger _log = log ?? NullLogger<ModLogos>.Instance;
     private readonly ConcurrentDictionary<string, Task<Bitmap?>> _cache = new(StringComparer.Ordinal);
@@ -33,7 +32,7 @@ public sealed class ModLogos(HttpClient http, ILogger<ModLogos>? log = null)
             return Task.FromResult<Bitmap?>(null);
         }
 
-        if (_cache.Count >= MaxCached)
+        if (_cache.Count >= MAX_CACHED)
         {
             _cache.Clear();
         }
@@ -47,7 +46,7 @@ public sealed class ModLogos(HttpClient http, ILogger<ModLogos>? log = null)
         {
             using var response = await http.GetAsync(uri, HttpCompletionOption.ResponseHeadersRead);
             response.EnsureSuccessStatusCode();
-            if (response.Content.Headers.ContentLength > MaxBytes)
+            if (response.Content.Headers.ContentLength > MAX_BYTES)
             {
                 return null;
             }
@@ -58,7 +57,7 @@ public sealed class ModLogos(HttpClient http, ILogger<ModLogos>? log = null)
             int read;
             while ((read = await body.ReadAsync(chunk)) > 0)
             {
-                if (buffer.Length + read > MaxBytes)
+                if (buffer.Length + read > MAX_BYTES)
                 {
                     return null;
                 }

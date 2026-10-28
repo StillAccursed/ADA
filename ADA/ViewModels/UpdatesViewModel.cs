@@ -1,12 +1,12 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
-using CommunityToolkit.Mvvm.ComponentModel;
-using CommunityToolkit.Mvvm.Input;
-using Microsoft.Extensions.Logging;
 using ADA.Core.Catalog;
 using ADA.Infrastructure.Catalog;
 using ADA.Infrastructure.Installing;
 using ADA.Infrastructure.Profiles;
+using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
+using Microsoft.Extensions.Logging;
 using Semver;
 
 namespace ADA.ViewModels;
@@ -18,28 +18,15 @@ namespace ADA.ViewModels;
 public partial class UpdatesViewModel : ViewModelBase
 {
     // A click right after a refresh needn't ask ficsit.app again.
-    private static readonly TimeSpan FreshEnough = TimeSpan.FromMinutes(5);
+    private static readonly TimeSpan FRESH_ENOUGH = TimeSpan.FromMinutes(5);
 
     private readonly DashboardViewModel _dashboard;
     private readonly ModResolutionService _resolution;
     private readonly GameProfiles _profiles;
     private readonly ModCatalogStore _store;
-    private readonly Func<string, bool, CancellationToken, Task<IReadOnlyList<CatalogVersion>>> _getVersions;
+    private readonly IModVersionSource _versions;
     private readonly ILogger _log;
     private readonly Dictionary<GameInstallViewModel, ModChangePlan> _plans = [];
-
-    public UpdatesViewModel(DashboardViewModel dashboard, ModResolutionService resolution, GameProfiles profiles, ModCatalogStore store,
-        Func<string, bool, CancellationToken, Task<IReadOnlyList<CatalogVersion>>> getVersions, ILogger<UpdatesViewModel> log)
-    {
-        _dashboard = dashboard;
-        _resolution = resolution;
-        _profiles = profiles;
-        _store = store;
-        _getVersions = getVersions;
-        _log = log;
-        IsGameRunning = dashboard.IsGameRunning;
-        dashboard.PropertyChanged += OnDashboardChanged;
-    }
 
     public ObservableCollection<ModUpdateItemViewModel> Items { get; } = [];
 
@@ -72,6 +59,19 @@ public partial class UpdatesViewModel : ViewModelBase
 
     private bool CanUpdateAll => HasUpdates && CanUpdate;
 
+    public UpdatesViewModel(DashboardViewModel dashboard, ModResolutionService resolution, GameProfiles profiles, ModCatalogStore store,
+        IModVersionSource versions, ILogger<UpdatesViewModel> log)
+    {
+        _dashboard = dashboard;
+        _resolution = resolution;
+        _profiles = profiles;
+        _store = store;
+        _versions = versions;
+        _log = log;
+        IsGameRunning = dashboard.IsGameRunning;
+        dashboard.PropertyChanged += OnDashboardChanged;
+    }
+
     /// <summary>Makes sure the catalogue knows about new releases, then lists updates for every game. Never throws.</summary>
     public async Task CheckAsync()
     {
@@ -80,8 +80,11 @@ public partial class UpdatesViewModel : ViewModelBase
         try
         {
             var catalog = _dashboard.Catalog;
-            if (!catalog.IsChecking && (catalog.LastChecked is not { } at || DateTimeOffset.UtcNow - at > FreshEnough))
+            if (!catalog.IsChecking && (catalog.LastChecked is not { } at || DateTimeOffset.UtcNow - at > FRESH_ENOUGH))
+            {
                 await catalog.RefreshCommand.ExecuteAsync(null);
+            }
+
             await ListAsync();
         }
         finally
@@ -110,7 +113,10 @@ public partial class UpdatesViewModel : ViewModelBase
     {
         var plan = await _resolution.PlanUpdateAsync(item.Game.Install, item.Reference);
         if (!plan.Succeeded)
+        {
             return string.Join(" ", plan.Problems);
+        }
+
         var result = await _resolution.ApplyAsync(item.Game.Install, plan, progress);
         await _profiles.RecordInstalledAsync(item.Game.Install);
         return $"Updated {string.Join(", ", result.Installed.Select(m => $"{m.Reference} {m.Version}"))}.";
@@ -119,11 +125,13 @@ public partial class UpdatesViewModel : ViewModelBase
     /// <summary>Every release after the installed version up to the new one, newest first.</summary>
     internal async Task<string> ChangelogAsync(ModUpdateItemViewModel item)
     {
-        var versions = await _getVersions(item.Reference, false, CancellationToken.None);
+        var versions = await _versions.GetVersionsAsync(item.Reference);
         var between = Between(versions, item.From, item.To);
         // Version lists cached before changelogs were fetched have none; fetch once more.
         if (between.Count > 0 && between.All(v => v.Changelog is null))
-            between = Between(await _getVersions(item.Reference, true, CancellationToken.None), item.From, item.To);
+        {
+            between = Between(await _versions.GetVersionsAsync(item.Reference, refresh: true), item.From, item.To);
+        }
 
         var parts = between.Select(v => ModDescription.Readable(v.Changelog) is { Length: > 0 } text
             ? $"{v.Version}\n{text}"
@@ -144,7 +152,10 @@ public partial class UpdatesViewModel : ViewModelBase
         {
             // Offline, the game started, a failed install (already rolled back): shown, never thrown.
             if (e is not GameRunningException)
+            {
                 _log.LogError(e, "Updating mods failed");
+            }
+
             Notice = e is GameRunningException ? e.Message : $"Nothing was changed: {e.Message}";
         }
         finally
@@ -156,7 +167,9 @@ public partial class UpdatesViewModel : ViewModelBase
         {
             await ListAsync();
             foreach (var game in _dashboard.Installs)
+            {
                 _ = game.CheckAsync(); // the Dashboard's cards and arrow
+            }
         }
         finally
         {
@@ -183,7 +196,10 @@ public partial class UpdatesViewModel : ViewModelBase
 
                 var updates = plan.Install.Where(i => i.IsUpdate).ToList();
                 if (updates.Count == 0)
+                {
                     continue;
+                }
+
                 _plans[game] = plan;
                 foreach (var update in updates)
                 {
@@ -208,13 +224,18 @@ public partial class UpdatesViewModel : ViewModelBase
             var (n, _) => $"{n} mods have updates.",
         };
         if (problems.Count > 0)
+        {
             Notice = string.Join("\n", problems.Prepend(Notice).OfType<string>());
+        }
     }
 
     private static List<CatalogVersion> Between(IReadOnlyList<CatalogVersion> versions, string from, string to)
     {
         if (!SemVersion.TryParse(from, SemVersionStyles.Any, out var low) || !SemVersion.TryParse(to, SemVersionStyles.Any, out var high))
+        {
             return versions.Where(v => v.Version == to).ToList();
+        }
+
         return versions
             .Select(v => (Version: v, Sem: SemVersion.TryParse(v.Version, SemVersionStyles.Any, out var s) ? s : null))
             .Where(v => v.Sem is not null && SemVersion.ComparePrecedence(v.Sem, low) > 0 && SemVersion.ComparePrecedence(v.Sem, high) <= 0)
@@ -226,7 +247,9 @@ public partial class UpdatesViewModel : ViewModelBase
     private void OnDashboardChanged(object? sender, PropertyChangedEventArgs e)
     {
         if (e.PropertyName == nameof(DashboardViewModel.IsGameRunning))
+        {
             IsGameRunning = _dashboard.IsGameRunning;
+        }
     }
 
     partial void OnIsBusyChanged(bool value) => NotifyItems();
@@ -236,7 +259,9 @@ public partial class UpdatesViewModel : ViewModelBase
     private void NotifyItems()
     {
         foreach (var item in Items)
+        {
             item.UpdateCommand.NotifyCanExecuteChanged();
+        }
     }
 
     /// <summary>Stops listening to the Dashboard once the window closes.</summary>
@@ -275,7 +300,9 @@ public partial class ModUpdateItemViewModel(UpdatesViewModel owner, GameInstallV
     {
         ShowChangelog = !ShowChangelog;
         if (!ShowChangelog || Changelog is not null)
+        {
             return;
+        }
 
         Changelog = "Loading changelog…";
         try
