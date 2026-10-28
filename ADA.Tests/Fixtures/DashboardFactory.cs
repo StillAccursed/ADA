@@ -22,7 +22,8 @@ internal static class DashboardFactory
         Func<GameInstall, GameInstallViewModel> createInstall,
         CatalogStatusViewModel? catalog = null, ModCatalogStore? store = null, SettingsStore? settings = null,
         ModInstallService? installs = null, GameProfiles? profiles = null, ModResolutionService? resolution = null,
-        Func<CancellationToken, Task<IReadOnlyList<GameProcess>>>? findRunning = null, TimeSpan? watchInterval = null)
+        Func<CancellationToken, Task<IReadOnlyList<GameProcess>>>? findRunning = null, TimeSpan? watchInterval = null,
+        ModChangelogs? changelogs = null)
     {
         store ??= new ModCatalogStore(dir.Combine("dashboard-catalog.db"));
         settings ??= new SettingsStore(dir.Combine("dashboard-settings.json"));
@@ -34,7 +35,9 @@ internal static class DashboardFactory
         resolution ??= new ModResolutionService(new FakeVersionSource((_, _) => Task.FromResult<IReadOnlyList<CatalogVersion>>([])), installs);
         return new DashboardViewModel(detector, catalog, createInstall, NullLogger<DashboardViewModel>.Instance,
             store, settings, profiles, resolution, new DashboardStorageReader(dir.Combine("Archives")), installs,
-            new ArchiveCache(dir.Combine("Archives")), findRunning ?? (_ => Task.FromResult<IReadOnlyList<GameProcess>>([])),
+            new ArchiveCache(dir.Combine("Archives")),
+            changelogs ?? new ModChangelogs(new FakeVersionSource((_, _) => Task.FromResult<IReadOnlyList<CatalogVersion>>([]))),
+            findRunning ?? (_ => Task.FromResult<IReadOnlyList<GameProcess>>([])),
             watchInterval);
     }
 }

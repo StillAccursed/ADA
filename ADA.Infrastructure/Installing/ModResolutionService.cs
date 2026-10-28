@@ -40,7 +40,20 @@ public sealed record ModChangePlan(
 
     public bool ChangesNothing => Install.Count == 0 && Uninstall.Count == 0 && !RequestedChanged;
 
+    /// <summary>
+    /// Whether <paramref name="other"/> makes exactly the same changes: the same mods installed at
+    /// the same versions, the same mods removed and the same requested set, ignoring order and case.
+    /// Download size is not compared, as kept archives change it without changing any mod.
+    /// </summary>
+    public bool HasSameChangesAs(ModChangePlan other) =>
+        SameSet(Install.Select(i => $"{i.Reference}@{i.Version}"), other.Install.Select(i => $"{i.Reference}@{i.Version}"))
+        && SameSet(Uninstall, other.Uninstall)
+        && SameSet(Requested, other.Requested);
+
     internal static ModChangePlan Failed(IReadOnlyList<string> problems) => new([], [], [], 0, problems);
+
+    private static bool SameSet(IEnumerable<string> a, IEnumerable<string> b) =>
+        a.ToHashSet(StringComparer.OrdinalIgnoreCase).SetEquals(b);
 }
 
 /// <summary>
@@ -104,20 +117,30 @@ public sealed class ModResolutionService(
         PlanAsync(game, requested => requested.Add(reference), "", removing: false, ct,
             ranges: new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { [reference] = version });
 
-    /// <summary>Plans the complete saved profile with exact versions; unmanaged collisions are refused before downloads.</summary>
-    internal async Task<ModChangePlan> PlanProfileAsync(GameInstall game, ModProfile profile, CancellationToken ct = default)
+    /// <summary>Plans the complete saved profile; unmanaged collisions are refused before downloads.</summary>
+    /// <param name="newest">
+    /// False: every profile mod at exactly its saved version. True: the newest versions that work
+    /// together with this game, each at least its saved version (a constraint, so never a downgrade).
+    /// Dependencies outside the profile are resolved either way.
+    /// </param>
+    internal async Task<ModChangePlan> PlanProfileAsync(GameInstall game, ModProfile profile, bool newest = false,
+        CancellationToken ct = default)
     {
         if (profile.Mods.Any(m => !ModIdentifiers.IsValidReference(m.Name) || !ModIdentifiers.IsExactVersion(m.Version))
             || profile.Mods.Select(m => m.Name).Distinct(StringComparer.OrdinalIgnoreCase).Count() != profile.Mods.Count)
         {
             return ModChangePlan.Failed(["The profile contains invalid or duplicate mods."]);
         }
-        var ranges = profile.Mods.ToDictionary(m => m.Name, m => m.Version, StringComparer.OrdinalIgnoreCase);
+        var saved = profile.Mods.ToDictionary(m => m.Name, m => m.Version, StringComparer.OrdinalIgnoreCase);
+        var ranges = newest
+            ? saved.ToDictionary(m => m.Key, m => $">={m.Value}", StringComparer.OrdinalIgnoreCase)
+            : saved;
+        IReadOnlyDictionary<string, string> preferred = newest ? new Dictionary<string, string>() : saved;
         return await PlanAsync(game, requested =>
         {
             requested.Clear();
-            requested.UnionWith(ranges.Keys);
-        }, "", removing: false, ct, ranges, ranges);
+            requested.UnionWith(saved.Keys);
+        }, "", removing: false, ct, preferred, ranges);
     }
 
     /// <summary>

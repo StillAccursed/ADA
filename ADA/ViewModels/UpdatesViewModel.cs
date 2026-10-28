@@ -24,7 +24,7 @@ public partial class UpdatesViewModel : ViewModelBase
     private readonly ModResolutionService _resolution;
     private readonly GameProfiles _profiles;
     private readonly ModCatalogStore _store;
-    private readonly IModVersionSource _versions;
+    private readonly ModChangelogs _changelogs;
     private readonly ILogger _log;
     private readonly Dictionary<GameInstallViewModel, ModChangePlan> _plans = [];
 
@@ -66,7 +66,7 @@ public partial class UpdatesViewModel : ViewModelBase
         _resolution = resolution;
         _profiles = profiles;
         _store = store;
-        _versions = versions;
+        _changelogs = new ModChangelogs(versions);
         _log = log;
         IsGameRunning = dashboard.IsGameRunning;
         dashboard.PropertyChanged += OnDashboardChanged;
@@ -123,22 +123,7 @@ public partial class UpdatesViewModel : ViewModelBase
     });
 
     /// <summary>Every release after the installed version up to the new one, newest first.</summary>
-    internal async Task<string> ChangelogAsync(ModUpdateItemViewModel item)
-    {
-        var versions = await _versions.GetVersionsAsync(item.Reference);
-        var between = Between(versions, item.From, item.To);
-        // Version lists cached before changelogs were fetched have none; fetch once more.
-        if (between.Count > 0 && between.All(v => v.Changelog is null))
-        {
-            between = Between(await _versions.GetVersionsAsync(item.Reference, refresh: true), item.From, item.To);
-        }
-
-        var parts = between.Select(v => ModDescription.Readable(v.Changelog) is { Length: > 0 } text
-            ? $"{v.Version}\n{text}"
-            : $"{v.Version}\nNo changelog given.");
-        var changelog = string.Join("\n\n", parts);
-        return changelog.Length > 0 ? changelog : "No changelog given.";
-    }
+    internal Task<string> ChangelogAsync(ModUpdateItemViewModel item) => _changelogs.ForRangeAsync(item.Reference, item.From, item.To);
 
     private async Task ApplyAsync(Func<IProgress<ModInstallProgress>, Task<string>> apply)
     {
@@ -227,21 +212,6 @@ public partial class UpdatesViewModel : ViewModelBase
         {
             Notice = string.Join("\n", problems.Prepend(Notice).OfType<string>());
         }
-    }
-
-    private static List<CatalogVersion> Between(IReadOnlyList<CatalogVersion> versions, string from, string to)
-    {
-        if (!SemVersion.TryParse(from, SemVersionStyles.Any, out var low) || !SemVersion.TryParse(to, SemVersionStyles.Any, out var high))
-        {
-            return versions.Where(v => v.Version == to).ToList();
-        }
-
-        return versions
-            .Select(v => (Version: v, Sem: SemVersion.TryParse(v.Version, SemVersionStyles.Any, out var s) ? s : null))
-            .Where(v => v.Sem is not null && SemVersion.ComparePrecedence(v.Sem, low) > 0 && SemVersion.ComparePrecedence(v.Sem, high) <= 0)
-            .OrderByDescending(v => v.Sem!, SemVersion.PrecedenceComparer)
-            .Select(v => v.Version)
-            .ToList();
     }
 
     private void OnDashboardChanged(object? sender, PropertyChangedEventArgs e)

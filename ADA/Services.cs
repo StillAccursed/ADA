@@ -70,6 +70,7 @@ public static class Services
             install, sp.GetRequiredService<ModInstallService>(), sp.GetRequiredService<ModResolutionService>(),
             sp.GetRequiredService<GameProfiles>(),
             sp.GetRequiredService<ILogger<GameInstallViewModel>>()));
+        services.AddSingleton(sp => new ModChangelogs(sp.GetRequiredService<IModVersionSource>()));
         services.AddSingleton<DashboardViewModel>();
         services.AddSingleton<ModsViewModel>();
         services.AddSingleton<Func<UpdatesViewModel>>(sp => () => ActivatorUtilities.CreateInstance<UpdatesViewModel>(sp));

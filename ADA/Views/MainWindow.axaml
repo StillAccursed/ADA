@@ -25,69 +25,71 @@
         </ResourceDictionary>
     </Window.Resources>
 
-    <!-- Skyve-style shell: navigation rail | page. The details pane arrives with the Mods page. -->
-    <Grid ColumnDefinitions="200,*">
-        <Border Grid.Column="0"
-                Background="{DynamicResource SurfaceSunkenBrush}"
-                BorderBrush="{DynamicResource BorderSubtleBrush}"
-                BorderThickness="0,0,1,0">
-            <DockPanel>
-                <Image DockPanel.Dock="Top"
-                       Source="{DynamicResource SidebarBadge}"
-                       Width="160"
-                       Height="56"
-                       Margin="20,24,20,20"
-                       HorizontalAlignment="Center"
-                       Stretch="Uniform"
-                       AutomationProperties.Name="ADA" />
-                <!-- Footer: check installed mods for updates; the catalogue's last refresh underneath. -->
-                <StackPanel DockPanel.Dock="Bottom" Margin="16,8,16,16" Spacing="6">
-                    <Border Height="1" Margin="-8,0,-8,8" Background="{DynamicResource BorderSubtleBrush}" />
-                    <Button HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
-                            Content="Check for Updates"
-                            Click="OnCheckForUpdates" />
-                    <TextBlock Text="{Binding Catalog.SummaryText}" FontSize="11" TextWrapping="Wrap" TextAlignment="Center"
-                               Foreground="{DynamicResource TextSecondaryBrush}" />
-                </StackPanel>
-                <ListBox ItemsSource="{Binding NavItems}"
-                         SelectedItem="{Binding SelectedNav}"
-                         ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                         Background="Transparent"
-                         Margin="8,0">
-                    <ListBox.Styles>
-                        <Style Selector="ListBoxItem" x:DataType="vm:NavItem">
-                            <Setter Property="IsEnabled" Value="{Binding !IsHeader}" />
-                            <Setter Property="Focusable" Value="{Binding !IsHeader}" />
-                            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-                        </Style>
-                    </ListBox.Styles>
-                    <ListBox.ItemTemplate>
-                        <DataTemplate x:DataType="vm:NavItem">
-                            <Grid>
-                                <TextBlock Text="{Binding Title}"
-                                           IsVisible="{Binding IsHeader}"
-                                           Margin="0,12,0,4"
-                                           TextAlignment="Center"
-                                           FontSize="12" FontWeight="SemiBold"
-                                           Foreground="{DynamicResource TextSecondaryBrush}" />
-                                <Grid IsVisible="{Binding !IsHeader}"
-                                      ColumnDefinitions="16,*,Auto" ColumnSpacing="12">
-                                    <TextBlock Text="{Binding Glyph}" TextAlignment="Center"
+    <LayoutTransformControl LayoutTransform="{DynamicResource InterfaceScaleTransform}">
+        <!-- Skyve-style shell: navigation rail | page. The details pane arrives with the Mods page. -->
+        <Grid ColumnDefinitions="200,*">
+            <Border Grid.Column="0"
+                    Background="{DynamicResource SurfaceSunkenBrush}"
+                    BorderBrush="{DynamicResource BorderSubtleBrush}"
+                    BorderThickness="0,0,1,0">
+                <DockPanel>
+                    <Image DockPanel.Dock="Top"
+                           Source="{DynamicResource SidebarBadge}"
+                           Width="160"
+                           Height="56"
+                           Margin="20,24,20,20"
+                           HorizontalAlignment="Center"
+                           Stretch="Uniform"
+                           AutomationProperties.Name="ADA" />
+                    <!-- Footer: check installed mods for updates; the catalogue's last refresh underneath. -->
+                    <StackPanel DockPanel.Dock="Bottom" Margin="16,8,16,16" Spacing="6">
+                        <Border Height="1" Margin="-8,0,-8,8" Background="{DynamicResource BorderSubtleBrush}" />
+                        <Button HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+                                Content="Check for Updates"
+                                Click="OnCheckForUpdates" />
+                        <TextBlock Text="{Binding Catalog.SummaryText}" FontSize="11" TextWrapping="Wrap" TextAlignment="Center"
+                                   Foreground="{DynamicResource TextSecondaryBrush}" />
+                    </StackPanel>
+                    <ListBox ItemsSource="{Binding NavItems}"
+                             SelectedItem="{Binding SelectedNav}"
+                             ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                             Background="Transparent"
+                             Margin="8,0">
+                        <ListBox.Styles>
+                            <Style Selector="ListBoxItem" x:DataType="vm:NavItem">
+                                <Setter Property="IsEnabled" Value="{Binding !IsHeader}" />
+                                <Setter Property="Focusable" Value="{Binding !IsHeader}" />
+                                <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                            </Style>
+                        </ListBox.Styles>
+                        <ListBox.ItemTemplate>
+                            <DataTemplate x:DataType="vm:NavItem">
+                                <Grid>
+                                    <TextBlock Text="{Binding Title}"
+                                               IsVisible="{Binding IsHeader}"
+                                               Margin="0,12,0,4"
+                                               TextAlignment="Center"
+                                               FontSize="12" FontWeight="SemiBold"
                                                Foreground="{DynamicResource TextSecondaryBrush}" />
-                                    <TextBlock Grid.Column="1" Text="{Binding Title}"
-                                               Foreground="{DynamicResource TextPrimaryBrush}" />
-                                    <TextBlock Grid.Column="2" Text="↑" FontWeight="Bold"
-                                               IsVisible="{Binding HasUpdates}"
-                                               ToolTip.Tip="Mod updates available"
-                                               Foreground="{DynamicResource AccentBrush}" />
+                                    <Grid IsVisible="{Binding !IsHeader}"
+                                          ColumnDefinitions="16,*,Auto" ColumnSpacing="12">
+                                        <TextBlock Text="{Binding Glyph}" TextAlignment="Center"
+                                                   Foreground="{DynamicResource TextSecondaryBrush}" />
+                                        <TextBlock Grid.Column="1" Text="{Binding Title}"
+                                                   Foreground="{DynamicResource TextPrimaryBrush}" />
+                                        <TextBlock Grid.Column="2" Text="↑" FontWeight="Bold"
+                                                   IsVisible="{Binding HasUpdates}"
+                                                   ToolTip.Tip="Mod updates available"
+                                                   Foreground="{DynamicResource AccentBrush}" />
+                                    </Grid>
                                 </Grid>
-                            </Grid>
-                        </DataTemplate>
-                    </ListBox.ItemTemplate>
-                </ListBox>
-            </DockPanel>
-        </Border>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </DockPanel>
+            </Border>
 
-        <ContentControl Grid.Column="1" Content="{Binding SelectedNav.Page}" />
-    </Grid>
+            <ContentControl Grid.Column="1" Content="{Binding SelectedNav.Page}" />
+        </Grid>
+    </LayoutTransformControl>
 </Window>

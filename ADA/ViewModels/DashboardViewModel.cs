@@ -72,7 +72,7 @@ public partial class DashboardViewModel : ViewModelBase
     public DashboardViewModel(IGameDetector detector, CatalogStatusViewModel catalog,
         Func<GameInstall, GameInstallViewModel> installViewModel, ILogger<DashboardViewModel> log,
         ModCatalogStore store, SettingsStore settings, GameProfiles profiles, ModResolutionService resolution,
-        DashboardStorageReader storage, ModInstallService installs, ArchiveCache archives,
+        DashboardStorageReader storage, ModInstallService installs, ArchiveCache archives, ModChangelogs changelogs,
         Func<CancellationToken, Task<IReadOnlyList<GameProcess>>>? findRunning = null,
         TimeSpan? watchInterval = null)
     {
@@ -87,6 +87,7 @@ public partial class DashboardViewModel : ViewModelBase
         _profiles = profiles;
         _resolution = resolution;
         _storage = storage;
+        _changelogs = changelogs;
         _uiContext = SynchronizationContext.Current;
         settings.Changed += OnCardSourceChanged;
         profiles.Changed += OnCardSourceChanged;
@@ -129,6 +130,7 @@ public partial class DashboardViewModel : ViewModelBase
     {
         OnPropertyChanged(nameof(CanChooseProfile));
         OnPropertyChanged(nameof(GameStateText));
+        SwitchPrompt?.RefreshCanSwitch();
     }
 
     /// <summary>

@@ -33,6 +33,7 @@ public partial class DashboardViewModel
     private readonly GameProfiles _profiles;
     private readonly ModResolutionService _resolution;
     private readonly DashboardStorageReader _storage;
+    private readonly ModChangelogs _changelogs;
 
     // Installations whose create-profile prompt was dismissed this session; "New profile" still opens it.
     private readonly HashSet<string> _promptDismissed = new(StringComparer.Ordinal);
@@ -94,6 +95,13 @@ public partial class DashboardViewModel
     [ObservableProperty]
     public partial CreateProfileViewModel? ProfilePrompt { get; private set; }
 
+    /// <summary>
+    /// The open Switch profile dialog, or null. Set when another profile is chosen in the Profiles
+    /// card; the main window shows it as a dialog and it clears itself when closed.
+    /// </summary>
+    [ObservableProperty]
+    public partial SwitchProfileViewModel? SwitchPrompt { get; private set; }
+
     public string LastCatalogUpdateText => Catalog.LastChecked?.ToLocalTime().ToString("g") ?? "Not checked yet";
 
     public bool CanChooseProfile => SelectedInstall is { IsBusy: false, IsSwitchingProfile: false, HasModOperations: false }
@@ -134,7 +142,10 @@ public partial class DashboardViewModel
         }
     }
 
-    /// <summary>Completes after the most recent dropdown-triggered profile switch and refresh.</summary>
+    /// <summary>
+    /// Completes once the most recently chosen profile's switch preview is worked out (or refused), and
+    /// again once its dialog has closed and the cards are refreshed.
+    /// </summary>
     internal Task PendingProfileSwitch { get; private set; } = Task.CompletedTask;
 
     /// <summary>Reads cached releases, profiles and storage; newer selections cancel and supersede old snapshots.</summary>
@@ -251,7 +262,7 @@ public partial class DashboardViewModel
         if (!_loadingProfiles && value is not null && SelectedInstall is { } game
             && !string.Equals(game.ProfileName, value.Name, StringComparison.OrdinalIgnoreCase))
         {
-            PendingProfileSwitch = SwitchProfileAsync(game, value);
+            PendingProfileSwitch = OpenSwitchPromptAsync(game, value);
         }
     }
 
@@ -291,36 +302,42 @@ public partial class DashboardViewModel
         ProfilePrompt = prompt;
     }
 
-    private async Task SwitchProfileAsync(GameInstallViewModel game, ModProfile profile)
+    /// <summary>
+    /// Shows what switching to <paramref name="profile"/> would change, instead of switching at once.
+    /// The installation is marked as switching while the dialog is open, so nothing else starts on it;
+    /// closing restores the dropdown to the active profile unless the switch succeeded.
+    /// </summary>
+    private async Task OpenSwitchPromptAsync(GameInstallViewModel game, ModProfile profile)
     {
-        if (!CanChooseProfile)
+        if (!CanChooseProfile || SwitchPrompt is not null)
         {
             ProfileNotice = "Wait for current operations to finish and close Satisfactory before switching profiles.";
             await RefreshCardsAsync();
             return;
         }
+        var prompt = new SwitchProfileViewModel(game, profile, game.ProfileName, _profiles, _resolution, _changelogs.ForRangeAsync,
+            () => !IsGameRunning && !_profiles.IsChanging(game.Install));
         game.IsSwitchingProfile = true;
-        game.IsBusy = true;
-        ProfileNotice = $"Switching to {profile.Name}…";
-        try
+        ProfileNotice = null;
+        prompt.Closed += (_, switched) => PendingProfileSwitch = CloseSwitchPromptAsync(game, profile, switched);
+        SwitchPrompt = prompt;
+        await prompt.PreviewAsync();
+    }
+
+    /// <summary>
+    /// Releases the installation once the Switch profile dialog closes, reports a successful switch, and
+    /// re-reads the cards, which also puts the dropdown back on the active profile after Cancel.
+    /// </summary>
+    private async Task CloseSwitchPromptAsync(GameInstallViewModel game, ModProfile profile, bool switched)
+    {
+        SwitchPrompt = null;
+        game.IsSwitchingProfile = false;
+        if (switched)
         {
-            var progress = new Progress<ModInstallProgress>(p => game.ProgressText = PlanText.Progress(p));
-            await _profiles.SwitchAsync(game.Install, profile, _resolution, progress);
-            game.ProfileName = profile.Name;
             ProfileNotice = $"{profile.Name} is active for {game.Install.DisplayName}.";
         }
-        catch (Exception e)
-        {
-            ProfileNotice = e.Message;
-        }
-        finally
-        {
-            game.ProgressText = null;
-            game.IsSwitchingProfile = false;
-            game.IsBusy = false;
-            await game.CheckAsync();
-            await RefreshCardsAsync();
-        }
+        await game.CheckAsync();
+        await RefreshCardsAsync();
     }
 
     private void OnCardSourceChanged(object? sender, EventArgs e)

@@ -7,18 +7,20 @@
         Width="460" SizeToContent="Height" CanResize="False"
         WindowStartupLocation="CenterOwner"
         Background="{DynamicResource SurfaceBrush}">
-    <StackPanel Margin="24,20" Spacing="12">
-        <TextBlock Text="{Binding Title}" FontSize="20" FontWeight="SemiBold"
-                   Foreground="{DynamicResource TextPrimaryBrush}" />
-        <TextBlock Text="{Binding Explanation}" TextWrapping="Wrap"
-                   Foreground="{DynamicResource TextSecondaryBrush}" />
-        <TextBlock Text="Profile name" Foreground="{DynamicResource TextSecondaryBrush}" />
-        <TextBox x:Name="NameBox" Text="{Binding Name}" MaxLength="100" AutomationProperties.Name="Profile name" />
-        <TextBlock Text="{Binding Problem}" TextWrapping="Wrap" Foreground="{DynamicResource WarningBrush}"
-                   IsVisible="{Binding Problem, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
-        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8" Margin="0,8,0,0">
-            <Button Content="Not now" Command="{Binding DismissCommand}" />
-            <Button Content="Create profile" Classes="accent" IsDefault="True" Command="{Binding CreateCommand}" />
+    <LayoutTransformControl LayoutTransform="{DynamicResource InterfaceScaleTransform}">
+        <StackPanel Margin="24,20" Spacing="12">
+            <TextBlock Text="{Binding Title}" FontSize="20" FontWeight="SemiBold"
+                       Foreground="{DynamicResource TextPrimaryBrush}" />
+            <TextBlock Text="{Binding Explanation}" TextWrapping="Wrap"
+                       Foreground="{DynamicResource TextSecondaryBrush}" />
+            <TextBlock Text="Profile name" Foreground="{DynamicResource TextSecondaryBrush}" />
+            <TextBox x:Name="NameBox" Text="{Binding Name}" MaxLength="100" AutomationProperties.Name="Profile name" />
+            <TextBlock Text="{Binding Problem}" TextWrapping="Wrap" Foreground="{DynamicResource WarningBrush}"
+                       IsVisible="{Binding Problem, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8" Margin="0,8,0,0">
+                <Button Content="Not now" Command="{Binding DismissCommand}" />
+                <Button Content="Create profile" Classes="accent" IsDefault="True" Command="{Binding CreateCommand}" />
+            </StackPanel>
         </StackPanel>
-    </StackPanel>
+    </LayoutTransformControl>
 </Window>

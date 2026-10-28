@@ -1,0 +1,93 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:ADA.ViewModels"
+        x:Class="ADA.Views.SwitchProfileWindow"
+        x:DataType="vm:SwitchProfileViewModel"
+        Title="Switch profile"
+        Width="580" Height="600" MinWidth="440" MinHeight="340"
+        WindowStartupLocation="CenterOwner"
+        Background="{DynamicResource SurfaceBrush}">
+    <Window.Resources>
+        <DataTemplate x:Key="ChangeLine" x:DataType="x:String">
+            <TextBlock Text="{Binding}" TextWrapping="Wrap" Margin="0,1" Foreground="{DynamicResource TextSecondaryBrush}" />
+        </DataTemplate>
+    </Window.Resources>
+    <Window.Styles>
+        <Style Selector="Border.box">
+            <Setter Property="Padding" Value="14,12" />
+            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Background" Value="{DynamicResource SurfaceRaisedBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderSubtleBrush}" />
+        </Style>
+    </Window.Styles>
+
+    <LayoutTransformControl LayoutTransform="{DynamicResource InterfaceScaleTransform}">
+        <DockPanel Margin="24,20">
+            <StackPanel DockPanel.Dock="Top" Spacing="8" Margin="0,0,0,12">
+                <TextBlock Text="{Binding Title}" FontSize="20" FontWeight="SemiBold" TextWrapping="Wrap"
+                           Foreground="{DynamicResource TextPrimaryBrush}" />
+
+                <!-- Only when newer versions exist: the profile's versions (default) or newer ones. -->
+                <Border Classes="box" IsVisible="{Binding OffersChoice}">
+                    <StackPanel Spacing="6">
+                        <RadioButton GroupName="SwitchVersions" Content="{Binding SavedOptionText}"
+                                     IsChecked="{Binding UseSavedVersions}" IsEnabled="{Binding CanUseSavedVersions}" />
+                        <TextBlock Text="{Binding SavedVersionsProblem}" TextWrapping="Wrap" FontSize="12" Margin="28,0,0,0"
+                                   IsVisible="{Binding SavedVersionsProblem, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                                   Foreground="{DynamicResource WarningBrush}" />
+                        <RadioButton GroupName="SwitchVersions" Content="{Binding NewerOptionText}" IsChecked="{Binding UseNewerVersions}" />
+                        <ItemsControl ItemsSource="{Binding NewerVersions}" Margin="28,0,0,0">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="vm:NewerVersionViewModel">
+                                    <Expander Header="{Binding Text}" IsExpanded="{Binding ShowChangelog}" HorizontalAlignment="Stretch">
+                                        <SelectableTextBlock Text="{Binding Changelog}" TextWrapping="Wrap" FontSize="12"
+                                                             Foreground="{DynamicResource TextSecondaryBrush}" />
+                                    </Expander>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </Border>
+
+                <TextBlock Text="{Binding StatusText}" TextWrapping="Wrap" Foreground="{DynamicResource TextSecondaryBrush}" />
+                <TextBlock Text="{Binding Summary}" TextWrapping="Wrap" FontWeight="SemiBold"
+                           IsVisible="{Binding Summary, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                           Foreground="{DynamicResource TextPrimaryBrush}" />
+            </StackPanel>
+
+            <StackPanel DockPanel.Dock="Bottom" Spacing="8" Margin="0,12,0,0">
+                <TextBlock Text="{Binding KeepsNote}" TextWrapping="Wrap" FontSize="12"
+                           IsVisible="{Binding KeepsNote, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                           Foreground="{DynamicResource TextSecondaryBrush}" />
+                <TextBlock Text="{Binding ProgressText}" TextWrapping="Wrap"
+                           IsVisible="{Binding ProgressText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                           Foreground="{DynamicResource TextSecondaryBrush}" />
+                <SelectableTextBlock Text="{Binding Problem}" TextWrapping="Wrap"
+                                     IsVisible="{Binding Problem, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                                     Foreground="{DynamicResource WarningBrush}" />
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+                    <Button Content="Cancel" Command="{Binding CancelCommand}" />
+                    <Button Content="Switch" Classes="accent" Command="{Binding SwitchCommand}" IsVisible="{Binding IsReady}" />
+                </StackPanel>
+            </StackPanel>
+
+            <ScrollViewer>
+                <StackPanel Spacing="8">
+                    <Expander Header="{Binding Changes.Install.Count, StringFormat='Install ({0})', FallbackValue=''}" IsExpanded="True"
+                              IsVisible="{Binding Changes.HasInstall, FallbackValue=False}" HorizontalAlignment="Stretch">
+                        <ItemsControl ItemsSource="{Binding Changes.Install}" ItemTemplate="{StaticResource ChangeLine}" />
+                    </Expander>
+                    <Expander Header="{Binding Changes.ChangeVersion.Count, StringFormat='Change version ({0})', FallbackValue=''}" IsExpanded="True"
+                              IsVisible="{Binding Changes.HasChangeVersion, FallbackValue=False}" HorizontalAlignment="Stretch">
+                        <ItemsControl ItemsSource="{Binding Changes.ChangeVersion}" ItemTemplate="{StaticResource ChangeLine}" />
+                    </Expander>
+                    <Expander Header="{Binding Changes.Remove.Count, StringFormat='Remove ({0})', FallbackValue=''}" IsExpanded="True"
+                              IsVisible="{Binding Changes.HasRemove, FallbackValue=False}" HorizontalAlignment="Stretch">
+                        <ItemsControl ItemsSource="{Binding Changes.Remove}" ItemTemplate="{StaticResource ChangeLine}" />
+                    </Expander>
+                </StackPanel>
+            </ScrollViewer>
+        </DockPanel>
+    </LayoutTransformControl>
+</Window>

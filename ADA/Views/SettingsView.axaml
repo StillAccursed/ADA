@@ -9,6 +9,33 @@
                        Foreground="{DynamicResource TextPrimaryBrush}" />
 
             <StackPanel Spacing="8">
+                <TextBlock Text="APPEARANCE" FontSize="12" FontWeight="SemiBold" LetterSpacing="1"
+                           Foreground="{DynamicResource TextSecondaryBrush}" />
+                <Border Padding="20,16" CornerRadius="8" BorderThickness="1"
+                        Background="{DynamicResource SurfaceRaisedBrush}"
+                        BorderBrush="{DynamicResource BorderSubtleBrush}">
+                    <Grid ColumnDefinitions="*,Auto">
+                        <StackPanel Spacing="4" Margin="0,0,24,0">
+                            <TextBlock Text="Interface scale" FontWeight="SemiBold"
+                                       Foreground="{DynamicResource TextPrimaryBrush}" />
+                            <TextBlock TextWrapping="Wrap" Foreground="{DynamicResource TextSecondaryBrush}"
+                                       Text="Makes text and controls larger or smaller in every ADA window." />
+                        </StackPanel>
+                        <ComboBox Grid.Column="1" VerticalAlignment="Center" MinWidth="120"
+                                  AutomationProperties.Name="Interface scale"
+                                  ItemsSource="{Binding InterfaceScales}"
+                                  SelectedItem="{Binding InterfaceScale}">
+                            <ComboBox.ItemTemplate>
+                                <DataTemplate x:DataType="x:Int32">
+                                    <TextBlock Text="{Binding StringFormat={}{0}%}" />
+                                </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                        </ComboBox>
+                    </Grid>
+                </Border>
+            </StackPanel>
+
+            <StackPanel Spacing="8">
                 <TextBlock Text="DOWNLOADS" FontSize="12" FontWeight="SemiBold" LetterSpacing="1"
                            Foreground="{DynamicResource TextSecondaryBrush}" />
 

@@ -1,3 +1,4 @@
+using ADA.Infrastructure.Settings;
 using ADA.Platform.Storage;
 using ADA.ViewModels;
 using ADA.Views;
@@ -24,6 +25,8 @@ public partial class App : Application
     {
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
+            // Scale first so the first frame is already the right size; Load never throws.
+            InterfaceScale.Apply(new SettingsStore(AppPaths.ForCurrentOS().SettingsFile).Load().InterfaceScale);
             // Show the window at once; folders, the database and services are set up behind it.
             var window = new MainWindow();
             desktop.MainWindow = window;
@@ -58,6 +61,8 @@ public partial class App : Application
                 _services = Services.Build(paths);
                 return _services.GetRequiredService<MainViewModel>();
             });
+
+            InterfaceScale.Follow(_services!.GetRequiredService<SettingsStore>());
 
             window.DataContext = main;
             main.Start();

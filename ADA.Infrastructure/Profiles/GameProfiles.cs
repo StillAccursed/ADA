@@ -12,6 +12,18 @@ namespace ADA.Infrastructure.Profiles;
 /// <param name="NotInProfile">Mods whose version isn't an exact version (e.g. <c>1.0</c>), so a profile can't list them.</param>
 public sealed record FoundModsImport(ModProfile Profile, IReadOnlyList<InstalledMod> Adopted, IReadOnlyList<string> NotInProfile);
 
+/// <summary>What switching to a profile would change, with its saved versions and with newer ones.</summary>
+/// <param name="Saved">Every profile mod at its saved version; may have failed, e.g. a version that's gone.</param>
+/// <param name="Newest">
+/// The newest versions that work together, never older than saved; null when they're the same as
+/// <paramref name="Saved"/> or can't be installed either.
+/// </param>
+public sealed record ProfileSwitchPreview(ModChangePlan Saved, ModChangePlan? Newest)
+{
+    /// <summary>The user can choose newer versions than the profile saved.</summary>
+    public bool OffersNewer => Newest is not null;
+}
+
 /// <summary>
 /// Ties a game to its active profile: keeps the profile in step with what is installed, and imports
 /// mods another manager installed into the current profile or a new one. Only the game's own mod
@@ -19,6 +31,8 @@ public sealed record FoundModsImport(ModProfile Profile, IReadOnlyList<Installed
 /// </summary>
 public sealed class GameProfiles(ProfileStore store, ModInstallService installs, ILogger<GameProfiles>? log = null)
 {
+    private const string UNSAVED_MODS_PROBLEM = "Create a profile for the installed mods before switching, so they can be restored later.";
+
     private readonly ILogger _log = log ?? NullLogger<GameProfiles>.Instance;
 
     /// <summary>Forwards saved-profile changes on the saving thread; UI consumers marshal to their context.</summary>
@@ -67,34 +81,64 @@ public sealed class GameProfiles(ProfileStore store, ModInstallService installs,
     }
 
     /// <summary>
-    /// Applies an immutable saved profile snapshot, then activates its name. Exact-version failures
-    /// leave the old installation/profile intact; activation failures retain a retryable marker.
+    /// Works out what switching <paramref name="game"/> to <paramref name="profile"/> would change,
+    /// with the profile's saved versions and with newer ones, by the same rules as
+    /// <see cref="SwitchAsync"/>. Reads only: nothing is reserved, downloaded or written.
     /// </summary>
-    public async Task SwitchAsync(GameInstall game, ModProfile profile, ModResolutionService resolution,
-        IProgress<ModInstallProgress>? progress = null, CancellationToken ct = default)
+    /// <exception cref="InvalidProfileException">The profile's name is empty or too long.</exception>
+    public async Task<ProfileSwitchPreview> PreviewSwitchAsync(GameInstall game, ModProfile profile,
+        ModResolutionService resolution, CancellationToken ct = default)
     {
-        var snapshot = profile with { Mods = profile.Mods.ToArray() };
-        if (string.IsNullOrWhiteSpace(snapshot.Name) || snapshot.Name.Length > OlpFile.MAX_NAME_LENGTH)
+        var snapshot = Snapshot(profile);
+        if (await HasUnsavedModsAsync(game, ct))
         {
-            throw new InvalidProfileException("The profile name is empty or too long.");
+            return new ProfileSwitchPreview(ModChangePlan.Failed([UNSAVED_MODS_PROBLEM]), null);
         }
+        var saved = await resolution.PlanProfileAsync(game, snapshot, newest: false, ct);
+        var newest = await resolution.PlanProfileAsync(game, snapshot, newest: true, ct);
+        var offersNewer = newest.Succeeded && (!saved.Succeeded || !newest.HasSameChangesAs(saved));
+        return new ProfileSwitchPreview(saved, offersNewer ? newest : null);
+    }
+
+    /// <summary>
+    /// Applies an immutable saved profile snapshot, then activates its name and saves the profile as
+    /// installed. Exact-version failures leave the old installation/profile intact; activation failures
+    /// retain a retryable marker.
+    /// </summary>
+    /// <param name="useNewerVersions">Install the newest versions that work (never older than saved) rather than the saved ones.</param>
+    /// <param name="expected">
+    /// The plan the user confirmed. The switch is planned again under the reservation with the same
+    /// choice; if it differs, <see cref="PlanChangedException"/> is thrown before anything changes.
+    /// Null skips the comparison.
+    /// </param>
+    /// <exception cref="InvalidProfileException">The profile's name is empty or too long.</exception>
+    public async Task SwitchAsync(GameInstall game, ModProfile profile, ModResolutionService resolution,
+        IProgress<ModInstallProgress>? progress = null, CancellationToken ct = default,
+        bool useNewerVersions = false, ModChangePlan? expected = null)
+    {
+        var snapshot = Snapshot(profile);
         await installs.ApplyProfileAsync(game, async () =>
         {
             // Without an active profile the installed mods are saved nowhere, and switching would
             // remove them for good. Every change is recorded into the active profile, so with one
             // the outgoing mods are already saved.
-            var unsaved = await Task.Run(() => store.ActiveName(game.GamePath) is null
-                && installs.InstallerFor(game).Installed.Count > 0, ct);
-            return unsaved
-                ? ModChangePlan.Failed(["Create a profile for the installed mods before switching, so they can be restored later."])
-                : await resolution.PlanProfileAsync(game, snapshot, ct);
+            if (await HasUnsavedModsAsync(game, ct))
+            {
+                return ModChangePlan.Failed([UNSAVED_MODS_PROBLEM]);
+            }
+            var plan = await resolution.PlanProfileAsync(game, snapshot, useNewerVersions, ct);
+            if (expected is not null && plan.Succeeded && !plan.HasSameChangesAs(expected))
+            {
+                throw new PlanChangedException(plan);
+            }
+            return plan;
         },
-            snapshot.Name, name => store.SetActive(game.GamePath, name), progress, ct);
+            snapshot.Name, name => Activate(game, name), progress, ct);
     }
 
     /// <summary>Completes committed activation before any caller can record installed mods into a profile.</summary>
     public Task ReconcileAsync(GameInstall game) => Task.Run(() =>
-        installs.InstallerFor(game).CompleteProfileActivation(name => store.SetActive(game.GamePath, name)));
+        installs.InstallerFor(game).CompleteProfileActivation(name => Activate(game, name)));
 
     public string? ProblemWithNewName(string? name) => store.ProblemWithNewName(name);
 
@@ -203,6 +247,32 @@ public sealed class GameProfiles(ProfileStore store, ModInstallService installs,
             _log.LogInformation("Took over {Count} found mods in {Game} into profile {Profile}", adopted.Count, game.GamePath, name);
             return new FoundModsImport(profile, adopted, skipped);
         }, ct);
+    }
+
+    /// <summary>
+    /// Makes <paramref name="name"/> the game's active profile and saves it as installed, so versions
+    /// chosen during a switch (e.g. newer ones) are kept. Runs under the game's lock during activation,
+    /// and again on a retry after a crash; both writes are idempotent.
+    /// </summary>
+    private void Activate(GameInstall game, string name)
+    {
+        store.SetActive(game.GamePath, name);
+        store.Save(new ModProfile(name, ToProfileMods(installs.InstallerFor(game).Installed.Values, out _)));
+    }
+
+    /// <summary>The game has managed mods but no active profile to keep them in.</summary>
+    private Task<bool> HasUnsavedModsAsync(GameInstall game, CancellationToken ct) => Task.Run(() =>
+        store.ActiveName(game.GamePath) is null && installs.InstallerFor(game).Installed.Count > 0, ct);
+
+    /// <exception cref="InvalidProfileException">The name is empty or too long.</exception>
+    private static ModProfile Snapshot(ModProfile profile)
+    {
+        var snapshot = profile with { Mods = profile.Mods.ToArray() };
+        if (string.IsNullOrWhiteSpace(snapshot.Name) || snapshot.Name.Length > OlpFile.MAX_NAME_LENGTH)
+        {
+            throw new InvalidProfileException("The profile name is empty or too long.");
+        }
+        return snapshot;
     }
 
     private static List<ProfileMod> ToProfileMods(IEnumerable<InstalledMod> installed, out IReadOnlyList<string> skipped)

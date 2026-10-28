@@ -41,6 +41,13 @@ public partial class SettingsViewModel : ViewModelBase
     [ObservableProperty]
     public partial decimal? DashboardLatestModsCount { get; set; }
 
+    /// <summary>Supported interface scales, as percentages.</summary>
+    public IReadOnlyList<int> InterfaceScales => AppSettings.INTERFACE_SCALES;
+
+    /// <summary>Size of the whole interface as a percentage; applied to every window once saved.</summary>
+    [ObservableProperty]
+    public partial int InterfaceScale { get; set; }
+
     public int MinDashboardLatestModsCount => AppSettings.MIN_DASHBOARD_LATEST_MODS_COUNT;
 
     public int MaxDashboardLatestModsCount => AppSettings.MAX_DASHBOARD_LATEST_MODS_COUNT;
@@ -80,6 +87,7 @@ public partial class SettingsViewModel : ViewModelBase
         EndlessScroll = _settings.EndlessScroll;
         ModsPageSize = _settings.ModsPageSize;
         DashboardLatestModsCount = _settings.DashboardLatestModsCount;
+        InterfaceScale = _settings.InterfaceScale;
         _loading = false;
     }
 
@@ -117,6 +125,14 @@ public partial class SettingsViewModel : ViewModelBase
         }
     }
 
+    partial void OnInterfaceScaleChanged(int value)
+    {
+        if (!_loading && InterfaceScales.Contains(value))
+        {
+            Update(_settings with { InterfaceScale = value });
+        }
+    }
+
     private void Update(AppSettings settings)
     {
         _settings = settings;
@@ -147,6 +163,7 @@ public partial class SettingsViewModel : ViewModelBase
                 EndlessScroll = settings.EndlessScroll,
                 ModsPageSize = settings.ModsPageSize,
                 DashboardLatestModsCount = settings.DashboardLatestModsCount,
+                InterfaceScale = settings.InterfaceScale,
             }), ct);
             ErrorText = null;
         }

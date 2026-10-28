@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using ADA.Core.Catalog;
 using ADA.Core.Games;
 using ADA.Core.Profiles;
+using ADA.Core.Resolution;
 using ADA.Infrastructure.Downloads;
 using ADA.Infrastructure.Installing;
 using ADA.Infrastructure.Profiles;
@@ -277,6 +278,149 @@ public sealed class ProfileSwitchTests : IDisposable
         Installer().CompleteProfileActivation(name => _store.SetActive(_game.Root, name));
         Assert.Equal("Target", _store.ActiveName(_game.Root));
         Assert.False(Installer().HasPendingProfileActivation);
+    }
+
+    [Fact]
+    public async Task Previewing_writes_and_downloads_nothing_and_offers_newer_versions_only_when_they_exist()
+    {
+        await _service.InstallAsync(_install, [Publish("A", "1.0.0")]);
+        await _profiles.RecordInstalledAsync(_install);
+        _store.Save(new("Target", [new("A", "1.0.0")]));
+        var downloadsLeft = _http.Remaining;
+
+        var same = await _profiles.PreviewSwitchAsync(_install, _store.Get("Target")!, _resolution);
+        Assert.True(same.Saved.Succeeded);
+        Assert.False(same.OffersNewer);
+
+        Publish("A", "2.0.0");
+        downloadsLeft = _http.Remaining;
+        var newer = await _profiles.PreviewSwitchAsync(_install, _store.Get("Target")!, _resolution);
+
+        Assert.True(newer.OffersNewer);
+        Assert.Equal("2.0.0", Assert.Single(newer.Newest!.Install).Version);
+        Assert.Empty(newer.Saved.Install);
+        Assert.Equal(downloadsLeft, _http.Remaining);
+        Assert.Equal("Current", _store.ActiveName(_game.Root));
+        Assert.Equal("1.0.0", Installer().Installed["A"].Version);
+        Assert.False(Installer().HasInterruptedTransaction);
+    }
+
+    [Fact]
+    public async Task Newer_versions_are_never_older_than_saved_and_must_support_the_game()
+    {
+        Publish("A", "1.5.0");
+        Publish("A", "2.0.0");
+        Publish("A", "2.5.0");
+        var tooNew = Publish("A", "3.0.0");
+        _catalog["A"][^1] = tooNew with { GameVersionRange = ">=600000" };
+        var target = new ModProfile("Target", [new("A", "2.0.0")]);
+
+        var preview = await _profiles.PreviewSwitchAsync(_install, target, _resolution);
+
+        Assert.Equal("2.0.0", Assert.Single(preview.Saved.Install).Version);
+        Assert.Equal("2.5.0", Assert.Single(preview.Newest!.Install).Version);
+    }
+
+    [Fact]
+    public async Task Switching_with_newer_versions_saves_them_so_switching_back_keeps_them()
+    {
+        Publish("A", "1.0.0");
+        Publish("A", "2.0.0");
+        _store.Save(new("Current", []));
+        _store.Save(new("Target", [new("A", "1.0.0")]));
+        var preview = await _profiles.PreviewSwitchAsync(_install, _store.Get("Target")!, _resolution);
+
+        await _profiles.SwitchAsync(_install, _store.Get("Target")!, _resolution, useNewerVersions: true, expected: preview.Newest);
+
+        Assert.Equal("2.0.0", Installer().Installed["A"].Version);
+        Assert.Equal("2.0.0", Assert.Single(_store.Get("Target")!.Mods).Version);
+
+        await _profiles.SwitchAsync(_install, _store.Get("Current")!, _resolution);
+        await _profiles.SwitchAsync(_install, _store.Get("Target")!, _resolution);
+
+        Assert.Equal("2.0.0", Installer().Installed["A"].Version);
+    }
+
+    [Fact]
+    public async Task Switching_with_the_saved_versions_leaves_the_profile_file_unchanged()
+    {
+        Publish("A", "1.0.0");
+        Publish("A", "2.0.0");
+        _store.Save(new("Target", [new("A", "1.0.0")]));
+        var file = Directory.EnumerateFiles(_store.Folder, "Target*").Single();
+        var before = File.ReadAllBytes(file);
+        var preview = await _profiles.PreviewSwitchAsync(_install, _store.Get("Target")!, _resolution);
+
+        await _profiles.SwitchAsync(_install, _store.Get("Target")!, _resolution, expected: preview.Saved);
+
+        Assert.Equal("1.0.0", Installer().Installed["A"].Version);
+        Assert.Equal(before, File.ReadAllBytes(file));
+    }
+
+    [Fact]
+    public async Task A_saved_version_that_is_gone_still_allows_newer_versions()
+    {
+        Publish("A", "3.0.0");
+        var target = new ModProfile("Target", [new("A", "2.0.0")]);
+
+        var preview = await _profiles.PreviewSwitchAsync(_install, target, _resolution);
+
+        Assert.False(preview.Saved.Succeeded);
+        Assert.True(preview.OffersNewer);
+        Assert.Equal("3.0.0", Assert.Single(preview.Newest!.Install).Version);
+    }
+
+    [Fact]
+    public async Task A_change_after_the_preview_stops_the_switch_before_anything_downloads()
+    {
+        Publish("A", "1.0.0");
+        _store.Save(new("Target", [new("A", "1.0.0")]));
+        var preview = await _profiles.PreviewSwitchAsync(_install, _store.Get("Target")!, _resolution);
+        await _service.InstallAsync(_install, [Publish("B", "1.0.0")]);
+        var downloadsLeft = _http.Remaining;
+
+        var changed = await Assert.ThrowsAsync<PlanChangedException>(() =>
+            _profiles.SwitchAsync(_install, _store.Get("Target")!, _resolution, expected: preview.Saved));
+
+        Assert.Equal(["B"], changed.Plan.Uninstall);
+        Assert.Equal(downloadsLeft, _http.Remaining);
+        Assert.Equal("Current", _store.ActiveName(_game.Root));
+        Assert.Equal(["B"], Installer().Installed.Keys);
+    }
+
+    [Fact]
+    public async Task Activation_after_a_crash_saves_the_switched_profile_as_installed()
+    {
+        Installer().Apply([new ModChange.Install(Archive("1.0.0"), TargetPlatform.Windows)]);
+        _store.Save(new("Current", [new("A", "1.0.0")]));
+        _store.Save(new("Target", [new("A", "1.0.0")]));
+        Assert.Throws<SimulatedCrashException>(() => Installer(point =>
+        {
+            if (point == "transaction-committed")
+            {
+                throw new SimulatedCrashException(point);
+            }
+        }).ApplyProfile([new ModChange.Install(Archive("2.0.0"), TargetPlatform.Windows)], new("Target", ["A"])));
+
+        Installer().Recover();
+        await _profiles.ReconcileAsync(_install);
+
+        Assert.Equal("Target", _store.ActiveName(_game.Root));
+        Assert.Equal("2.0.0", Assert.Single(_store.Get("Target")!.Mods).Version);
+        Assert.Equal("1.0.0", Assert.Single(_store.Get("Current")!.Mods).Version);
+    }
+
+    [Fact]
+    public void Plans_compare_by_their_changes_not_order_case_or_download_size()
+    {
+        static PlannedInstall Install(string reference, string version) =>
+            new(new(CatalogFixtures.Version(reference, version), ["requested"]), null);
+        var plan = new ModChangePlan(["A", "B"], [Install("A", "1.0.0"), Install("B", "2.0.0")], ["C"], 100, []);
+
+        Assert.True(plan.HasSameChangesAs(new(["b", "a"], [Install("B", "2.0.0"), Install("a", "1.0.0")], ["c"], 5, [])));
+        Assert.False(plan.HasSameChangesAs(plan with { Install = [Install("A", "1.0.1"), Install("B", "2.0.0")] }));
+        Assert.False(plan.HasSameChangesAs(plan with { Uninstall = [] }));
+        Assert.False(plan.HasSameChangesAs(plan with { Requested = ["A"] }));
     }
 
     private ModInstaller Installer(Action<string>? checkpoint = null) => new(_game.Root, () => _running, checkpoint);

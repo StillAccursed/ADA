@@ -9,10 +9,12 @@ public partial class MainWindow : Window
 {
     private DashboardViewModel? _dashboard;
     private CreateProfileViewModel? _shownPrompt;
+    private SwitchProfileViewModel? _shownSwitch;
 
     public MainWindow()
     {
         InitializeComponent();
+        InterfaceScale.Fit(this);
     }
 
     /// <summary>Watches the Dashboard for a create-profile prompt, which can open from any page.</summary>
@@ -43,6 +45,10 @@ public partial class MainWindow : Window
         {
             ShowProfilePrompt();
         }
+        else if (e.PropertyName == nameof(DashboardViewModel.SwitchPrompt))
+        {
+            ShowSwitchPrompt();
+        }
     }
 
     /// <summary>
@@ -57,6 +63,17 @@ public partial class MainWindow : Window
         }
         _shownPrompt = prompt;
         await new CreateProfileWindow { DataContext = prompt }.ShowDialog(this);
+    }
+
+    /// <summary>Opens the Dashboard's switch preview as a dialog; each prompt object opens at most one.</summary>
+    private async void ShowSwitchPrompt()
+    {
+        if (!IsVisible || _dashboard?.SwitchPrompt is not { } prompt || ReferenceEquals(prompt, _shownSwitch))
+        {
+            return;
+        }
+        _shownSwitch = prompt;
+        await new SwitchProfileWindow { DataContext = prompt }.ShowDialog(this);
     }
 
     // Opens the updates window over this one; it lists updates as soon as it has checked.

@@ -24,6 +24,8 @@
 
     <Application.Resources>
         <ResourceDictionary>
+            <!-- Replaced at runtime by InterfaceScale.Apply; every window's root binds to it. -->
+            <ScaleTransform x:Key="InterfaceScaleTransform" ScaleX="1" ScaleY="1" />
             <ResourceDictionary.MergedDictionaries>
                 <ResourceInclude Source="avares://ADA/Themes/Tokens.axaml" />
             </ResourceDictionary.MergedDictionaries>
@@ -32,5 +34,10 @@
 
     <Application.Styles>
         <FluentTheme />
+        <!-- Popups (dropdowns, flyouts, tooltips) open in their own top-level, outside each window's
+             interface-scale transform; this makes them take on their target's scale. -->
+        <Style Selector="Popup">
+            <Setter Property="InheritsTransform" Value="True" />
+        </Style>
     </Application.Styles>
 </Application>

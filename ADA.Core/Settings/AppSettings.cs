@@ -21,6 +21,10 @@ namespace ADA.Core.Settings;
 /// Recent releases displayed on the dashboard, clamped to
 /// <see cref="MIN_DASHBOARD_LATEST_MODS_COUNT"/>–<see cref="MAX_DASHBOARD_LATEST_MODS_COUNT"/>.
 /// </param>
+/// <param name="InterfaceScale">
+/// Size of the whole interface as a percentage; one of <see cref="INTERFACE_SCALES"/>, otherwise
+/// <see cref="DEFAULT_INTERFACE_SCALE"/>.
+/// </param>
 public sealed record AppSettings(
     bool KeepDownloadedArchives = true,
     int DownloadRetries = AppSettings.DEFAULT_DOWNLOAD_RETRIES,
@@ -29,7 +33,8 @@ public sealed record AppSettings(
     string? ModsFilter = null,
     bool EndlessScroll = true,
     int ModsPageSize = AppSettings.DEFAULT_MODS_PAGE_SIZE,
-    int DashboardLatestModsCount = AppSettings.DEFAULT_DASHBOARD_LATEST_MODS_COUNT)
+    int DashboardLatestModsCount = AppSettings.DEFAULT_DASHBOARD_LATEST_MODS_COUNT,
+    int InterfaceScale = AppSettings.DEFAULT_INTERFACE_SCALE)
 {
     internal const int DEFAULT_DOWNLOAD_RETRIES = 5;
     public const int MIN_DOWNLOAD_RETRIES = 0;
@@ -38,9 +43,16 @@ public sealed record AppSettings(
     internal const int DEFAULT_DASHBOARD_LATEST_MODS_COUNT = 5;
     public const int MIN_DASHBOARD_LATEST_MODS_COUNT = 1;
     public const int MAX_DASHBOARD_LATEST_MODS_COUNT = 20;
+    internal const int DEFAULT_INTERFACE_SCALE = 100;
 
     /// <summary>The page sizes the Settings page offers; any other saved value falls back to the default.</summary>
     public static readonly IReadOnlyList<int> MODS_PAGE_SIZES = Array.AsReadOnly([25, 50, 100, 200, 500]);
+
+    /// <summary>
+    /// Interface scales the Settings page offers, as percentages. Capped at 150% so the main window's
+    /// scaled minimum size (760×480 → 1140×720) still fits a 13" laptop screen.
+    /// </summary>
+    public static readonly IReadOnlyList<int> INTERFACE_SCALES = Array.AsReadOnly([75, 90, 100, 110, 125, 150]);
 
     public static AppSettings Default { get; } = new();
 
@@ -51,5 +63,6 @@ public sealed record AppSettings(
         ModsPageSize = MODS_PAGE_SIZES.Contains(ModsPageSize) ? ModsPageSize : DEFAULT_MODS_PAGE_SIZE,
         DashboardLatestModsCount = Math.Clamp(DashboardLatestModsCount,
             MIN_DASHBOARD_LATEST_MODS_COUNT, MAX_DASHBOARD_LATEST_MODS_COUNT),
+        InterfaceScale = INTERFACE_SCALES.Contains(InterfaceScale) ? InterfaceScale : DEFAULT_INTERFACE_SCALE,
     };
 }

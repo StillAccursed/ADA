@@ -11,6 +11,7 @@ public partial class CreateProfileWindow : Window
     public CreateProfileWindow()
     {
         InitializeComponent();
+        InterfaceScale.Fit(this);
     }
 
     /// <summary>Follows the prompt's lifetime; the window never outlives it.</summary>
