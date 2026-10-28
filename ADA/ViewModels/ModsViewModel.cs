@@ -7,6 +7,7 @@ using Microsoft.Extensions.Logging;
 using ADA.Core.Catalog;
 using ADA.Core.Games;
 using ADA.Core.Resolution;
+using ADA.Core.Settings;
 using ADA.Imaging;
 using ADA.Infrastructure.Catalog;
 using ADA.Infrastructure.Installing;
@@ -22,7 +23,7 @@ namespace ADA.ViewModels;
 /// </summary>
 public partial class ModsViewModel : ViewModelBase
 {
-    private const int ResultLimit = 200;
+    private const int SCROLL_BATCH_SIZE = 50;
 
     // Fast enough to feel live, slow enough not to search on every keystroke of a word.
     private static readonly TimeSpan SearchDelay = TimeSpan.FromMilliseconds(150);
@@ -53,6 +54,15 @@ public partial class ModsViewModel : ViewModelBase
     // Searches run off the UI thread and can finish out of order; only the newest may show its results.
     private readonly Lock _resultsLock = new();
     private int _searchGeneration;
+    private SynchronizationContext? _viewContext;
+    private IReadOnlyList<CatalogMod> _matches = [];
+    private bool _endlessScroll;
+    private int _modsPageSize;
+    private int _currentPage = 1;
+    private bool _resetWindowOnSearch = true;
+    private string _resultQuery = "";
+    private ModFilter _resultFilter;
+    private int _resultTagCount;
 
     // Entries include the active operation, so duplicate clicks cannot submit it again.
     private readonly Lock _operationLock = new();
@@ -73,20 +83,64 @@ public partial class ModsViewModel : ViewModelBase
         _profiles = profiles;
         _dashboard = dashboard;
         _logos = logos;
+        DescriptionImageResolver = new ModDescriptionImageResolver(logos);
         _favourites = favourites;
         _settings = settings;
         _log = log;
+        var browsing = settings?.Current ?? AppSettings.Default;
+        _endlessScroll = browsing.EndlessScroll;
+        _modsPageSize = browsing.ModsPageSize;
+        if (settings is not null)
+        {
+            settings.Changed += OnSettingsChanged;
+        }
         RestoreChoices();
 
         dashboard.Installs.CollectionChanged += OnInstallsChanged;
         dashboard.PropertyChanged += OnDashboardChanged;
         dashboard.Catalog.PropertyChanged += OnCatalogChanged;
-        SelectedGame = dashboard.Installs.FirstOrDefault();
+        SelectedGame = dashboard.SelectedInstall ?? dashboard.Installs.FirstOrDefault();
     }
 
     public ObservableCollection<GameInstallViewModel> Games => _dashboard.Installs;
 
     public ObservableCollection<ModItemViewModel> Results { get; } = [];
+
+    /// <summary>Shares the gallery's bounded image loader with the description renderer.</summary>
+    internal ModDescriptionImageResolver DescriptionImageResolver { get; }
+
+    /// <summary>Shows page navigation when endless scrolling is disabled.</summary>
+    public bool IsPaged => !_endlessScroll;
+
+    public int CurrentPage => _currentPage;
+
+    public int TotalPages => (_matches.Count + _modsPageSize - 1) / _modsPageSize;
+
+    public string PageText => TotalPages == 0 ? "No pages" : $"Page {CurrentPage:N0} of {TotalPages:N0}";
+
+    /// <summary>More of the current search snapshot can be appended without another catalogue query.</summary>
+    public bool HasMoreResults => _endlessScroll && !IsSearching && Results.Count < _matches.Count;
+
+    /// <summary>Navigation waits for the latest search so an old snapshot cannot be extended.</summary>
+    [ObservableProperty]
+    internal partial bool IsSearching { get; private set; }
+
+    /// <summary>Changes when the result window is replaced, allowing the view to restore its scroll offset.</summary>
+    [ObservableProperty]
+    internal partial int ResultsRevision { get; private set; }
+
+    /// <summary>The view's vertical offset, retained while details or another page are shown.</summary>
+    internal double ResultsScrollOffset { get; set; }
+
+    /// <summary>Suppresses scroll callbacks while the displayed collection is being changed.</summary>
+    internal bool IsUpdatingResults { get; private set; }
+
+    /// <summary>Completes after the latest saved settings have been applied on the view's context.</summary>
+    internal Task PendingBrowsingUpdate { get; private set; } = Task.CompletedTask;
+
+    private bool CanPreviousPage => IsPaged && !IsSearching && CurrentPage > 1;
+
+    private bool CanNextPage => IsPaged && !IsSearching && CurrentPage < TotalPages;
 
     [ObservableProperty]
     public partial string SearchText { get; set; } = "";
@@ -219,12 +273,16 @@ public partial class ModsViewModel : ViewModelBase
     /// <summary>Completes when the most recent search has shown its results; for tests.</summary>
     internal Task PendingSearch { get; private set; } = Task.CompletedTask;
 
-    /// <summary>Re-reads what is installed and the tags, and searches again. Called whenever the page is shown. Never throws.</summary>
-    public async Task RefreshAsync()
+    /// <summary>
+    /// Re-reads installed mods and tags, then searches again. Preserves the current result window
+    /// unless resetWindow is true. Called when the page is shown and after operations. Never throws.
+    /// </summary>
+    public Task RefreshAsync(bool resetWindow = false)
     {
-        await LoadInstalledAsync();
-        await LoadTagsAsync();
-        await SearchAsync(CancellationToken.None);
+        _viewContext ??= SynchronizationContext.Current;
+        var (generation, ct) = BeginSearch(resetWindow);
+        PendingSearch = RefreshAndSearchAsync(generation, ct);
+        return PendingSearch;
     }
 
     partial void OnSearchTextChanged(string value) => ScheduleSearch(SearchDelay);
@@ -350,9 +408,13 @@ public partial class ModsViewModel : ViewModelBase
 
     partial void OnSelectedGameChanged(GameInstallViewModel? value)
     {
+        if (!ReferenceEquals(_dashboard.SelectedInstall, value))
+        {
+            _dashboard.SelectedInstall = value;
+        }
         QueueCount = CurrentQueue()?.Count ?? 0;
         UpdateOperationState();
-        _ = RefreshAsync();
+        _ = RefreshAsync(resetWindow: true);
     }
 
     partial void OnSelectedModChanging(ModItemViewModel? value)
@@ -437,6 +499,11 @@ public partial class ModsViewModel : ViewModelBase
     /// </summary>
     private Task EnqueueOperation(GameInstallViewModel game, ModOperationKind kind, IReadOnlyList<string> references, string? version = null)
     {
+        if (game.IsSwitchingProfile)
+        {
+            Notice = "Wait for profile switching to finish before changing mods.";
+            return Task.CompletedTask;
+        }
         var waiting = new List<Task>();
         lock (_operationLock)
         {
@@ -459,6 +526,7 @@ public partial class ModsViewModel : ViewModelBase
                 {
                     _operationOutcomes.Clear();
                     Notice = null;
+                    _dashboard.OperationNotice = null;
                 }
                 var operation = new ModOperation(game, kind, newReferences.ToArray(), version);
                 _operations.Enqueue(operation);
@@ -527,6 +595,7 @@ public partial class ModsViewModel : ViewModelBase
                 catch (Exception e)
                 {
                     _log.LogError(e, "Changing mods in {Game} failed", operation.Game.Install.GamePath);
+                    _dashboard.ReportOperationProblem($"{operation.Game.Install.DisplayName}: {e.Message}");
                     RecordOperationOutcome($"Couldn't {operation.Kind.ToString().ToLowerInvariant()} {string.Join(", ", operation.References)}: {e.Message}");
                 }
 
@@ -537,6 +606,7 @@ public partial class ModsViewModel : ViewModelBase
                 catch (Exception e)
                 {
                     _log.LogError(e, "Refreshing mods in {Game} failed", operation.Game.Install.GamePath);
+                    _dashboard.ReportOperationProblem($"Couldn't refresh {operation.Game.Install.DisplayName}: {e.Message}");
                     RecordOperationOutcome($"Couldn't refresh the displayed state: {e.Message}");
                 }
 
@@ -594,6 +664,7 @@ public partial class ModsViewModel : ViewModelBase
         }
         if (!plan.Succeeded)
         {
+            _dashboard.ReportOperationProblem($"{game.DisplayName}: {string.Join(" ", plan.Problems)}");
             return string.Join("\n", plan.Problems);
         }
         if (plan.ChangesNothing)
@@ -641,7 +712,7 @@ public partial class ModsViewModel : ViewModelBase
         await RefreshAsync();
         ReloadDetails(SelectedMod);
         QueueCount = CurrentQueue()?.Count ?? 0;
-        _ = game.CheckAsync();
+        await game.CheckAsync();
     }
 
     private ModOperation? FindOperation(GameInstallViewModel game, string reference)
@@ -681,6 +752,10 @@ public partial class ModsViewModel : ViewModelBase
         lock (_operationLock)
         {
             PendingOperationCount = _operations.Count - (_activeOperation is null ? 0 : 1);
+            foreach (var game in Games)
+            {
+                game.HasModOperations = _operations.Any(o => o.Game.Install.GamePath == game.Install.GamePath);
+            }
         }
         lock (_resultsLock)
         {
@@ -721,14 +796,161 @@ public partial class ModsViewModel : ViewModelBase
         public TaskCompletionSource Completion { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
     }
 
-    private void ScheduleSearch(TimeSpan delay)
+    /// <summary>Appends one batch from the current snapshot; obsolete searches cannot be extended.</summary>
+    [RelayCommand(CanExecute = nameof(HasMoreResults))]
+    private void LoadMore()
     {
-        _pendingSearch?.Cancel();
-        _pendingSearch = new CancellationTokenSource();
-        PendingSearch = DelayThenSearchAsync(delay, _pendingSearch.Token);
+        lock (_resultsLock)
+        {
+            if (!HasMoreResults || IsUpdatingResults)
+            {
+                return;
+            }
+            AppendResults(Results.Count, SCROLL_BATCH_SIZE);
+            UpdateBrowsingState();
+            UpdateResultsText();
+        }
     }
 
-    private async Task DelayThenSearchAsync(TimeSpan delay, CancellationToken ct)
+    [RelayCommand(CanExecute = nameof(CanPreviousPage))]
+    private void PreviousPage()
+    {
+        if (CanPreviousPage)
+        {
+            ShowPage(CurrentPage - 1);
+        }
+    }
+
+    [RelayCommand(CanExecute = nameof(CanNextPage))]
+    private void NextPage()
+    {
+        if (CanNextPage)
+        {
+            ShowPage(CurrentPage + 1);
+        }
+    }
+
+    private void ShowPage(int page)
+    {
+        lock (_resultsLock)
+        {
+            _currentPage = page;
+            ResultsScrollOffset = 0;
+            ReplaceResults(_modsPageSize);
+            UpdateBrowsingState();
+            UpdateResultsText();
+        }
+    }
+
+    partial void OnIsSearchingChanged(bool value) => UpdateBrowsingState();
+
+    private void UpdateBrowsingState()
+    {
+        OnPropertyChanged(nameof(IsPaged));
+        OnPropertyChanged(nameof(CurrentPage));
+        OnPropertyChanged(nameof(TotalPages));
+        OnPropertyChanged(nameof(PageText));
+        OnPropertyChanged(nameof(HasMoreResults));
+        LoadMoreCommand.NotifyCanExecuteChanged();
+        PreviousPageCommand.NotifyCanExecuteChanged();
+        NextPageCommand.NotifyCanExecuteChanged();
+    }
+
+    /// <summary>
+    /// Settings are saved on a worker thread. Apply the latest values on the context captured
+    /// when the page is refreshed, including saves which finish after navigating back to Mods.
+    /// </summary>
+    private void OnSettingsChanged(object? sender, EventArgs e)
+    {
+        var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        PendingBrowsingUpdate = completion.Task;
+        void Apply()
+        {
+            try
+            {
+                ApplyBrowsingSettings();
+            }
+            catch (Exception error)
+            {
+                _log.LogError(error, "Applying Mods browsing settings failed");
+            }
+            finally
+            {
+                completion.SetResult();
+            }
+        }
+
+        if (_viewContext is { } context && !ReferenceEquals(context, SynchronizationContext.Current))
+        {
+            context.Post(_ => Apply(), null);
+        }
+        else
+        {
+            Apply();
+        }
+    }
+
+    private void ApplyBrowsingSettings()
+    {
+        var saved = _settings!.Current;
+        lock (_resultsLock)
+        {
+            var reset = _endlessScroll != saved.EndlessScroll
+                || (!saved.EndlessScroll && _modsPageSize != saved.ModsPageSize);
+            _endlessScroll = saved.EndlessScroll;
+            _modsPageSize = saved.ModsPageSize;
+            if (!reset)
+            {
+                return;
+            }
+            if (IsSearching)
+            {
+                _resetWindowOnSearch = true;
+            }
+            else
+            {
+                _currentPage = 1;
+                ResultsScrollOffset = 0;
+                ReplaceResults(_endlessScroll ? SCROLL_BATCH_SIZE : _modsPageSize);
+                UpdateResultsText();
+            }
+            UpdateBrowsingState();
+        }
+    }
+
+    /// <summary>Invalidates results immediately, including during the search-text debounce.</summary>
+    private (int Generation, CancellationToken Token) BeginSearch(bool resetWindow)
+    {
+        lock (_resultsLock)
+        {
+            _pendingSearch?.Cancel();
+            _pendingSearch?.Dispose();
+            _pendingSearch = new CancellationTokenSource();
+            var generation = Interlocked.Increment(ref _searchGeneration);
+            _resetWindowOnSearch |= resetWindow;
+            IsSearching = true;
+            return (generation, _pendingSearch.Token);
+        }
+    }
+
+    private void ScheduleSearch(TimeSpan delay)
+    {
+        var (generation, ct) = BeginSearch(resetWindow: true);
+        PendingSearch = DelayThenSearchAsync(delay, generation, ct);
+    }
+
+    private async Task RefreshAndSearchAsync(int generation, CancellationToken ct)
+    {
+        await LoadInstalledAsync();
+        if (ct.IsCancellationRequested)
+        {
+            return;
+        }
+        await LoadTagsAsync();
+        await SearchAsync(generation, ct);
+    }
+
+    private async Task DelayThenSearchAsync(TimeSpan delay, int generation, CancellationToken ct)
     {
         try
         {
@@ -738,14 +960,14 @@ public partial class ModsViewModel : ViewModelBase
         {
             return;
         }
-        await SearchAsync(ct);
+        await SearchAsync(generation, ct);
     }
 
-    private async Task SearchAsync(CancellationToken ct)
+    private async Task SearchAsync(int generation, CancellationToken ct)
     {
-        var generation = Interlocked.Increment(ref _searchGeneration);
         try
         {
+            ct.ThrowIfCancellationRequested();
             var query = SearchText;
             var filter = Filter.Value;
             var sort = Sort.Value;
@@ -760,29 +982,34 @@ public partial class ModsViewModel : ViewModelBase
                 CurrentQueue()?.ToHashSet(StringComparer.OrdinalIgnoreCase) ?? []);
 
             // Filters and sorts apply to every match, so the top results are the right ones.
-            var (mods, total) = await Task.Run(() =>
-            {
-                var all = ModListQuery.Apply(_store.Search(query, int.MaxValue), filter, tags, matchAll, sort, context).ToList();
-                return (all.Take(ResultLimit).ToList(), all.Count);
-            }, ct);
+            var mods = await Task.Run(() => ModListQuery.Apply(
+                _store.Search(query, int.MaxValue), filter, tags, matchAll, sort, context).ToList(), ct);
 
             lock (_resultsLock)
             {
                 if (ct.IsCancellationRequested || generation != Volatile.Read(ref _searchGeneration))
-                    return;
-
-                Results.Clear();
-                foreach (var mod in mods)
                 {
-                    var item = new ModItemViewModel(mod, SetFavourite)
-                    {
-                        IsFavourite = context.Favourites.Contains(mod.Reference),
-                        IsQueued = context.Queued.Contains(mod.Reference),
-                    };
-                    ApplyInstalled(item);
-                    Results.Add(item);
-                    _ = LoadLogoAsync(item);
+                    return;
                 }
+
+                var shown = _resetWindowOnSearch ? SCROLL_BATCH_SIZE : Math.Max(SCROLL_BATCH_SIZE, Results.Count);
+                if (_resetWindowOnSearch)
+                {
+                    _currentPage = 1;
+                    ResultsScrollOffset = 0;
+                }
+                _matches = mods;
+                _resultQuery = query;
+                _resultFilter = filter;
+                _resultTagCount = tags.Count;
+                var page = Math.Clamp(_currentPage, 1, Math.Max(1, TotalPages));
+                if (page != _currentPage)
+                {
+                    ResultsScrollOffset = 0;
+                }
+                _currentPage = page;
+                _resetWindowOnSearch = false;
+                ReplaceResults(_endlessScroll ? shown : _modsPageSize);
                 // An open mod page keeps its mod even if the new results leave it out (e.g. just uninstalled
                 // while filtering to Installed); only its state is brought up to date.
                 if (SelectedMod is { } open)
@@ -791,8 +1018,10 @@ public partial class ModsViewModel : ViewModelBase
                     open.IsFavourite = context.Favourites.Contains(open.Reference);
                     open.IsQueued = context.Queued.Contains(open.Reference);
                 }
+                IsSearching = false;
+                UpdateBrowsingState();
+                UpdateResultsText();
             }
-            ResultsText = Describe(total, mods.Count, filter, query, tags.Count);
         }
         catch (OperationCanceledException)
         {
@@ -801,16 +1030,73 @@ public partial class ModsViewModel : ViewModelBase
         catch (Exception e)
         {
             _log.LogError(e, "Searching the catalogue failed");
-            ResultsText = $"Couldn't search the mod list: {e.Message}";
+            lock (_resultsLock)
+            {
+                if (generation == Volatile.Read(ref _searchGeneration))
+                {
+                    _matches = [];
+                    ResultsScrollOffset = 0;
+                    ReplaceResults(0);
+                    IsSearching = false;
+                    UpdateBrowsingState();
+                    ResultsText = $"Couldn't search the mod list: {e.Message}";
+                }
+            }
         }
     }
+
+    /// <summary>Replaces the visible window; appending batches leaves existing mod items intact.</summary>
+    private void ReplaceResults(int count)
+    {
+        IsUpdatingResults = true;
+        try
+        {
+            Results.Clear();
+            AppendResults(_endlessScroll ? 0 : (CurrentPage - 1) * _modsPageSize, count);
+        }
+        finally
+        {
+            IsUpdatingResults = false;
+        }
+        ResultsRevision++;
+    }
+
+    private void AppendResults(int start, int count)
+    {
+        var favourites = _favourites.All;
+        var queued = CurrentQueue();
+        IsUpdatingResults = true;
+        try
+        {
+            foreach (var mod in _matches.Skip(start).Take(count))
+            {
+                var item = new ModItemViewModel(mod, SetFavourite)
+                {
+                    IsFavourite = favourites.Contains(mod.Reference),
+                    IsQueued = queued?.Contains(mod.Reference) == true,
+                };
+                ApplyInstalled(item);
+                Results.Add(item);
+                _ = LoadLogoAsync(item);
+            }
+        }
+        finally
+        {
+            IsUpdatingResults = false;
+        }
+    }
+
+    private void UpdateResultsText() => ResultsText = Describe(
+        _matches.Count, Results.Count, _resultFilter, _resultQuery, _resultTagCount);
 
     private string Describe(int total, int shown, ModFilter filter, string query, int tagCount)
     {
         if (total == 0)
         {
             if (_store.Count() == 0)
+            {
                 return "The mod list hasn't been downloaded yet; it updates when ADA starts.";
+            }
             return (filter, query.Trim().Length, tagCount) switch
             {
                 (ModFilter.Installed, 0, 0) => "No mods installed by ADA in this game yet.",
@@ -821,8 +1107,13 @@ public partial class ModsViewModel : ViewModelBase
                 _ => "No mods match these filters.",
             };
         }
+        if (IsPaged)
+        {
+            var first = (CurrentPage - 1) * _modsPageSize + 1;
+            return $"{first:N0}–{first + shown - 1:N0} of {total:N0} mods";
+        }
         return shown < total
-            ? $"Showing {shown:N0} of {total:N0} mods. Search or filter to narrow them down."
+            ? $"Showing {shown:N0} of {total:N0} mods. Scroll for more."
             : total == 1 ? "1 mod" : $"{total:N0} mods";
     }
 
@@ -881,11 +1172,16 @@ public partial class ModsViewModel : ViewModelBase
 
         try
         {
-            (_installed, _requested) = await Task.Run(() =>
+            var state = await Task.Run(() =>
             {
                 var installer = _installs.InstallerFor(game.Install);
                 return (installer.Installed, installer.Requested);
             });
+            if (!ReferenceEquals(game, SelectedGame))
+            {
+                return;
+            }
+            (_installed, _requested) = state;
         }
         catch (Exception e)
         {
@@ -999,6 +1295,11 @@ public partial class ModsViewModel : ViewModelBase
 
     private void OnDashboardChanged(object? sender, PropertyChangedEventArgs e)
     {
+        if (e.PropertyName == nameof(DashboardViewModel.SelectedInstall)
+            && !ReferenceEquals(SelectedGame, _dashboard.SelectedInstall))
+        {
+            SelectedGame = _dashboard.SelectedInstall;
+        }
         if (e.PropertyName == nameof(DashboardViewModel.IsGameRunning))
             IsGameRunning = _dashboard.IsGameRunning;
     }

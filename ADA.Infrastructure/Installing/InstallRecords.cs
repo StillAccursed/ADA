@@ -95,7 +95,10 @@ internal sealed record JournalStep(
 /// Defaults to false for journals written before this marker existed.
 /// </param>
 internal sealed record Journal(string TransactionId, DateTimeOffset StartedAt, bool RollingBack, List<JournalStep> Steps,
-    bool Committed = false);
+    bool Committed = false, ProfileActivation? ProfileActivation = null);
+
+/// <summary>Profile metadata to finalise after an entire profile transaction commits.</summary>
+internal sealed record ProfileActivation(string Name, List<string> Requested);
 
 internal sealed class JournalStore(string path)
 {
@@ -123,4 +126,5 @@ internal sealed class JournalStore(string path)
 [JsonSerializable(typeof(List<InstalledMod>))]
 [JsonSerializable(typeof(Journal))]
 [JsonSerializable(typeof(List<string>))]
+[JsonSerializable(typeof(ProfileActivation))]
 internal sealed partial class InstallJsonContext : JsonSerializerContext;

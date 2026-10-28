@@ -16,6 +16,9 @@ public sealed partial class ProfileStore(string profilesFolder, string stateFile
 
     private readonly Lock _gate = new();
 
+    /// <summary>Raised outside the store lock after a profile or active selection is saved, on the saving thread.</summary>
+    internal event EventHandler? Changed;
+
     public string Folder { get; } = profilesFolder;
 
     /// <summary>Every readable profile, by name. A damaged file is skipped rather than stopping the app.</summary>
@@ -40,6 +43,7 @@ public sealed partial class ProfileStore(string profilesFolder, string stateFile
             Directory.CreateDirectory(Folder);
             OlpFile.Write(Find(profile.Name)?.Path ?? NewPath(profile.Name), profile);
         }
+        Changed?.Invoke(this, EventArgs.Empty);
     }
 
     /// <returns>Why the name can't be used for a new profile, or null if it can.</returns>
@@ -68,6 +72,7 @@ public sealed partial class ProfileStore(string profilesFolder, string stateFile
             state.Active[gamePath] = name;
             SaveState(state);
         }
+        Changed?.Invoke(this, EventArgs.Empty);
     }
 
     /// <summary>Mod folders the user chose to leave alone in this game, so they aren't asked about again.</summary>

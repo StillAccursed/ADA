@@ -2,6 +2,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using ADA.Core.Catalog;
 using ADA.Core.Games;
+using ADA.Core.Profiles;
 using ADA.Core.Resolution;
 using Semver;
 
@@ -103,6 +104,22 @@ public sealed class ModResolutionService(
         PlanAsync(game, requested => requested.Add(reference), "", removing: false, ct,
             ranges: new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { [reference] = version });
 
+    /// <summary>Plans the complete saved profile with exact versions; unmanaged collisions are refused before downloads.</summary>
+    internal async Task<ModChangePlan> PlanProfileAsync(GameInstall game, ModProfile profile, CancellationToken ct = default)
+    {
+        if (profile.Mods.Any(m => !ModIdentifiers.IsValidReference(m.Name) || !ModIdentifiers.IsExactVersion(m.Version))
+            || profile.Mods.Select(m => m.Name).Distinct(StringComparer.OrdinalIgnoreCase).Count() != profile.Mods.Count)
+        {
+            return ModChangePlan.Failed(["The profile contains invalid or duplicate mods."]);
+        }
+        var ranges = profile.Mods.ToDictionary(m => m.Name, m => m.Version, StringComparer.OrdinalIgnoreCase);
+        return await PlanAsync(game, requested =>
+        {
+            requested.Clear();
+            requested.UnionWith(ranges.Keys);
+        }, "", removing: false, ct, ranges, ranges);
+    }
+
     /// <summary>
     /// Plans removing a mod, plus any dependency only it needed. Refused while another installed mod
     /// still needs it.
@@ -159,13 +176,18 @@ public sealed class ModResolutionService(
         if (!plan.Succeeded)
             throw new InvalidOperationException("Can't apply a plan that has problems.");
 
+        using var operation = installs.BeginOperation(game);
         var installer = installs.InstallerFor(game);
+        if (installer.HasPendingProfileActivation || installer.HasInterruptedTransaction)
+        {
+            throw new InstallException("Finish pending recovery before changing mods.");
+        }
         await Task.Run(() => installer.SaveRequested(installer.Requested.Concat(plan.Requested)), ct);
 
         // Only the record changes (a dependency is now asked for): no transaction needed.
         var result = plan.Install.Count == 0 && plan.Uninstall.Count == 0
             ? new TransactionResult([], [])
-            : await installs.ApplyAsync(game, plan.Install.Select(i => i.Mod.Version).ToList(), plan.Uninstall, progress, ct);
+            : await installs.ApplyReservedAsync(game, plan.Install.Select(i => i.Mod.Version).ToList(), plan.Uninstall, progress, ct);
 
         await Task.Run(() => installer.SaveRequested(plan.Requested), CancellationToken.None);
         return result;

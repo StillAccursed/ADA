@@ -21,7 +21,56 @@ public sealed class GameProfiles(ProfileStore store, ModInstallService installs,
 {
     private readonly ILogger _log = log ?? NullLogger<GameProfiles>.Instance;
 
+    /// <summary>Forwards saved-profile changes on the saving thread; UI consumers marshal to their context.</summary>
+    public event EventHandler? Changed
+    {
+        add => store.Changed += value;
+        remove => store.Changed -= value;
+    }
+
     public Task<string> ActiveNameAsync(GameInstall game) => Task.Run(() => store.ActiveName(game.GamePath));
+
+    /// <summary>Whether a check or mutation currently reserves this installation.</summary>
+    public bool IsChanging(GameInstall game) => installs.IsChanging(game);
+
+    /// <summary>Lists saved profiles without creating the implicit Default profile.</summary>
+    public Task<IReadOnlyList<ModProfile>> ListAsync() => Task.Run(store.List);
+
+    /// <summary>
+    /// Applies an immutable saved profile snapshot, then activates its name. Exact-version failures
+    /// leave the old installation/profile intact; activation failures retain a retryable marker.
+    /// </summary>
+    public async Task SwitchAsync(GameInstall game, ModProfile profile, ModResolutionService resolution,
+        IProgress<ModInstallProgress>? progress = null, CancellationToken ct = default)
+    {
+        var snapshot = profile with { Mods = profile.Mods.ToArray() };
+        if (string.IsNullOrWhiteSpace(snapshot.Name) || snapshot.Name.Length > OlpFile.MaxNameLength)
+        {
+            throw new InvalidProfileException("The profile name is empty or too long.");
+        }
+        await installs.ApplyProfileAsync(game, async () =>
+        {
+            var plan = await resolution.PlanProfileAsync(game, snapshot, ct);
+            if (plan.Succeeded)
+            {
+                // The implicit Default becomes a saved profile only on an explicit switch away.
+                await Task.Run(() =>
+                {
+                    var current = store.ActiveName(game.GamePath);
+                    if (store.Get(current) is null)
+                    {
+                        store.Save(new(current, ToProfileMods(installs.InstallerFor(game).Installed.Values, out _)));
+                    }
+                }, ct);
+            }
+            return plan;
+        },
+            snapshot.Name, name => store.SetActive(game.GamePath, name), progress, ct);
+    }
+
+    /// <summary>Completes committed activation before any caller can record installed mods into a profile.</summary>
+    public Task ReconcileAsync(GameInstall game) => Task.Run(() =>
+        installs.InstallerFor(game).CompleteProfileActivation(name => store.SetActive(game.GamePath, name)));
 
     public string? ProblemWithNewName(string? name) => store.ProblemWithNewName(name);
 
@@ -34,12 +83,20 @@ public sealed class GameProfiles(ProfileStore store, ModInstallService installs,
     }
 
     /// <summary>Rewrites the active profile as exactly what ADA has installed; called after every change.</summary>
-    public Task RecordInstalledAsync(GameInstall game) => Task.Run(() =>
+    public async Task RecordInstalledAsync(GameInstall game)
     {
-        var name = store.ActiveName(game.GamePath);
-        var installed = installs.InstallerFor(game).Installed.Values;
-        store.Save(new ModProfile(name, ToProfileMods(installed, out _)));
-    });
+        await ReconcileAsync(game);
+        await Task.Run(() =>
+        {
+            var installer = installs.InstallerFor(game);
+            if (installer.HasInterruptedTransaction || installer.HasPendingProfileActivation)
+            {
+                throw new InstallException("Finish pending recovery before recording this profile.");
+            }
+            var name = store.ActiveName(game.GamePath);
+            store.Save(new ModProfile(name, ToProfileMods(installer.Installed.Values, out _)));
+        });
+    }
 
     /// <summary>
     /// Takes over the found mods where they are and adds them to the game's current profile. Mods

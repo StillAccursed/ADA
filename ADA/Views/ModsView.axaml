@@ -225,6 +225,14 @@
             <TextBlock DockPanel.Dock="Top" Text="{Binding ResultsText}" Margin="2,0,0,8" FontSize="12"
                        Foreground="{DynamicResource TextSecondaryBrush}" />
 
+            <WrapPanel DockPanel.Dock="Bottom" Margin="0,12,0,0" HorizontalAlignment="Center"
+                       IsVisible="{Binding IsPaged}">
+                <Button Content="‹ Previous" Command="{Binding PreviousPageCommand}" />
+                <TextBlock Text="{Binding PageText}" Margin="16,0" VerticalAlignment="Center"
+                           Foreground="{DynamicResource TextSecondaryBrush}" />
+                <Button Content="Next ›" Command="{Binding NextPageCommand}" />
+            </WrapPanel>
+
             <!-- A queued install's plan and outcome show here; a single mod's on its page. -->
             <views:PlanPanel DockPanel.Dock="Bottom" Margin="0,8,0,0" />
 
@@ -240,7 +248,7 @@
                 </Grid>
             </Border>
 
-            <ListBox ItemsSource="{Binding Results}" SelectedItem="{Binding ListSelection}" Background="Transparent"
+            <ListBox x:Name="ResultsList" ItemsSource="{Binding Results}" SelectedItem="{Binding ListSelection}" Background="Transparent"
                      ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                      Classes.list="{Binding IsListView}" Classes.grid="{Binding IsGridView}" Classes.card="{Binding IsCardView}" />
         </DockPanel>

@@ -29,6 +29,9 @@ public partial class SettingsViewModel : ViewModelBase
         _settings = store.Current;
         KeepDownloadedArchives = _settings.KeepDownloadedArchives;
         DownloadRetries = _settings.DownloadRetries;
+        EndlessScroll = _settings.EndlessScroll;
+        ModsPageSize = _settings.ModsPageSize;
+        DashboardLatestModsCount = _settings.DashboardLatestModsCount;
         _loading = false;
     }
 
@@ -38,6 +41,28 @@ public partial class SettingsViewModel : ViewModelBase
     /// <summary>Retries after a failed download. Decimal because that is what NumericUpDown binds to.</summary>
     [ObservableProperty]
     public partial decimal? DownloadRetries { get; set; }
+
+    /// <summary>Reveals more matching mods while scrolling; turning it off enables page navigation.</summary>
+    [ObservableProperty]
+    public partial bool EndlessScroll { get; set; }
+
+    /// <summary>Supported page sizes, used only when endless scrolling is off.</summary>
+    public IReadOnlyList<int> ModsPageSizes { get; } = Array.AsReadOnly(new[] { 25, 50, 100, 200, 500 });
+
+    /// <summary>Results per page, retained when endless scrolling is enabled.</summary>
+    [ObservableProperty]
+    public partial int ModsPageSize { get; set; }
+
+    /// <summary>Number of recent releases on the dashboard; a cleared input retains the saved count.</summary>
+    [ObservableProperty]
+    public partial decimal? DashboardLatestModsCount { get; set; }
+
+    public int MinDashboardLatestModsCount => AppSettings.MIN_DASHBOARD_LATEST_MODS_COUNT;
+
+    public int MaxDashboardLatestModsCount => AppSettings.MAX_DASHBOARD_LATEST_MODS_COUNT;
+
+    /// <summary>Raised on the UI context after an archive deletion attempt, including partial deletion.</summary>
+    public event EventHandler? ArchivesChanged;
 
     public int MinDownloadRetries => AppSettings.MinDownloadRetries;
 
@@ -65,14 +90,34 @@ public partial class SettingsViewModel : ViewModelBase
     partial void OnKeepDownloadedArchivesChanged(bool value)
     {
         if (!_loading)
+        {
             Update(_settings with { KeepDownloadedArchives = value });
+        }
     }
 
     partial void OnDownloadRetriesChanged(decimal? value)
     {
         // A cleared box is not saved; the last valid value stays in effect.
         if (!_loading && value is { } retries)
+        {
             Update(_settings with { DownloadRetries = (int)retries });
+        }
+    }
+
+    partial void OnEndlessScrollChanged(bool value)
+    {
+        if (!_loading)
+        {
+            Update(_settings with { EndlessScroll = value });
+        }
+    }
+
+    partial void OnModsPageSizeChanged(int value)
+    {
+        if (!_loading && ModsPageSizes.Contains(value))
+        {
+            Update(_settings with { ModsPageSize = value });
+        }
     }
 
     private void Update(AppSettings settings)
@@ -81,6 +126,15 @@ public partial class SettingsViewModel : ViewModelBase
         _pendingSave?.Cancel();
         _pendingSave = new CancellationTokenSource();
         PendingSave = SaveAsync(settings, _pendingSave.Token);
+    }
+
+    partial void OnDashboardLatestModsCountChanged(decimal? value)
+    {
+        if (!_loading && value is { } count)
+        {
+            Update(_settings with { DashboardLatestModsCount = (int)Math.Clamp(count,
+                MinDashboardLatestModsCount, MaxDashboardLatestModsCount) });
+        }
     }
 
     private async Task SaveAsync(AppSettings settings, CancellationToken ct)
@@ -93,6 +147,9 @@ public partial class SettingsViewModel : ViewModelBase
             {
                 KeepDownloadedArchives = settings.KeepDownloadedArchives,
                 DownloadRetries = settings.DownloadRetries,
+                EndlessScroll = settings.EndlessScroll,
+                ModsPageSize = settings.ModsPageSize,
+                DashboardLatestModsCount = settings.DashboardLatestModsCount,
             }), ct);
             ErrorText = null;
         }
@@ -138,6 +195,7 @@ public partial class SettingsViewModel : ViewModelBase
             ErrorText = $"Couldn't delete every archive: {e.Message}";
         }
         await RefreshAsync();
+        ArchivesChanged?.Invoke(this, EventArgs.Empty);
     }
 
     internal static string FormatSize(long bytes)

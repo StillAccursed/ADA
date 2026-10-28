@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using System.Collections.Concurrent;
 using Microsoft.Extensions.Logging.Abstractions;
 using ADA.Core.Catalog;
 using ADA.Core.Games;
@@ -36,6 +37,13 @@ public sealed class ModInstallService(
     private const int ParallelLookups = 4;
 
     private readonly ILogger _log = log ?? NullLogger<ModInstallService>.Instance;
+    private readonly ConcurrentDictionary<string, byte> _operations = new(StringComparer.Ordinal);
+
+    /// <summary>Raised on the operation's calling thread when a mutation finishes or fails.</summary>
+    public event EventHandler? Changed;
+
+    /// <summary>Whether this service is currently checking or changing the captured installation.</summary>
+    internal bool IsChanging(GameInstall game) => _operations.ContainsKey(game.GamePath);
 
     /// <summary>The build a game needs: clients always use Windows builds (also under CrossOver and Proton).</summary>
     public static TargetPlatform TargetFor(GameInstall game) => game.Kind switch
@@ -56,6 +64,7 @@ public sealed class ModInstallService(
     /// </summary>
     public Task<GameModsStatus> RecoverAndCheckAsync(GameInstall game, CancellationToken ct = default) => Task.Run(async () =>
     {
+        using var operation = BeginOperation(game);
         var installer = InstallerFor(game);
         var deferred = installer.HasInterruptedTransaction && await isGameRunning(ct);
         var recovery = deferred ? RecoveryResult.Clean : installer.Recover();
@@ -85,6 +94,47 @@ public sealed class ModInstallService(
     /// <inheritdoc cref="InstallAsync" path="/exception"/>
     public async Task<TransactionResult> ApplyAsync(GameInstall game, IReadOnlyList<CatalogVersion> install,
         IReadOnlyList<string> uninstall, IProgress<ModInstallProgress>? progress = null, CancellationToken ct = default)
+    {
+        using var operation = BeginOperation(game);
+        return await ApplyReservedAsync(game, install, uninstall, progress, ct);
+    }
+
+    /// <summary>Reserves the game through planning, file commit and durable profile activation.</summary>
+    internal async Task ApplyProfileAsync(GameInstall game, Func<Task<ModChangePlan>> planProfile,
+        string name, Action<string> activate, IProgress<ModInstallProgress>? progress, CancellationToken ct)
+    {
+        using var operation = BeginOperation(game);
+        if (await isGameRunning(ct))
+        {
+            throw new GameRunningException();
+        }
+        var installer = InstallerFor(game);
+        if (installer.HasInterruptedTransaction || installer.HasPendingProfileActivation)
+        {
+            throw new InstallException("Recheck this installation to finish pending recovery before switching profiles.");
+        }
+        var plan = await planProfile();
+        if (!plan.Succeeded)
+        {
+            throw new InstallException(string.Join(" ", plan.Problems));
+        }
+        await ApplyReservedAsync(game, plan.Install.Select(i => i.Mod.Version).ToList(), plan.Uninstall,
+            progress, ct, new ProfileActivation(name, plan.Requested.ToList()));
+        try
+        {
+            installer.Recover();
+            installer.CompleteProfileActivation(activate);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or InstallException)
+        {
+            throw new InstallException("Profile activation pending. The mod files committed; recheck this installation to finish activation.", e);
+        }
+    }
+
+    /// <summary>Caller must hold BeginOperation for this game through all record updates.</summary>
+    internal async Task<TransactionResult> ApplyReservedAsync(GameInstall game, IReadOnlyList<CatalogVersion> install,
+        IReadOnlyList<string> uninstall, IProgress<ModInstallProgress>? progress, CancellationToken ct,
+        ProfileActivation? activation = null)
     {
         if (await isGameRunning(ct))
             throw new GameRunningException();
@@ -130,7 +180,9 @@ public sealed class ModInstallService(
         var changes = uninstall.Select(r => (ModChange)new ModChange.Uninstall(r))
             .Concat(archives.Select(a => new ModChange.Install(a, platform)))
             .ToList();
-        var result = await Task.Run(() => InstallerFor(game).Apply(changes, installProgress, ct), ct);
+        var result = await Task.Run(() => activation is null
+            ? InstallerFor(game).Apply(changes, installProgress, ct)
+            : InstallerFor(game).ApplyProfile(changes, activation, installProgress, ct), ct);
         _log.LogInformation("Installed {Mods} and uninstalled {Removed} in {Game}",
             result.Installed.Select(m => $"{m.Reference} {m.Version}"), result.Uninstalled, game.GamePath);
 
@@ -143,6 +195,7 @@ public sealed class ModInstallService(
 
     public async Task<TransactionResult> UninstallAsync(GameInstall game, IReadOnlyList<string> references, CancellationToken ct = default)
     {
+        using var operation = BeginOperation(game);
         var result = await Task.Run(
             () => InstallerFor(game).Apply(references.Select(r => (ModChange)new ModChange.Uninstall(r)).ToList(), ct: ct), ct);
         _log.LogInformation("Uninstalled {Mods} from {Game}", result.Uninstalled, game.GamePath);
@@ -156,6 +209,7 @@ public sealed class ModInstallService(
     /// <summary>Takes over mod folders where they are; see <see cref="ModInstaller.Adopt"/>.</summary>
     public async Task<IReadOnlyList<InstalledMod>> AdoptAsync(GameInstall game, IReadOnlyList<FoundMod> mods, CancellationToken ct = default)
     {
+        using var operation = BeginOperation(game);
         var adopted = await Task.Run(() => InstallerFor(game).Adopt(mods, ct), ct);
         _log.LogInformation("Took over {Mods} in {Game}", adopted.Select(m => $"{m.Reference} {m.Version}"), game.GamePath);
         return adopted;
@@ -168,6 +222,7 @@ public sealed class ModInstallService(
     public async Task<RepairResult> RepairAsync(GameInstall game, CheckResult check,
         IProgress<ModInstallProgress>? progress = null, CancellationToken ct = default)
     {
+        using var operation = BeginOperation(game);
         var installed = await Task.Run(() => InstallerFor(game).Installed, ct);
         var records = check.NeedingRepair
             .Select(m => installed.GetValueOrDefault(m.Reference))
@@ -192,7 +247,7 @@ public sealed class ModInstallService(
 
         try
         {
-            var result = await InstallAsync(game, toInstall, progress, ct);
+            var result = await ApplyReservedAsync(game, toInstall, [], progress, ct);
             return new RepairResult(result.Installed.Select(m => m.Reference).ToList(), failed);
         }
         catch (Exception e) when (e is InstallException or ArchiveDownloadException or InvalidModArchiveException)
@@ -221,6 +276,28 @@ public sealed class ModInstallService(
                 _log.LogWarning(e, "Couldn't delete archive {Archive}", archive);
             }
         }
+    }
+
+    /// <summary>Reserves this installation for a check or mutation; overlapping operations fail immediately.</summary>
+    internal IDisposable BeginOperation(GameInstall game)
+    {
+        if (!_operations.TryAdd(game.GamePath, 0))
+        {
+            throw new InstallException("Another operation is already checking or changing this installation.");
+        }
+        return new OperationLease(() =>
+        {
+            _operations.TryRemove(game.GamePath, out _);
+            Changed?.Invoke(this, EventArgs.Empty);
+        });
+    }
+
+    private sealed class OperationLease(Action release) : IDisposable
+    {
+        private Action? _release = release;
+
+        /// <summary>Releases the reservation and notifies refresh listeners exactly once.</summary>
+        public void Dispose() => Interlocked.Exchange(ref _release, null)?.Invoke();
     }
 
     /// <summary>Reports on the calling thread; the UI marshals itself.</summary>

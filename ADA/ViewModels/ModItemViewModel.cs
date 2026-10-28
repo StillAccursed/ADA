@@ -54,8 +54,8 @@ public partial class ModItemViewModel(CatalogMod mod, Action<ModItemViewModel, b
     public bool HasTags => Mod.Tags.Count > 0;
 
     /// <summary>
-    /// Markdown and structural HTML for the Overview, prepared on first use without author CSS or
-    /// images. Falls back to the short description when the full description contains no content.
+    /// Markdown and structural HTML for the Overview, prepared on first use with HTTPS images and without
+    /// author CSS. Falls back to the short description when the full description contains no content.
     /// </summary>
     public string Description => _description ??= ModDescription.Formatted(Mod.FullDescription) is { Length: > 0 } text
         ? text

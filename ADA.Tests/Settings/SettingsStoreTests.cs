@@ -74,6 +74,80 @@ public class SettingsStoreTests
     }
 
     [Fact]
+    public void Older_settings_files_enable_endless_scroll_and_default_to_50_per_page()
+    {
+        using var dir = new TempDir();
+        var path = dir.WriteFile("settings.json", """{ "downloadRetries": 3, "modsView": "Grid" }""");
+        var settings = new SettingsStore(path).Load();
+
+        Assert.True(settings.EndlessScroll);
+        Assert.Equal(50, settings.ModsPageSize);
+        Assert.Equal(3, settings.DownloadRetries);
+        Assert.Equal("Grid", settings.ModsView);
+    }
+
+    [Theory]
+    [InlineData(25, 25)]
+    [InlineData(50, 50)]
+    [InlineData(100, 100)]
+    [InlineData(200, 200)]
+    [InlineData(500, 500)]
+    [InlineData(0, 50)]
+    [InlineData(-1, 50)]
+    [InlineData(75, 50)]
+    [InlineData(501, 50)]
+    public void Browsing_preferences_round_trip_and_unsupported_page_sizes_use_50(int size, int expected)
+    {
+        using var dir = new TempDir();
+        var path = dir.WriteFile("settings.json", $$"""{ "endlessScroll": false, "modsPageSize": {{size}} }""");
+        var store = new SettingsStore(path);
+
+        Assert.False(store.Load().EndlessScroll);
+        Assert.Equal(expected, store.Load().ModsPageSize);
+        store.Save(new AppSettings(EndlessScroll: false, ModsPageSize: size));
+        Assert.False(store.Load().EndlessScroll);
+        Assert.Equal(expected, store.Load().ModsPageSize);
+        Assert.Contains($"\"modsPageSize\": {expected}", File.ReadAllText(path));
+    }
+
+    [Fact]
+    public void Change_notifications_see_successfully_written_normalised_settings()
+    {
+        using var dir = new TempDir();
+        var store = new SettingsStore(dir.Combine("settings.json"));
+        var notifications = new List<AppSettings>();
+        store.Changed += (_, _) =>
+        {
+            Assert.Equal(store.Load(), store.Current);
+            notifications.Add(store.Current);
+        };
+
+        store.Save(new AppSettings(EndlessScroll: false, ModsPageSize: 75));
+        store.Update(current => current with { ModsView = "Card" });
+
+        Assert.Equal(2, notifications.Count);
+        Assert.All(notifications, settings => Assert.False(settings.EndlessScroll));
+        Assert.All(notifications, settings => Assert.Equal(50, settings.ModsPageSize));
+        Assert.Equal("Card", notifications[1].ModsView);
+    }
+
+    [Fact]
+    public void A_failed_write_keeps_current_settings_and_does_not_notify()
+    {
+        using var dir = new TempDir();
+        var blocked = dir.WriteFile("blocked", "file instead of a folder");
+        var store = new SettingsStore(Path.Combine(blocked, "settings.json"));
+        var before = store.Current;
+        var notified = false;
+        store.Changed += (_, _) => notified = true;
+
+        Assert.ThrowsAny<IOException>(() => store.Save(new AppSettings(EndlessScroll: false)));
+
+        Assert.Equal(before, store.Current);
+        Assert.False(notified);
+    }
+
+    [Fact]
     public void Archive_cache_measures_and_deletes_only_its_own_folder()
     {
         using var dir = new TempDir();

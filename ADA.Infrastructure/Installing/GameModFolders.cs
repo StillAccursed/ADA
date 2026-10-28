@@ -22,6 +22,8 @@ internal sealed class GameModFolders(string gameRoot)
 
     public string Journal => Path.Combine(Work, "journal.json");
 
+    public string ProfileActivation => Path.Combine(Work, "profile-activation.json");
+
     public string Lock => Path.Combine(Work, "lock");
 
     public string Transaction(string id) => Path.Combine(Work, "txn-" + id);

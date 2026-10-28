@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using ADA.Core.Catalog;
@@ -117,6 +118,10 @@ public sealed class ModInstaller
     /// <summary>A journal remains for interrupted changes or committed changes awaiting cleanup.</summary>
     public bool HasInterruptedTransaction => _journal.Exists;
 
+    /// <summary>A committed profile switch still needs its active-profile metadata finalised.</summary>
+    internal bool HasPendingProfileActivation => File.Exists(_folders.ProfileActivation)
+        || _journal.Load() is { Committed: true, ProfileActivation: not null };
+
     public IReadOnlyDictionary<string, InstalledMod> Installed => _records.Load();
 
     /// <summary>
@@ -154,6 +159,15 @@ public sealed class ModInstaller
     /// <exception cref="InstallException">A change failed before commitment and was rolled back.</exception>
     public TransactionResult Apply(IReadOnlyList<ModChange> changes, IProgress<InstallProgress>? progress = null,
         CancellationToken ct = default)
+        => ApplyCore(changes, progress, ct, null);
+
+    /// <summary>Applies a whole profile; uncommitted recovery rolls back the entire switch.</summary>
+    internal TransactionResult ApplyProfile(IReadOnlyList<ModChange> changes, ProfileActivation activation,
+        IProgress<InstallProgress>? progress = null, CancellationToken ct = default)
+        => ApplyCore(changes, progress, ct, activation);
+
+    private TransactionResult ApplyCore(IReadOnlyList<ModChange> changes, IProgress<InstallProgress>? progress,
+        CancellationToken ct, ProfileActivation? activation)
     {
         if (_isGameRunning())
             throw new GameRunningException();
@@ -161,7 +175,13 @@ public sealed class ModInstaller
         _folders.EnsureWorkFolder();
         using var _ = AcquireLock();
         if (_journal.Exists)
+        {
             RecoverLocked();
+        }
+        if (HasPendingProfileActivation)
+        {
+            throw new InstallException("Profile activation pending. Recheck this installation before changing mods.");
+        }
 
         var installed = _records.Load();
         var archives = new List<ModArchive>();
@@ -173,7 +193,8 @@ public sealed class ModInstaller
 
             var txn = $"{DateTime.UtcNow:yyyyMMddHHmmss}-{Guid.NewGuid():N}"[..23];
             Directory.CreateDirectory(_folders.Transaction(txn));
-            var journal = new Journal(txn, DateTimeOffset.UtcNow, false, plan.Select(p => p.Step).ToList());
+            var journal = new Journal(txn, DateTimeOffset.UtcNow, false, plan.Select(p => p.Step).ToList(),
+                ProfileActivation: activation);
             _journal.Save(journal);
             _checkpoint("journal-created");
 
@@ -214,6 +235,7 @@ public sealed class ModInstaller
             try
             {
                 _checkpoint("transaction-committed");
+                SaveProfileActivation(activation);
                 Finish(txn);
             }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException)
@@ -246,6 +268,45 @@ public sealed class ModInstaller
         _folders.EnsureWorkFolder();
         using var _ = AcquireLock();
         return RecoverLocked();
+    }
+
+    /// <summary>
+    /// Finalises committed profile metadata under the game's lock. The marker remains if the
+    /// callback or requested-mod write fails; retrying is safe and precedes profile recording.
+    /// </summary>
+    internal void CompleteProfileActivation(Action<string> activate)
+    {
+        if (!File.Exists(_folders.ProfileActivation))
+        {
+            return;
+        }
+        using var operationLock = AcquireLock();
+        if (!File.Exists(_folders.ProfileActivation))
+        {
+            return;
+        }
+        if (_journal.Exists)
+        {
+            throw new InstallException("Profile activation pending; transaction cleanup must finish first.");
+        }
+        using var stream = File.OpenRead(_folders.ProfileActivation);
+        var activation = JsonSerializer.Deserialize(stream, InstallJsonContext.Default.ProfileActivation)
+            ?? throw new InstallException("The pending profile activation record is unreadable.");
+        stream.Dispose();
+        activate(activation.Name);
+        _requested.Save(activation.Requested);
+        _checkpoint("profile-activated");
+        File.Delete(_folders.ProfileActivation);
+    }
+
+    private void SaveProfileActivation(ProfileActivation? activation)
+    {
+        if (activation is not null)
+        {
+            ADA.Infrastructure.IO.AtomicFile.Write(_folders.ProfileActivation,
+                stream => JsonSerializer.Serialize(stream, activation, InstallJsonContext.Default.ProfileActivation));
+            _checkpoint("profile-activation-pending");
+        }
     }
 
     /// <summary>
@@ -382,7 +443,13 @@ public sealed class ModInstaller
         _folders.EnsureWorkFolder();
         using var _ = AcquireLock();
         if (_journal.Exists)
+        {
             RecoverLocked();
+        }
+        if (HasPendingProfileActivation)
+        {
+            throw new InstallException("Profile activation pending. Recheck this installation before importing mods.");
+        }
 
         var installed = _records.Load();
         var current = FindUnmanaged().Mods.ToDictionary(m => m.Location, StringComparer.OrdinalIgnoreCase);
@@ -616,6 +683,7 @@ public sealed class ModInstaller
         if (journal.Committed)
         {
             // Old versions may already be deleted. The live folders and records are final.
+            SaveProfileActivation(journal.ProfileActivation);
             Finish(journal.TransactionId);
             return new RecoveryResult(true,
                 journal.Steps.Where(s => s.NewLocation is null || s.State != StepState.Planned).Select(s => s.Reference).ToList(),
@@ -624,8 +692,10 @@ public sealed class ModInstaller
         }
 
         var installed = _records.Load();
-        if (journal.RollingBack)
+        if (journal.RollingBack || journal.ProfileActivation is not null)
+        {
             return RollBack(journal, installed);
+        }
 
         var rolledForward = new List<string>();
         var discarded = new List<string>();

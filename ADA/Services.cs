@@ -6,6 +6,7 @@ using ADA.Infrastructure.Catalog;
 using ADA.Infrastructure.Downloads;
 using ADA.Infrastructure.Ficsit;
 using ADA.Infrastructure.Installing;
+using ADA.Infrastructure.IO;
 using ADA.Infrastructure.Profiles;
 using ADA.Infrastructure.Settings;
 using ADA.Platform.Detection;
@@ -39,6 +40,7 @@ public static class Services
         services.AddSingleton(sp => new SettingsStore(paths.SettingsFile));
         services.AddSingleton(_ => new FavouritesStore(paths.FavouritesFile));
         services.AddSingleton(sp => new ArchiveCache(paths.Archives));
+        services.AddSingleton(_ => new DashboardStorageReader(paths.Archives));
         services.AddSingleton(sp => new ArchiveDownloader(Http(sp, DownloadClient), paths.Archives,
             log: sp.GetRequiredService<ILogger<ArchiveDownloader>>()));
         services.AddSingleton(sp => new ModInstallService(
@@ -65,7 +67,17 @@ public static class Services
             install, sp.GetRequiredService<ModInstallService>(), sp.GetRequiredService<ModResolutionService>(),
             sp.GetRequiredService<GameProfiles>(),
             sp.GetRequiredService<ILogger<GameInstallViewModel>>()));
-        services.AddSingleton<DashboardViewModel>();
+        services.AddSingleton(sp =>
+        {
+            var dashboard = new DashboardViewModel(
+                sp.GetRequiredService<IGameDetector>(), sp.GetRequiredService<CatalogStatusViewModel>(),
+                sp.GetRequiredService<Func<GameInstall, GameInstallViewModel>>(), sp.GetRequiredService<ILogger<DashboardViewModel>>(),
+                store: sp.GetRequiredService<ModCatalogStore>(), settings: sp.GetRequiredService<SettingsStore>(),
+                profiles: sp.GetRequiredService<GameProfiles>(), resolution: sp.GetRequiredService<ModResolutionService>(),
+                storage: sp.GetRequiredService<DashboardStorageReader>(), installs: sp.GetRequiredService<ModInstallService>());
+            sp.GetRequiredService<SettingsViewModel>().ArchivesChanged += (_, _) => _ = dashboard.RefreshCardsAsync();
+            return dashboard;
+        });
         services.AddSingleton(sp => new ModsViewModel(
             sp.GetRequiredService<ModCatalogStore>(),
             sp.GetRequiredService<CatalogSync>().GetVersionsAsync,

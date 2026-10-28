@@ -1,3 +1,4 @@
+using System.Net;
 using System.Text;
 using System.Text.RegularExpressions;
 
@@ -7,8 +8,8 @@ namespace ADA.Infrastructure.Catalog;
 public static partial class ModDescription
 {
     /// <summary>
-    /// Keeps Markdown and structural HTML for native rendering. Removes CSS, scripts, comments,
-    /// images and HTML attributes; images remain available through <see cref="ImageUrls"/>.
+    /// Keeps Markdown, structural HTML and HTTPS images for native rendering. Removes CSS, scripts,
+    /// comments and author attributes. Image references are resolved to inline images.
     /// Fenced and inline code are preserved verbatim, including markup used in examples.
     /// </summary>
     public static string Formatted(string? markdown)
@@ -19,11 +20,27 @@ public static partial class ModDescription
         }
 
         var text = markdown.Replace("\r\n", "\n").Replace('\r', '\n');
+        // Definitions and image references inside code or hidden blocks are not document content.
+        var markup = ContentRegion().Replace(text, "\n");
+        var labels = ReferenceImage().Matches(markup)
+            .Select(match => ReferenceLabel(match.Groups["label"].Value is { Length: > 0 } label
+                ? label : match.Groups["alt"].Value))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var imageReferences = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (Match definition in ReferenceDefinition().Matches(markup))
+        {
+            var label = ReferenceLabel(definition.Groups["label"].Value);
+            if (labels.Contains(label))
+            {
+                imageReferences.TryAdd(label, definition.Groups["url"].Value);
+            }
+        }
+
         var result = new StringBuilder(text.Length);
         var position = 0;
         foreach (Match region in ContentRegion().Matches(text))
         {
-            result.Append(FormatMarkup(text[position..region.Index]));
+            result.Append(FormatMarkup(text[position..region.Index], imageReferences));
             if (region.Groups["code"].Success)
             {
                 result.Append(region.Value);
@@ -32,9 +49,10 @@ public static partial class ModDescription
             position = region.Index + region.Length;
         }
 
-        result.Append(FormatMarkup(text[position..]));
+        result.Append(FormatMarkup(text[position..], imageReferences));
         var formatted = result.ToString().Trim();
-        return string.IsNullOrWhiteSpace(HtmlTag().Replace(formatted, "")) ? "" : formatted;
+        return HtmlImageUrl().IsMatch(formatted) || !string.IsNullOrWhiteSpace(HtmlTag().Replace(formatted, ""))
+            ? formatted : "";
     }
 
     /// <summary>
@@ -68,27 +86,39 @@ public static partial class ModDescription
         {
             return [];
         }
-        return MarkdownImageUrl().Matches(markdown).Select(m => (m.Index, Url: m.Groups["url"].Value))
-            .Concat(HtmlImageUrl().Matches(markdown).Select(m => (m.Index, Url: m.Groups["url"].Value)))
-            .OrderBy(m => m.Index)
-            .Select(m => m.Url)
-            .Where(u => Uri.TryCreate(u, UriKind.Absolute, out var uri) && uri.Scheme == Uri.UriSchemeHttps)
+
+        var text = ContentRegion().Replace(Formatted(markdown), "\n");
+        return HtmlImageUrl().Matches(text)
+            .Select(match => WebUtility.HtmlDecode(match.Groups["url"].Value))
             .Distinct(StringComparer.Ordinal)
             .Take(max)
             .ToList();
     }
 
     /// <summary>
-    /// Removes images and author attributes before passing semantic tags to the HTML plugin.
-    /// Unwraps unsupported elements so their visible content remains readable in the app's theme.
+    /// Keeps only semantic tags and HTTPS images, stripping author styling and image dimensions.
+    /// Converts supported images to a common HTML form so Markdown and HTML share loading and layout.
     /// </summary>
-    private static string FormatMarkup(string text)
+    private static string FormatMarkup(string text, IReadOnlyDictionary<string, string> imageReferences)
     {
-        text = MarkdownImage().Replace(text, "");
-        text = ReferenceImage().Replace(text, "");
+        text = ReferenceDefinition().Replace(text, match =>
+            imageReferences.ContainsKey(ReferenceLabel(match.Groups["label"].Value)) ? "" : match.Value);
+        text = MarkdownImage().Replace(text, match => FormatImage(match.Groups["url"].Value, match.Groups["alt"].Value));
+        text = ReferenceImage().Replace(text, match =>
+        {
+            var label = ReferenceLabel(match.Groups["label"].Value is { Length: > 0 } reference
+                ? reference : match.Groups["alt"].Value);
+            return imageReferences.TryGetValue(label, out var url) ? FormatImage(url, match.Groups["alt"].Value) : "";
+        });
         return DisplayTag().Replace(text, match =>
         {
             var tag = match.Groups["tag"].Value.ToLowerInvariant();
+            if (tag == "img" && !match.Groups["closing"].Success)
+            {
+                return FormatImage(WebUtility.HtmlDecode(ImageAttribute(match.Value, "src")),
+                    WebUtility.HtmlDecode(ImageAttribute(match.Value, "alt")));
+            }
+
             return tag switch
             {
                 "h1" or "h2" or "h3" or "h4" or "h5" or "h6" or "p" or "div" or "span"
@@ -102,6 +132,23 @@ public static partial class ModDescription
         });
     }
 
+    /// <summary>Encodes the only two permitted image attributes; unsupported locations produce no image.</summary>
+    private static string FormatImage(string url, string alt)
+    {
+        return Uri.TryCreate(url, UriKind.Absolute, out var uri) && uri.Scheme == Uri.UriSchemeHttps
+            ? $"<img src=\"{WebUtility.HtmlEncode(uri.AbsoluteUri)}\" alt=\"{WebUtility.HtmlEncode(alt)}\">"
+            : "";
+    }
+
+    private static string ImageAttribute(string tag, string name)
+    {
+        return HtmlAttribute().Matches(tag)
+            .FirstOrDefault(match => match.Groups["name"].Value.Equals(name, StringComparison.OrdinalIgnoreCase))?
+            .Groups["value"].Value ?? "";
+    }
+
+    private static string ReferenceLabel(string label) => ReferenceLabelSpace().Replace(label.Trim(), " ");
+
     /// <summary>
     /// Matches non-content blocks and code together so backticks inside author CSS or JavaScript
     /// cannot split a style/script block and leak its remaining content into the description.
@@ -112,16 +159,22 @@ public static partial class ModDescription
     [GeneratedRegex("""<\s*(?<closing>/)?\s*(?<tag>[a-z][a-z0-9:-]*)(?:"[^"]*"|'[^']*'|[^'">])*?>""", RegexOptions.IgnoreCase, 1000)]
     private static partial Regex DisplayTag();
 
-    [GeneratedRegex(@"!\[[^\]]*\](?:[ \t]*\[[^\]]*\])?")]
+    [GeneratedRegex(@"!\[(?<alt>[^\]]*)\](?!\()(?:[ \t]*\[(?<label>[^\]]*)\])?")]
     private static partial Regex ReferenceImage();
 
-    [GeneratedRegex(@"!\[[^\]]*\]\((?<url>[^)\s]+)[^)]*\)")]
-    private static partial Regex MarkdownImageUrl();
+    [GeneratedRegex("""^[ ]{0,3}\[(?<label>[^\]]+)\]:[ \t]*(?:<(?<url>[^>\r\n]+)>|(?<url>\S+))[^\r\n]*$""", RegexOptions.Multiline, 1000)]
+    private static partial Regex ReferenceDefinition();
 
-    [GeneratedRegex(@"<img\b[^>]*?\bsrc\s*=\s*[""'](?<url>[^""']+)[""']", RegexOptions.IgnoreCase)]
+    [GeneratedRegex(@"\s+")]
+    private static partial Regex ReferenceLabelSpace();
+
+    [GeneratedRegex("""(?<name>[^\s=/>]+)\s*=\s*(?:"(?<value>[^"]*)"|'(?<value>[^']*)'|(?<value>[^\s>]+))""", RegexOptions.IgnoreCase, 1000)]
+    private static partial Regex HtmlAttribute();
+
+    [GeneratedRegex(@"<img src=""(?<url>[^""]+)""", RegexOptions.IgnoreCase)]
     private static partial Regex HtmlImageUrl();
 
-    [GeneratedRegex(@"!\[[^\]]*\]\([^)]*\)")]
+    [GeneratedRegex("""!\[(?<alt>[^\]]*)\]\([ \t]*(?:<(?<url>[^>\r\n]+)>|(?<url>(?:[^()\s]|\((?<depth>)|\)(?<-depth>))+)(?(depth)(?!)))[ \t]*(?:(?:"[^"]*"|'[^']*'|\([^)]*\))[ \t]*)?\)""", RegexOptions.None, 1000)]
     private static partial Regex MarkdownImage();
 
     [GeneratedRegex(@"\[(?<text>[^\]]*)\]\([^)]*\)")]

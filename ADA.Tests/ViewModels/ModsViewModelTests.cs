@@ -54,7 +54,8 @@ public sealed class ModsViewModelTests : IDisposable
     private async Task<ModsViewModel> OpenPageAsync(
         Func<string, CancellationToken, Task<IReadOnlyList<CatalogVersion>>>? resolveVersions = null,
         GameFolder? otherGame = null,
-        Action<DashboardViewModel>? dashboardReady = null)
+        Action<DashboardViewModel>? dashboardReady = null,
+        SettingsStore? settingsStore = null)
     {
         GameInstall CreateInstall(string root) => new(root, GameLauncher.Steam, GameHost.Windows, GameKind.Client, null, "test",
             new GameBuild(513885, "1.2.4.1"));
@@ -78,7 +79,7 @@ public sealed class ModsViewModelTests : IDisposable
         dashboardReady?.Invoke(dashboard);
         var page = new ModsViewModel(_store, (r, _, ct) => GetVersions(r, ct), new ModResolutionService(resolveVersions ?? GetVersions, installs), installs, profiles, dashboard,
             new ModLogos(new HttpClient(new FakeHttpHandler())), new FavouritesStore(_dir.Combine("favourites.json")),
-            NullLogger<ModsViewModel>.Instance, Settings);
+            NullLogger<ModsViewModel>.Instance, settingsStore ?? Settings);
 
         // Selecting the first detected game starts a refresh. Finish it before starting another,
         // so assertions cannot read the results while that initial search is replacing them.
@@ -860,6 +861,267 @@ public sealed class ModsViewModelTests : IDisposable
         Assert.Equal(["B"], new ModInstaller(_game.Root, () => false).Installed.Keys);
         Assert.False(page.SelectedMod!.ShowUninstall);
         Assert.Null(page.SelectedMod.PendingUninstall);
+    }
+
+    [Fact]
+    public async Task Endless_scroll_reaches_every_match_once_and_keeps_existing_items()
+    {
+        AddBrowsingMods(233);
+        var page = await OpenPageAsync();
+        var first = page.Results[0];
+
+        Assert.False(page.IsPaged);
+        Assert.Equal(50, page.Results.Count);
+        var seen = new List<string>(page.Results.Select(m => m.Reference));
+        while (page.LoadMoreCommand.CanExecute(null))
+        {
+            var previousCount = page.Results.Count;
+            page.LoadMoreCommand.Execute(null);
+            Assert.InRange(page.Results.Count - previousCount, 1, 50);
+            seen.AddRange(page.Results.Skip(previousCount).Select(m => m.Reference));
+        }
+
+        Assert.Same(first, page.Results[0]);
+        Assert.Equal(233, seen.Count);
+        Assert.Equal(233, seen.Distinct().Count());
+        Assert.Equal(_store.Search("", int.MaxValue).Select(m => m.Reference), seen);
+        Assert.False(page.HasMoreResults);
+        page.LoadMoreCommand.Execute(null);
+        Assert.Equal(233, page.Results.Count);
+        Assert.Equal("233 mods", page.ResultsText);
+    }
+
+    [Fact]
+    public async Task Extending_results_uses_the_snapshot_until_a_refresh()
+    {
+        AddBrowsingMods(120);
+        var page = await OpenPageAsync();
+        _store.Upsert([CatalogFixtures.Mod("New", popularity: int.MaxValue)], DateTimeOffset.UtcNow);
+
+        page.LoadMoreCommand.Execute(null);
+
+        Assert.Equal(100, page.Results.Count);
+        Assert.DoesNotContain(page.Results, m => m.Reference == "New");
+        await page.RefreshAsync();
+        Assert.Equal(100, page.Results.Count);
+        Assert.Equal("New", page.Results[0].Reference);
+    }
+
+    [Theory]
+    [InlineData(25)]
+    [InlineData(50)]
+    [InlineData(100)]
+    [InlineData(200)]
+    [InlineData(500)]
+    public async Task Pagination_visits_every_match_in_order_at_each_supported_size(int size)
+    {
+        AddBrowsingMods(size * 2 + 7);
+        Settings.Save(new AppSettings(EndlessScroll: false, ModsPageSize: size));
+        var page = await OpenPageAsync();
+        var seen = new List<string>();
+
+        Assert.True(page.IsPaged);
+        Assert.False(page.PreviousPageCommand.CanExecute(null));
+        Assert.False(page.LoadMoreCommand.CanExecute(null));
+        Assert.Equal(3, page.TotalPages);
+        for (var number = 1; number <= 3; number++)
+        {
+            Assert.Equal(number, page.CurrentPage);
+            Assert.Equal(number == 3 ? 7 : size, page.Results.Count);
+            Assert.Equal($"Page {number} of 3", page.PageText);
+            seen.AddRange(page.Results.Select(m => m.Reference));
+            if (number < 3)
+            {
+                Assert.True(page.NextPageCommand.CanExecute(null));
+                page.NextPageCommand.Execute(null);
+            }
+        }
+
+        Assert.Equal(_store.Search("", int.MaxValue).Select(m => m.Reference), seen);
+        Assert.False(page.NextPageCommand.CanExecute(null));
+        page.NextPageCommand.Execute(null);
+        Assert.Equal(3, page.CurrentPage);
+        page.PreviousPageCommand.Execute(null);
+        Assert.Equal(2, page.CurrentPage);
+        Assert.Equal(seen.Skip(size).Take(size), page.Results.Select(m => m.Reference));
+        Assert.Equal($"{size + 1:N0}–{size * 2:N0} of {size * 2 + 7:N0} mods", page.ResultsText);
+    }
+
+    [Theory]
+    [InlineData(0, 0)]
+    [InlineData(1, 1)]
+    [InlineData(50, 1)]
+    [InlineData(100, 2)]
+    public async Task Pagination_handles_empty_and_exact_pages(int count, int pages)
+    {
+        AddBrowsingMods(count);
+        Settings.Save(new AppSettings(EndlessScroll: false));
+        var page = await OpenPageAsync();
+
+        Assert.Equal(pages, page.TotalPages);
+        Assert.Equal(Math.Min(50, count), page.Results.Count);
+        Assert.False(page.PreviousPageCommand.CanExecute(null));
+        Assert.Equal(pages > 1, page.NextPageCommand.CanExecute(null));
+        if (count == 0)
+        {
+            Assert.Equal("No pages", page.PageText);
+            Assert.Contains("hasn't been downloaded", page.ResultsText);
+        }
+    }
+
+    [Fact]
+    public async Task New_searches_disable_old_navigation_immediately_and_reset_the_window()
+    {
+        AddBrowsingMods(231);
+        var page = await OpenPageAsync();
+        page.LoadMoreCommand.Execute(null);
+        page.SearchText = "odd";
+
+        Assert.True(page.IsSearching);
+        Assert.False(page.LoadMoreCommand.CanExecute(null));
+        page.LoadMoreCommand.Execute(null);
+        Assert.Equal(100, page.Results.Count);
+        page.SearchText = "even";
+        await page.PendingSearch;
+
+        Assert.Equal(50, page.Results.Count);
+        Assert.All(page.Results, m => Assert.Contains("even", m.Mod.Tags));
+        page.LoadMoreCommand.Execute(null);
+        page.Sort = ModListQuery.Sorts.Single(o => o.Value == ModSort.Name);
+        await page.PendingSearch;
+        Assert.Equal(50, page.Results.Count);
+        page.LoadMoreCommand.Execute(null);
+        page.Tags.Single(t => t.Name == "even").IsSelected = true;
+        await page.PendingSearch;
+        Assert.Equal(50, page.Results.Count);
+        page.Filter = ModListQuery.Filters.Single(o => o.Value == ModFilter.Installed);
+        await page.PendingSearch;
+        Assert.Empty(page.Results);
+        Assert.False(page.HasMoreResults);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Details_and_refresh_preserve_the_browsing_window_and_offset(bool endless)
+    {
+        AddBrowsingMods(233);
+        Settings.Save(new AppSettings(EndlessScroll: endless));
+        var page = await OpenPageAsync();
+        if (endless)
+        {
+            page.LoadMoreCommand.Execute(null);
+            page.LoadMoreCommand.Execute(null);
+        }
+        else
+        {
+            page.NextPageCommand.Execute(null);
+        }
+        var references = page.Results.Select(m => m.Reference).ToList();
+        page.ResultsScrollOffset = 1234;
+        page.SelectedMod = page.Results[20];
+        await page.PendingDetails;
+        page.BackCommand.Execute(null);
+        await page.RefreshAsync();
+
+        Assert.Equal(references, page.Results.Select(m => m.Reference));
+        Assert.Equal(1234, page.ResultsScrollOffset);
+        Assert.Equal(endless ? 1 : 2, page.CurrentPage);
+    }
+
+    [Fact]
+    public async Task Delayed_browsing_saves_apply_after_returning_to_mods_and_preserve_other_choices()
+    {
+        AddBrowsingMods(233);
+        var store = Settings;
+        var page = await OpenPageAsync(settingsStore: store);
+        page.IsCardView = true;
+        await page.PendingChoicesSave;
+        page.LoadMoreCommand.Execute(null);
+        var settings = new SettingsViewModel(store, new ArchiveCache(_dir.Combine("Archives")), NullLogger<SettingsViewModel>.Instance)
+        {
+            EndlessScroll = false,
+            ModsPageSize = 25,
+        };
+        await page.RefreshAsync();
+        await settings.PendingSave;
+        await page.PendingBrowsingUpdate;
+
+        Assert.True(page.IsPaged);
+        Assert.Equal(25, page.Results.Count);
+        page.NextPageCommand.Execute(null);
+        settings.ModsPageSize = 200;
+        await settings.PendingSave;
+        await page.PendingBrowsingUpdate;
+        Assert.Equal(1, page.CurrentPage);
+        Assert.Equal(200, page.Results.Count);
+        settings.EndlessScroll = true;
+        await settings.PendingSave;
+        await page.PendingBrowsingUpdate;
+        Assert.False(page.IsPaged);
+        Assert.Equal(50, page.Results.Count);
+        page.LoadMoreCommand.Execute(null);
+        settings.ModsPageSize = 500;
+        await settings.PendingSave;
+        await page.PendingBrowsingUpdate;
+        Assert.Equal(100, page.Results.Count);
+        Assert.Equal(nameof(ModView.Card), store.Load().ModsView);
+        Assert.Equal(500, store.Load().ModsPageSize);
+        Assert.True(store.Load().EndlessScroll);
+    }
+
+    [Fact]
+    public async Task Refresh_clamps_the_last_page_after_the_catalogue_shrinks()
+    {
+        AddBrowsingMods(120);
+        Settings.Save(new AppSettings(EndlessScroll: false));
+        var page = await OpenPageAsync();
+        page.NextPageCommand.Execute(null);
+        page.NextPageCommand.Execute(null);
+        page.ResultsScrollOffset = 1234;
+        var now = DateTimeOffset.UtcNow.AddDays(1);
+        _store.Upsert([CatalogFixtures.Mod("Remaining")], now);
+        _store.DeleteNotSeenSince(now);
+
+        await page.RefreshAsync();
+
+        Assert.Equal(1, page.CurrentPage);
+        Assert.Equal(0, page.ResultsScrollOffset);
+        Assert.Equal("Remaining", Assert.Single(page.Results).Reference);
+        Assert.False(page.NextPageCommand.CanExecute(null));
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Changing_game_resets_the_result_window_and_scroll_offset(bool endless)
+    {
+        AddBrowsingMods(231);
+        Settings.Save(new AppSettings(EndlessScroll: endless, ModsPageSize: 25));
+        var otherGame = new GameFolder(_dir.Combine("OtherGame"));
+        var page = await OpenPageAsync(otherGame: otherGame);
+        if (endless)
+        {
+            page.LoadMoreCommand.Execute(null);
+        }
+        else
+        {
+            page.NextPageCommand.Execute(null);
+        }
+        page.ResultsScrollOffset = 1234;
+
+        page.SelectedGame = page.Games[1];
+        await page.PendingSearch;
+
+        Assert.Equal(endless ? 50 : 25, page.Results.Count);
+        Assert.Equal(1, page.CurrentPage);
+        Assert.Equal(0, page.ResultsScrollOffset);
+    }
+
+    private void AddBrowsingMods(int count)
+    {
+        _store.Upsert(Enumerable.Range(0, count).Select(i => CatalogFixtures.Mod(
+            $"Mod{i:D4}", popularity: count - i, tags: [i % 2 == 0 ? "even" : "odd"])), DateTimeOffset.UtcNow);
     }
 
     private sealed class KnownGames(GameInstall[] installs) : IGameDetector

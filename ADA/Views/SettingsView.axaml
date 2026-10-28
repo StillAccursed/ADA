@@ -59,10 +59,69 @@
                     </StackPanel>
                 </Border>
 
-                <TextBlock Text="{Binding ErrorText}" TextWrapping="Wrap"
-                           IsVisible="{Binding ErrorText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
-                           Foreground="{DynamicResource WarningBrush}" />
             </StackPanel>
+
+            <StackPanel Spacing="8">
+                <TextBlock Text="BROWSING" FontSize="12" FontWeight="SemiBold" LetterSpacing="1"
+                           Foreground="{DynamicResource TextSecondaryBrush}" />
+                <Border Padding="20,16" CornerRadius="8" BorderThickness="1"
+                        Background="{DynamicResource SurfaceRaisedBrush}"
+                        BorderBrush="{DynamicResource BorderSubtleBrush}">
+                    <StackPanel Spacing="16">
+                        <Grid ColumnDefinitions="*,Auto">
+                            <StackPanel Spacing="4" Margin="0,0,24,0">
+                                <TextBlock Text="Endless Scroll" FontWeight="SemiBold"
+                                           Foreground="{DynamicResource TextPrimaryBrush}" />
+                                <TextBlock TextWrapping="Wrap" Foreground="{DynamicResource TextSecondaryBrush}"
+                                           Text="Show more matching mods as you scroll. Turn off to browse the Mods page using Previous and Next." />
+                            </StackPanel>
+                            <ToggleSwitch Grid.Column="1" VerticalAlignment="Center"
+                                          OnContent="On" OffContent="Off"
+                                          AutomationProperties.Name="Endless Scroll"
+                                          IsChecked="{Binding EndlessScroll}" />
+                        </Grid>
+
+                        <Border Height="1" Background="{DynamicResource BorderSubtleBrush}" />
+
+                        <Grid ColumnDefinitions="*,Auto">
+                            <StackPanel Spacing="4" Margin="0,0,24,0">
+                                <TextBlock Text="Mods per page" FontWeight="SemiBold"
+                                           Foreground="{DynamicResource TextPrimaryBrush}" />
+                                <TextBlock TextWrapping="Wrap" Foreground="{DynamicResource TextSecondaryBrush}"
+                                           Text="How many mods to show on each page when Endless Scroll is off. Your choice is kept when Endless Scroll is on." />
+                            </StackPanel>
+                            <ComboBox Grid.Column="1" VerticalAlignment="Center" MinWidth="120"
+                                      AutomationProperties.Name="Mods per page"
+                                      IsEnabled="{Binding !EndlessScroll}"
+                                      ItemsSource="{Binding ModsPageSizes}"
+                                      SelectedItem="{Binding ModsPageSize}" />
+                        </Grid>
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+
+            <StackPanel Spacing="8">
+                <TextBlock Text="DASHBOARD" FontSize="12" FontWeight="SemiBold" LetterSpacing="1"
+                           Foreground="{DynamicResource TextSecondaryBrush}" />
+                <Border Padding="20,16" CornerRadius="8" BorderThickness="1"
+                        Background="{DynamicResource SurfaceRaisedBrush}" BorderBrush="{DynamicResource BorderSubtleBrush}">
+                    <Grid ColumnDefinitions="*,Auto">
+                        <StackPanel Spacing="4" Margin="0,0,24,0">
+                            <TextBlock Text="Latest updated mods" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimaryBrush}" />
+                            <TextBlock Text="Recent releases shown on the dashboard. Changes apply as soon as they are saved."
+                                       TextWrapping="Wrap" Foreground="{DynamicResource TextSecondaryBrush}" />
+                        </StackPanel>
+                        <NumericUpDown Grid.Column="1" Width="120" VerticalAlignment="Center"
+                                       AutomationProperties.Name="Latest updated mods"
+                                       Minimum="{Binding MinDashboardLatestModsCount}" Maximum="{Binding MaxDashboardLatestModsCount}"
+                                       Increment="1" FormatString="0" ClipValueToMinMax="True" Value="{Binding DashboardLatestModsCount}" />
+                    </Grid>
+                </Border>
+            </StackPanel>
+
+            <TextBlock Text="{Binding ErrorText}" TextWrapping="Wrap"
+                       IsVisible="{Binding ErrorText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                       Foreground="{DynamicResource WarningBrush}" />
         </StackPanel>
     </ScrollViewer>
 </UserControl>

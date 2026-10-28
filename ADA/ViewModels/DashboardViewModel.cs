@@ -7,30 +7,18 @@ using ADA.Platform.Detection;
 
 namespace ADA.ViewModels;
 
-public partial class DashboardViewModel(
-    IGameDetector detector,
-    CatalogStatusViewModel catalog,
-    Func<GameInstall, GameInstallViewModel> installViewModel,
-    ILogger<DashboardViewModel> log,
-    Func<CancellationToken, Task<IReadOnlyList<GameProcess>>>? findRunning = null,
-    TimeSpan? watchInterval = null)
-    : ViewModelBase
+public partial class DashboardViewModel : ViewModelBase
 {
-    // Cheap (one `ps` call), and quick enough that the banner feels live.
-    private readonly TimeSpan _watchInterval = watchInterval ?? TimeSpan.FromSeconds(3);
-
-    // Long enough for the game to save and quit on its own before it is forced.
-    private static readonly TimeSpan CloseGracePeriod = TimeSpan.FromSeconds(15);
-
-    private readonly Func<CancellationToken, Task<IReadOnlyList<GameProcess>>> _findRunning =
-        findRunning ?? GameProcesses.FindRunningAsync;
-
-    // The watcher and "Close Satisfactory" both refresh; one at a time keeps the state consistent.
+    private static readonly TimeSpan CLOSE_GRACE_PERIOD = TimeSpan.FromSeconds(15);
+    private readonly TimeSpan _watchInterval;
+    private readonly Func<CancellationToken, Task<IReadOnlyList<GameProcess>>> _findRunning;
     private readonly SemaphoreSlim _refreshGate = new(1, 1);
-
+    private readonly IGameDetector _detector;
+    private readonly Func<GameInstall, GameInstallViewModel> _createInstall;
+    private readonly ILogger<DashboardViewModel> _log;
     private IReadOnlyList<GameProcess> _gameProcesses = [];
 
-    public CatalogStatusViewModel Catalog { get; } = catalog;
+    public CatalogStatusViewModel Catalog { get; }
 
     public ObservableCollection<GameInstallViewModel> Installs { get; } = [];
 
@@ -69,50 +57,49 @@ public partial class DashboardViewModel(
 
     public bool ShowCloseOffer => IsGameRunning && !ConfirmingClose && !IsClosingGame;
 
-    [RelayCommand]
-    private async Task ScanAsync()
+    public DashboardViewModel(IGameDetector detector, CatalogStatusViewModel catalog,
+        Func<GameInstall, GameInstallViewModel> installViewModel, ILogger<DashboardViewModel> log,
+        Func<CancellationToken, Task<IReadOnlyList<GameProcess>>>? findRunning = null,
+        TimeSpan? watchInterval = null,
+        ADA.Infrastructure.Catalog.ModCatalogStore? store = null,
+        ADA.Infrastructure.Settings.SettingsStore? settings = null,
+        ADA.Infrastructure.Profiles.GameProfiles? profiles = null,
+        ADA.Infrastructure.Installing.ModResolutionService? resolution = null,
+        ADA.Infrastructure.IO.DashboardStorageReader? storage = null,
+        ADA.Infrastructure.Installing.ModInstallService? installs = null)
     {
-        IsScanning = true;
-        try
+        _detector = detector;
+        Catalog = catalog;
+        _createInstall = installViewModel;
+        _log = log;
+        _watchInterval = watchInterval ?? TimeSpan.FromSeconds(3);
+        _findRunning = findRunning ?? GameProcesses.FindRunningAsync;
+        _store = store;
+        _settings = settings;
+        _profiles = profiles;
+        _resolution = resolution;
+        _storage = storage;
+        _uiContext = SynchronizationContext.Current;
+        if (settings is not null)
         {
-            // Detection reads registry hives and walks folders; keep it off the UI thread.
-            var found = await Task.Run(detector.Detect);
-            foreach (var old in Installs)
-                old.PropertyChanged -= OnInstallChanged;
-            Installs.Clear();
-            foreach (var install in found)
-            {
-                var vm = installViewModel(install);
-                vm.IsGameRunning = IsGameRunning;
-                vm.PropertyChanged += OnInstallChanged;
-                Installs.Add(vm);
-            }
-            HasUpdates = false;
-            log.LogInformation("Found {Count} Satisfactory install(s): {Paths}", found.Count, found.Select(f => f.GamePath));
+            settings.Changed += OnCardSourceChanged;
         }
-        catch (Exception e)
+        if (profiles is not null)
         {
-            // Detectors shouldn't throw, but a failed scan must never take the app down.
-            log.LogError(e, "Game detection failed");
+            profiles.Changed += OnCardSourceChanged;
         }
-        finally
+        if (installs is not null)
         {
-            IsScanning = false;
+            installs.Changed += OnCardSourceChanged;
         }
-
-        // For each game: finish any interrupted install, then the fast check.
-        foreach (var install in Installs)
-            _ = install.CheckAsync();
+        if (catalog is not null)
+        {
+            catalog.PropertyChanged += OnCatalogChanged;
+        }
     }
 
     /// <summary>Looks for mod updates in every game; run after the catalogue has been checked. Never throws.</summary>
     public Task FindUpdatesAsync() => Task.WhenAll(Installs.ToList().Select(i => i.FindUpdatesAsync()));
-
-    private void OnInstallChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
-    {
-        if (e.PropertyName == nameof(GameInstallViewModel.HasUpdates))
-            HasUpdates = Installs.Any(i => i.HasUpdates);
-    }
 
     /// <summary>
     /// Watches for Satisfactory starting and stopping for as long as the app runs. A failed check is
@@ -133,10 +120,80 @@ public partial class DashboardViewModel(
             {
                 // Log once per outage, not every 3 seconds.
                 if (!failing)
-                    log.LogWarning(e, "Couldn't check whether Satisfactory is running");
+                {
+                    _log.LogWarning(e, "Couldn't check whether Satisfactory is running");
+                }
                 failing = true;
             }
         } while (await timer.WaitForNextTickAsync(ct));
+    }
+
+    partial void OnIsGameRunningChanged(bool value)
+    {
+        OnPropertyChanged(nameof(CanChooseProfile));
+        OnPropertyChanged(nameof(GameStateText));
+    }
+
+    private void OnInstallChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        HasUpdates = Installs.Any(i => i.HasUpdates);
+        OnPropertyChanged(nameof(CanChooseProfile));
+        OnPropertyChanged(nameof(Notifications));
+        if (e.PropertyName == nameof(GameInstallViewModel.IsBusy) && sender is GameInstallViewModel { IsBusy: false })
+        {
+            _ = RefreshCardsAsync();
+        }
+    }
+
+    /// <summary>Retains the selected game across detection and starts guarded recovery checks.</summary>
+    [RelayCommand]
+    private async Task ScanAsync()
+    {
+        if (Installs.Any(i => i.IsBusy || i.HasModOperations || i.IsSwitchingProfile))
+        {
+            ScanError = "Wait for the current installation operation before rescanning.";
+            return;
+        }
+        var selectedPath = SelectedInstall?.Install.GamePath;
+        IsScanning = true;
+        ScanError = null;
+        try
+        {
+            // Detection reads registry hives and walks folders; keep it off the UI thread.
+            var found = await Task.Run(_detector.Detect);
+            foreach (var old in Installs)
+            {
+                old.PropertyChanged -= OnInstallChanged;
+            }
+            Installs.Clear();
+            foreach (var install in found)
+            {
+                var vm = _createInstall(install);
+                vm.IsGameRunning = IsGameRunning;
+                vm.PropertyChanged += OnInstallChanged;
+                Installs.Add(vm);
+            }
+            SelectedInstall = Installs.FirstOrDefault(i => i.Install.GamePath == selectedPath) ?? Installs.FirstOrDefault();
+            HasUpdates = false;
+            _log.LogInformation("Found {Count} Satisfactory install(s): {Paths}", found.Count, found.Select(f => f.GamePath));
+        }
+        catch (Exception e)
+        {
+            // Detectors shouldn't throw, but a failed scan must never take the app down.
+            _log.LogError(e, "Game detection failed");
+            ScanError = "Couldn’t detect installations: " + e.Message;
+        }
+        finally
+        {
+            IsScanning = false;
+        }
+
+        // For each game: finish any interrupted install, then the fast check.
+        foreach (var install in Installs)
+        {
+            _ = install.CheckAsync();
+        }
+        await RefreshCardsAsync();
     }
 
     [RelayCommand]
@@ -156,17 +213,17 @@ public partial class DashboardViewModel(
         IsClosingGame = true;
         try
         {
-            var closed = await GameProcesses.CloseAsync(_gameProcesses, CloseGracePeriod);
+            var closed = await GameProcesses.CloseAsync(_gameProcesses, CLOSE_GRACE_PERIOD);
             if (!closed)
             {
-                log.LogWarning("Satisfactory didn't close within {Grace}", CloseGracePeriod);
+                _log.LogWarning("Satisfactory didn't close within {Grace}", CLOSE_GRACE_PERIOD);
                 CloseError = "Satisfactory didn't close. Quit it from the game's menu, then try again.";
             }
             await RefreshGameStateAsync();
         }
         catch (Exception e)
         {
-            log.LogError(e, "Closing Satisfactory failed");
+            _log.LogError(e, "Closing Satisfactory failed");
             CloseError = $"Couldn't close Satisfactory: {e.Message}";
         }
         finally
@@ -183,19 +240,25 @@ public partial class DashboardViewModel(
             _gameProcesses = await _findRunning(ct);
             var running = _gameProcesses.Count > 0;
             if (running == IsGameRunning)
+            {
                 return;
+            }
 
-            log.LogInformation(running ? "Satisfactory started" : "Satisfactory closed");
+            _log.LogInformation(running ? "Satisfactory started" : "Satisfactory closed");
             IsGameRunning = running;
             if (!running)
+            {
                 ConfirmingClose = false;
+            }
 
             foreach (var install in Installs)
             {
                 install.IsGameRunning = running;
                 // Just closed: finish any recovery that was waiting, and re-check.
                 if (!running)
+                {
                     _ = install.CheckAsync();
+                }
             }
         }
         finally

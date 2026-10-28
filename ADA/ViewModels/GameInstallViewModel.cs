@@ -16,6 +16,14 @@ public partial class GameInstallViewModel(GameInstall install, ModInstallService
     private IReadOnlyList<FoundMod> _found = [];
     private ModChangePlan? _fix;
 
+    /// <summary>Prevents another UI mutation while the captured profile switch is in progress.</summary>
+    [ObservableProperty]
+    internal partial bool IsSwitchingProfile { get; set; }
+
+    /// <summary>Includes waiting requests on the Mods page, so profile switching cannot overtake them.</summary>
+    [ObservableProperty]
+    internal partial bool HasModOperations { get; set; }
+
     public GameInstall Install { get; } = install;
 
     [ObservableProperty]
@@ -108,10 +116,18 @@ public partial class GameInstallViewModel(GameInstall install, ModInstallService
     /// <summary>Launch-time recovery and fast check. Never throws.</summary>
     public async Task CheckAsync()
     {
+        if (IsBusy || IsSwitchingProfile)
+        {
+            return;
+        }
         IsBusy = true;
         try
         {
             var status = await service.RecoverAndCheckAsync(Install);
+            if (!status.RecoveryDeferred)
+            {
+                await profiles.ReconcileAsync(Install);
+            }
             Notice = DescribeRecovery(status);
             Show(status.Check);
             ProfileName = await profiles.ActiveNameAsync(Install);

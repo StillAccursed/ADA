@@ -1,6 +1,7 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="using:ADA.ViewModels"
+        xmlns:imaging="using:Avalonia.Media.Imaging"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         mc:Ignorable="d" d:DesignWidth="1100" d:DesignHeight="700"
@@ -11,6 +12,19 @@
         Width="1100" Height="700" MinWidth="760" MinHeight="480"
         Background="{DynamicResource SurfaceBrush}">
 
+    <Window.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.ThemeDictionaries>
+                <ResourceDictionary x:Key="Light">
+                    <imaging:Bitmap x:Key="SidebarBadge">avares://ADA/Assets/ada-badge-light.png</imaging:Bitmap>
+                </ResourceDictionary>
+                <ResourceDictionary x:Key="Dark">
+                    <imaging:Bitmap x:Key="SidebarBadge">avares://ADA/Assets/ada-badge-dark.png</imaging:Bitmap>
+                </ResourceDictionary>
+            </ResourceDictionary.ThemeDictionaries>
+        </ResourceDictionary>
+    </Window.Resources>
+
     <!-- Skyve-style shell: navigation rail | page. The details pane arrives with the Mods page. -->
     <Grid ColumnDefinitions="200,*">
         <Border Grid.Column="0"
@@ -18,11 +32,14 @@
                 BorderBrush="{DynamicResource BorderSubtleBrush}"
                 BorderThickness="0,0,1,0">
             <DockPanel>
-                <TextBlock DockPanel.Dock="Top"
-                           Text="ADA"
-                           Margin="20,24,20,20"
-                           FontSize="16" FontWeight="Bold" LetterSpacing="2"
-                           Foreground="{DynamicResource AccentBrush}" />
+                <Image DockPanel.Dock="Top"
+                       Source="{DynamicResource SidebarBadge}"
+                       Width="160"
+                       Height="56"
+                       Margin="20,24,20,20"
+                       HorizontalAlignment="Center"
+                       Stretch="Uniform"
+                       AutomationProperties.Name="ADA" />
                 <!-- Footer: check installed mods for updates; the catalogue's last refresh underneath. -->
                 <StackPanel DockPanel.Dock="Bottom" Margin="16,8,16,16" Spacing="6">
                     <Border Height="1" Margin="-8,0,-8,8" Background="{DynamicResource BorderSubtleBrush}" />
@@ -37,17 +54,33 @@
                          ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                          Background="Transparent"
                          Margin="8,0">
+                    <ListBox.Styles>
+                        <Style Selector="ListBoxItem" x:DataType="vm:NavItem">
+                            <Setter Property="IsEnabled" Value="{Binding !IsHeader}" />
+                            <Setter Property="Focusable" Value="{Binding !IsHeader}" />
+                            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                        </Style>
+                    </ListBox.Styles>
                     <ListBox.ItemTemplate>
                         <DataTemplate x:DataType="vm:NavItem">
-                            <Grid ColumnDefinitions="16,*,Auto" ColumnSpacing="12">
-                                <TextBlock Text="{Binding Glyph}" TextAlignment="Center"
+                            <Grid>
+                                <TextBlock Text="{Binding Title}"
+                                           IsVisible="{Binding IsHeader}"
+                                           Margin="0,12,0,4"
+                                           TextAlignment="Center"
+                                           FontSize="12" FontWeight="SemiBold"
                                            Foreground="{DynamicResource TextSecondaryBrush}" />
-                                <TextBlock Grid.Column="1" Text="{Binding Title}"
-                                           Foreground="{DynamicResource TextPrimaryBrush}" />
-                                <TextBlock Grid.Column="2" Text="↑" FontWeight="Bold"
-                                           IsVisible="{Binding HasUpdates}"
-                                           ToolTip.Tip="Mod updates available"
-                                           Foreground="{DynamicResource AccentBrush}" />
+                                <Grid IsVisible="{Binding !IsHeader}"
+                                      ColumnDefinitions="16,*,Auto" ColumnSpacing="12">
+                                    <TextBlock Text="{Binding Glyph}" TextAlignment="Center"
+                                               Foreground="{DynamicResource TextSecondaryBrush}" />
+                                    <TextBlock Grid.Column="1" Text="{Binding Title}"
+                                               Foreground="{DynamicResource TextPrimaryBrush}" />
+                                    <TextBlock Grid.Column="2" Text="↑" FontWeight="Bold"
+                                               IsVisible="{Binding HasUpdates}"
+                                               ToolTip.Tip="Mod updates available"
+                                               Foreground="{DynamicResource AccentBrush}" />
+                                </Grid>
                             </Grid>
                         </DataTemplate>
                     </ListBox.ItemTemplate>

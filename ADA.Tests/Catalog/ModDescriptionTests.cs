@@ -34,7 +34,7 @@ public class ModDescriptionTests
     }
 
     [Fact]
-    public void Formatted_removes_style_script_comments_and_images_but_keeps_visible_content()
+    public void Formatted_removes_hidden_content_but_keeps_https_images_in_place()
     {
         const string markdown = """
             <div><STYLE>.rp-title { display: inline-block; }</STYLE></div>
@@ -54,8 +54,9 @@ public class ModDescriptionTests
         Assert.DoesNotContain("rp-title", formatted);
         Assert.DoesNotContain("implementation notes", formatted);
         Assert.DoesNotContain("window.alert", formatted);
-        Assert.DoesNotContain("![", formatted);
-        Assert.DoesNotContain("<img", formatted);
+        Assert.Contains("<img src=\"https://example.com/banner.png\" alt=\"Banner\">", formatted);
+        Assert.Contains("<img src=\"https://example.com/photo.png\" alt=\"Photo\">", formatted);
+        Assert.DoesNotContain("![Reference image]", formatted);
         Assert.Equal(["https://example.com/banner.png", "https://example.com/photo.png"], ModDescription.ImageUrls(markdown));
     }
 
@@ -139,5 +140,104 @@ public class ModDescriptionTests
             """;
 
         Assert.Equal(["https://example.com/1.png", "https://example.com/2.jpg"], ModDescription.ImageUrls(markdown));
+    }
+
+    [Fact]
+    public void Mixed_images_keep_their_positions_between_paragraphs()
+    {
+        const string markdown = "Before\n\n![Banner](https://example.com/banner.png)\n\nBetween\n\n<img src='https://example.com/photo.png'>\n\nAfter";
+
+        Assert.Equal("Before\n\n<img src=\"https://example.com/banner.png\" alt=\"Banner\">\n\nBetween\n\n<img src=\"https://example.com/photo.png\" alt=\"\">\n\nAfter",
+            ModDescription.Formatted(markdown));
+    }
+
+    [Theory]
+    [InlineData("![Banner](https://example.com/banner.png)")]
+    [InlineData("<div><img src='https://example.com/banner.png'></div>")]
+    public void Image_only_descriptions_do_not_fall_back_to_short_text(string markdown)
+    {
+        var mod = new ADA.ViewModels.ModItemViewModel(
+            ADA.Tests.Fixtures.CatalogFixtures.Mod("Example", shortDescription: "Fallback", fullDescription: markdown));
+
+        Assert.Contains("<img src=\"https://example.com/banner.png\"", mod.Description);
+        Assert.DoesNotContain("Fallback", mod.Description);
+        Assert.Equal("", ModDescription.Readable(markdown));
+    }
+
+    [Theory]
+    [InlineData("http://example.com/image.png")]
+    [InlineData("file:///tmp/image.png")]
+    [InlineData("avares://ADA/Assets/image.png")]
+    [InlineData("data:image/png;base64,AAAA")]
+    [InlineData("javascript:alert(1)")]
+    [InlineData("../image.png")]
+    public void Unsupported_image_locations_are_removed(string url)
+    {
+        Assert.Equal("Before\n\nAfter", ModDescription.Formatted($"Before\n![Image]({url})\nAfter"));
+        Assert.Equal("", ModDescription.Formatted($"<img src='{url}'>"));
+        Assert.Empty(ModDescription.ImageUrls($"![Image]({url})\n<img src='{url}'>"));
+    }
+
+    [Fact]
+    public void Html_images_keep_only_encoded_source_and_alt_attributes()
+    {
+        const string markdown = "<IMG data-src='https://wrong.example/image.png' SRC='https://example.com/image.png?a=1&amp;b=2' alt='A &quot;photo&quot; &amp; more' width='9000' height='10' style='display:none' onerror='alert(1)' />";
+
+        Assert.Equal("<img src=\"https://example.com/image.png?a=1&amp;b=2\" alt=\"A &quot;photo&quot; &amp; more\">",
+            ModDescription.Formatted(markdown));
+        Assert.Equal(["https://example.com/image.png?a=1&b=2"], ModDescription.ImageUrls(markdown));
+    }
+
+    [Theory]
+    [InlineData("![Image](https://example.com/image_(1).png \"Title\")", "https://example.com/image_(1).png")]
+    [InlineData("![Image](<https://example.com/image.png> 'Title')", "https://example.com/image.png")]
+    [InlineData("![Image](https://example.com/image.png?x=1&y=2)", "https://example.com/image.png?x=1&amp;y=2")]
+    public void Markdown_image_destinations_are_preserved_and_encoded(string markdown, string expected)
+    {
+        Assert.Equal($"<img src=\"{expected}\" alt=\"Image\">", ModDescription.Formatted(markdown));
+    }
+
+    [Fact]
+    public void Reference_images_resolve_case_and_whitespace_and_stay_in_gallery_order()
+    {
+        const string markdown = """
+            ![First][ Banner  Image ]
+            <img src="https://example.com/second.png">
+            ![Third][]
+            ![Fourth]
+
+            [banner image]: <https://example.com/first.png> "Title"
+            [Third]: https://example.com/third.png
+            [Fourth]: https://example.com/fourth.png
+            """;
+
+        var formatted = ModDescription.Formatted(markdown);
+
+        Assert.Contains("<img src=\"https://example.com/first.png\" alt=\"First\">", formatted);
+        Assert.Contains("<img src=\"https://example.com/third.png\" alt=\"Third\">", formatted);
+        Assert.Contains("<img src=\"https://example.com/fourth.png\" alt=\"Fourth\">", formatted);
+        Assert.DoesNotContain("[banner image]:", formatted);
+        Assert.DoesNotContain("![", formatted);
+        Assert.Equal(["https://example.com/first.png", "https://example.com/second.png", "https://example.com/third.png", "https://example.com/fourth.png"],
+            ModDescription.ImageUrls(markdown));
+        Assert.Equal("", ModDescription.Readable(markdown));
+    }
+
+    [Fact]
+    public void Code_and_hidden_images_do_not_enter_the_gallery_or_define_visible_references()
+    {
+        const string markdown = """
+            <!-- <img src="https://example.com/hidden.png"> -->
+            `<img src="https://example.com/inline-example.png">`
+            ```markdown
+            ![Example](https://example.com/code.png)
+            [hidden]: https://example.com/definition.png
+            ```
+            ![Hidden][hidden]
+            ![Visible](https://example.com/visible.png)
+            """;
+
+        Assert.Equal(["https://example.com/visible.png"], ModDescription.ImageUrls(markdown));
+        Assert.DoesNotContain("![Hidden]", ModDescription.Formatted(markdown));
     }
 }

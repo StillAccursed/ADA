@@ -179,6 +179,18 @@ public sealed partial class ModCatalogStore
             new { Reference = reference })?.ToMod();
     }
 
+    /// <summary>Recent releases from the local cache; metadata-only edits and undated entries are excluded.</summary>
+    public IReadOnlyList<CatalogMod> GetRecentlyUpdated(int limit)
+    {
+        using var db = Open();
+        return db.Query<ModRow>($"""
+            SELECT {ModColumns} FROM mods m
+            WHERE m.last_version_date IS NOT NULL
+            ORDER BY m.last_version_date DESC, m.name COLLATE NOCASE, m.reference COLLATE NOCASE
+            LIMIT $Limit
+            """, new { Limit = Math.Clamp(limit, 1, 20) }).Select(r => r.ToMod()).ToList();
+    }
+
     /// <summary>
     /// Full-text search over names, references, descriptions, authors, tags and image text. Each
     /// word is a prefix match, so "conv bel" finds "Conveyor Belt". An empty query lists the most

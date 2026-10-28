@@ -3,13 +3,17 @@ using CommunityToolkit.Mvvm.ComponentModel;
 
 namespace ADA.ViewModels;
 
-public partial class NavItem(string title, string glyph, ViewModelBase page) : ObservableObject
+public partial class NavItem(string title, string glyph, ViewModelBase? page) : ObservableObject
 {
     public string Title { get; } = title;
 
     public string Glyph { get; } = glyph;
 
-    public ViewModelBase Page { get; } = page;
+    /// <summary>The destination page, or null for a non-selectable category heading.</summary>
+    public ViewModelBase? Page { get; } = page;
+
+    /// <summary>Identifies category headings, which cannot receive navigation selection.</summary>
+    public bool IsHeader => Page is null;
 
     /// <summary>Shows an update arrow at the end of the button.</summary>
     [ObservableProperty]
@@ -43,13 +47,21 @@ public partial class MainViewModel : ViewModelBase
         NavItems =
         [
             _dashboardNav,
+
+            new("Satisfactory", "", null),
             new("Mods", "▦", mods),
             new("Profiles", "☰", new PlaceholderViewModel("Profiles", "Switch, import and export mod profiles. Coming in Phase 2.")),
             new("Servers", "⇅", new PlaceholderViewModel("Servers", "Deploy profiles to dedicated servers over FTP and SFTP. Coming in Phase 3.")),
+
+            new("Installations", "", null),
+            new("Saves", "▤", new PlaceholderViewModel("Saves", "Coming soon")),
+            new("Backups", "▣", new PlaceholderViewModel("Backups", "Coming soon")),
+
+            new("Misc", "", null),
             new("Activity", "◷", new PlaceholderViewModel("Activity", "Install transaction history and logs. Coming in Phase 1.")),
             new("Settings", "⚙", settings),
         ];
-        SelectedNav = NavItems[0];
+        SelectedNav = _dashboardNav;
 
         dashboard.PropertyChanged += OnDashboardChanged;
         catalog.PropertyChanged += OnCatalogChanged;
@@ -58,6 +70,7 @@ public partial class MainViewModel : ViewModelBase
     /// <summary>On launch: find installs, show the cached catalogue at once, then fetch the latest mods.</summary>
     public void Start()
     {
+        _dashboard.AttachUiContext();
         _dashboard.ScanCommand.Execute(null);
         _ = _dashboard.WatchGameAsync();
         _ = Catalog.LoadAsync();

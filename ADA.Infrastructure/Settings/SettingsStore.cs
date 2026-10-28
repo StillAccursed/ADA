@@ -11,6 +11,12 @@ public sealed class SettingsStore(string settingsPath)
     private readonly Lock _gate = new();
     private AppSettings? _current;
 
+    /// <summary>
+    /// Raised on the saving thread after a successful write and outside the store lock.
+    /// Consumers should read Current for the latest values and marshal UI work to their UI context.
+    /// </summary>
+    public event EventHandler? Changed;
+
     public string SettingsPath { get; } = settingsPath;
 
     /// <summary>The settings in effect: read from disk once, then kept in memory and updated by <see cref="Save"/>.</summary>
@@ -19,7 +25,9 @@ public sealed class SettingsStore(string settingsPath)
         get
         {
             lock (_gate)
+            {
                 return _current ??= Load();
+            }
         }
     }
 
@@ -32,7 +40,9 @@ public sealed class SettingsStore(string settingsPath)
         try
         {
             if (!File.Exists(SettingsPath))
+            {
                 return AppSettings.Default;
+            }
 
             using var stream = File.OpenRead(SettingsPath);
             return (JsonSerializer.Deserialize(stream, SettingsJsonContext.Default.AppSettings) ?? AppSettings.Default).Normalized();
@@ -50,7 +60,10 @@ public sealed class SettingsStore(string settingsPath)
     public void Update(Func<AppSettings, AppSettings> change)
     {
         lock (_gate)
+        {
             SaveLocked(change(_current ??= Load()).Normalized());
+        }
+        Changed?.Invoke(this, EventArgs.Empty);
     }
 
     /// <summary>
@@ -60,13 +73,16 @@ public sealed class SettingsStore(string settingsPath)
     public void Save(AppSettings settings)
     {
         lock (_gate)
+        {
             SaveLocked(settings.Normalized());
+        }
+        Changed?.Invoke(this, EventArgs.Empty);
     }
 
     private void SaveLocked(AppSettings settings)
     {
-        _current = settings;
         AtomicFile.Write(SettingsPath, stream => JsonSerializer.Serialize(stream, settings, SettingsJsonContext.Default.AppSettings));
+        _current = settings;
     }
 }
 
