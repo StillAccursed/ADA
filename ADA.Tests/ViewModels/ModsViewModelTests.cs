@@ -69,7 +69,7 @@ public sealed class ModsViewModelTests : IDisposable
             new SettingsStore(_dir.Combine("settings.json")),
             new ArchiveDownloader(new HttpClient(_http), _dir.Combine("Archives")),
             new FakeVersionSource(GetVersions),
-            _ => Task.FromResult(_gameRunning));
+            (_, _) => Task.FromResult(_gameRunning));
         var profiles = new GameProfiles(new ProfileStore(_dir.Combine("Profiles"), _dir.Combine("profiles.json")), installs);
         var catalog = new CatalogStatusViewModel(
             new CatalogSync(new FicsitApiClient(new HttpClient(new FakeHttpHandler())), _store),

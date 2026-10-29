@@ -70,28 +70,29 @@
 
             <Grid x:Name="CardGrid" ColumnDefinitions="*,1.18*,0.95*" RowDefinitions="Auto,Auto,Auto" ColumnSpacing="14" RowSpacing="14">
                 <StackPanel x:Name="LeftCards" Spacing="14">
+                    <!-- Shown by the code-behind only while the selected installation has something to act on. -->
+                    <Border x:Name="AttentionCard" Classes="dashboard-card" IsVisible="False" BorderBrush="{DynamicResource WarningBrush}"><StackPanel Spacing="12">
+                        <Grid ColumnDefinitions="*,Auto"><TextBlock Classes="card-title" Text="Needs Attention" /><Path Grid.Column="1" Classes="card-icon" Data="M8,1 L15,14 L1,14 Z M8,6 L8,10 M8,12 L8,12.5" /></Grid>
+                        <TextBlock Classes="secondary" FontSize="12" Text="{Binding SelectedInstall.Install.DisplayName}" />
+                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12" IsVisible="{Binding SelectedInstall.Notice, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+                            <TextBlock Text="{Binding SelectedInstall.Notice}" TextWrapping="Wrap" VerticalAlignment="Center" Foreground="{DynamicResource WarningBrush}" />
+                            <Button Grid.Column="1" Content="Dismiss" VerticalAlignment="Top" Command="{Binding SelectedInstall.DismissNoticeCommand}" />
+                        </Grid>
+                        <TextBlock Classes="secondary" Text="{Binding SelectedInstall.ProgressText}" IsVisible="{Binding SelectedInstall.ProgressText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                        <views:InstallationDetailsView DataContext="{Binding SelectedInstall}" />
+                    </StackPanel></Border>
                     <Border Classes="dashboard-card"><StackPanel Spacing="12">
-                        <Grid ColumnDefinitions="*,Auto"><TextBlock Classes="card-title" Text="Installations" /><Path Grid.Column="1" Classes="card-icon" Data="M1,1 L15,1 L15,11 L1,11 Z M8,11 L8,15 M4,15 L12,15" /></Grid>
-                        <TextBlock Classes="secondary" Text="Detected installation" FontSize="12" />
-                        <ComboBox HorizontalAlignment="Stretch" ItemsSource="{Binding Installs}" SelectedItem="{Binding SelectedInstall}"
-                                  PlaceholderText="No installation found" AutomationProperties.Name="Detected installation">
-                            <ComboBox.ItemTemplate><DataTemplate x:DataType="vm:GameInstallViewModel">
-                                <StackPanel><TextBlock Text="{Binding Install.DisplayName}" TextWrapping="Wrap" /><TextBlock Classes="secondary" Text="{Binding Install.Location}" FontSize="12" /></StackPanel>
-                            </DataTemplate></ComboBox.ItemTemplate>
+                        <Grid ColumnDefinitions="*,Auto"><TextBlock Classes="card-title" Text="Profiles" /><Path Grid.Column="1" Classes="card-icon" Data="M1,5 L8,1 L15,5 L8,9 Z M1,8 L8,12 L15,8 M1,11 L8,15 L15,11" /></Grid>
+                        <TextBlock Classes="secondary" FontSize="12" Text="Active profile" />
+                        <ComboBox HorizontalAlignment="Stretch" ItemsSource="{Binding Profiles}" SelectedItem="{Binding SelectedProfile}"
+                                  IsEnabled="{Binding CanChooseProfile}" AutomationProperties.Name="Active profile">
+                            <ComboBox.ItemTemplate><DataTemplate x:DataType="profiles:ModProfile"><TextBlock Text="{Binding Name}" TextWrapping="Wrap" /></DataTemplate></ComboBox.ItemTemplate>
                         </ComboBox>
-                        <TextBlock Classes="secondary" Text="{Binding StatusText}" IsVisible="{Binding !HasSelectedInstall}" />
-                        <StackPanel Spacing="8" IsVisible="{Binding HasSelectedInstall}">
-                            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12"><TextBlock Classes="secondary" Text="Host" /><TextBlock Grid.Column="1" Classes="value" Text="{Binding SelectedInstall.Install.Host}" /></Grid>
-                            <TextBlock Classes="value" Text="{Binding SelectedInstall.Install.BuildText}" />
-                            <SelectableTextBlock Text="{Binding SelectedInstall.Install.GamePath}" FontSize="12" TextWrapping="Wrap" Foreground="{DynamicResource TextSecondaryBrush}" />
-                            <TextBlock Classes="value" Text="{Binding SelectedInstall.ModsSummary}" />
-                            <TextBlock Text="{Binding SelectedInstall.Notice}" TextWrapping="Wrap" Foreground="{DynamicResource WarningBrush}" IsVisible="{Binding SelectedInstall.Notice, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
-                            <TextBlock Classes="secondary" Text="{Binding SelectedInstall.ProgressText}" IsVisible="{Binding SelectedInstall.ProgressText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
-                            <Expander x:Name="InstallationDetails" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
-                                <Expander.Header><TextBlock Text="Details and actions" TextWrapping="Wrap" /></Expander.Header>
-                                <views:InstallationDetailsView DataContext="{Binding SelectedInstall}" />
-                            </Expander>
-                        </StackPanel>
+                        <TextBlock Classes="secondary" Text="{Binding ProfilesText}" /><TextBlock Classes="secondary" Text="{Binding ProfileModsText}" />
+                        <Button Content="New profile…" Command="{Binding NewProfileCommand}" IsEnabled="{Binding CanChooseProfile}"
+                                ToolTip.Tip="Save the installed mods as a new profile, e.g. for a new playthrough" />
+                        <TextBlock Classes="secondary" Text="Close Satisfactory and wait for current operations to finish before switching." IsVisible="{Binding !CanChooseProfile}" FontSize="12" />
+                        <TextBlock Classes="value" Text="{Binding ProfileNotice}" IsVisible="{Binding ProfileNotice, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
                     </StackPanel></Border>
                     <Border Classes="dashboard-card"><StackPanel Spacing="12">
                         <Grid ColumnDefinitions="*,Auto"><TextBlock Classes="card-title" Text="Disk Status" /><Path Grid.Column="1" Classes="card-icon" Data="M2,2 L14,2 L14,14 L2,14 Z M2,10 L14,10 M10,12 L12,12" /></Grid>
@@ -124,19 +125,6 @@
                     </ItemsControl.ItemTemplate></ItemsControl>
                 </StackPanel></Border>
                 <StackPanel x:Name="RightCards" Grid.Column="2" Spacing="14">
-                    <Border Classes="dashboard-card"><StackPanel Spacing="12">
-                        <Grid ColumnDefinitions="*,Auto"><TextBlock Classes="card-title" Text="Profiles" /><Path Grid.Column="1" Classes="card-icon" Data="M1,5 L8,1 L15,5 L8,9 Z M1,8 L8,12 L15,8 M1,11 L8,15 L15,11" /></Grid>
-                        <TextBlock Classes="secondary" FontSize="12" Text="Active profile" />
-                        <ComboBox HorizontalAlignment="Stretch" ItemsSource="{Binding Profiles}" SelectedItem="{Binding SelectedProfile}"
-                                  IsEnabled="{Binding CanChooseProfile}" AutomationProperties.Name="Active profile">
-                            <ComboBox.ItemTemplate><DataTemplate x:DataType="profiles:ModProfile"><TextBlock Text="{Binding Name}" TextWrapping="Wrap" /></DataTemplate></ComboBox.ItemTemplate>
-                        </ComboBox>
-                        <TextBlock Classes="secondary" Text="{Binding ProfilesText}" /><TextBlock Classes="secondary" Text="{Binding ProfileModsText}" />
-                        <Button Content="New profile…" Command="{Binding NewProfileCommand}" IsEnabled="{Binding CanChooseProfile}"
-                                ToolTip.Tip="Save the installed mods as a new profile, e.g. for a new playthrough" />
-                        <TextBlock Classes="secondary" Text="Close Satisfactory and wait for current operations to finish before switching." IsVisible="{Binding !CanChooseProfile}" FontSize="12" />
-                        <TextBlock Classes="value" Text="{Binding ProfileNotice}" IsVisible="{Binding ProfileNotice, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
-                    </StackPanel></Border>
                     <Border Classes="dashboard-card"><StackPanel Spacing="12">
                         <Grid ColumnDefinitions="*,Auto"><TextBlock Classes="card-title" Text="ADA Status" /><Path Grid.Column="1" Classes="card-icon" Data="M3,11 L4,9 L4,5 C4,0 12,0 12,5 L12,9 L13,11 Z M6,14 L10,14" /></Grid>
                         <TextBlock Classes="secondary" FontSize="12" Text="Last catalogue update" />

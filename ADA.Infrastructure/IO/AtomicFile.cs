@@ -9,6 +9,33 @@ internal static class AtomicFile
     public static void Write(string path, Action<Stream> write) => WriteAll([(path, write)]);
 
     /// <summary>
+    /// <see cref="Write(string, Action{Stream})"/> for a file inside a game install, which may be
+    /// on another machine: write a temporary file beside it, make it durable, then move it over.
+    /// </summary>
+    public static void Write(IGameFiles files, string path, Action<Stream> write)
+    {
+        var temp = path + ".tmp";
+        files.CreateDirectory(GamePaths.Parent(path));
+        // A crash mid-write leaves the temporary file behind; CreateNew refuses to reuse it.
+        files.DeleteFile(temp);
+        try
+        {
+            using (var stream = files.CreateNew(temp))
+            {
+                write(stream);
+            }
+            files.ReplaceFile(temp, path);
+        }
+        finally
+        {
+            if (files.FileExists(temp))
+            {
+                files.DeleteFile(temp);
+            }
+        }
+    }
+
+    /// <summary>
     /// Writes every file to its temporary name first, and renames them into place only once all of
     /// them were written, so a failure while writing leaves none of them changed.
     /// </summary>

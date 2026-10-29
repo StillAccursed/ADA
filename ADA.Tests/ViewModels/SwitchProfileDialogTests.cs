@@ -37,7 +37,7 @@ public sealed class SwitchProfileDialogTests : IDisposable
         var settings = new SettingsStore(_dir.Combine("settings.json"));
         settings.Save(new(DownloadRetries: 0));
         _versions = new FakeVersionSource((reference, _) => Task.FromResult<IReadOnlyList<CatalogVersion>>(_catalog.GetValueOrDefault(reference) ?? []));
-        _service = new(settings, new(new HttpClient(_http), _dir.Combine("Archives")), _versions, _ => Task.FromResult(_running));
+        _service = new(settings, new(new HttpClient(_http), _dir.Combine("Archives")), _versions, (_, _) => Task.FromResult(_running));
         _profiles = new(_store, _service);
         _resolution = new(_versions, _service);
         _card = new(install, _service, _resolution, _profiles, NullLogger<GameInstallViewModel>.Instance) { ProfileName = "Current" };

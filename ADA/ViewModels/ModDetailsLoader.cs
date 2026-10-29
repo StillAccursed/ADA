@@ -88,6 +88,13 @@ internal sealed class ModDetailsLoader
         item.SelectedVersionChoice = item.VersionChoices[0];
         item.SizeText = latest?.TargetFor(platform)?.Size is { } size ? ByteSize.Format(size) : null;
 
+        // The cached list can't tell a client-only mod from a broken one; the full version can.
+        if (versions.FirstOrDefault(v => v.Version == item.ServerCompatibility.Version) is { } newest)
+        {
+            item.ClientCompatibility = PlatformCompatibilityViewModel.ForClient(item.Mod.Latest, newest.RequiredOnRemote);
+            item.ServerCompatibility = PlatformCompatibilityViewModel.ForServer(item.Mod.Latest, newest.RequiredOnRemote);
+        }
+
         if (game?.Build is not { } gameBuild)
         {
             item.LatestText = null;

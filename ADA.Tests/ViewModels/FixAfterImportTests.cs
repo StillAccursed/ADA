@@ -70,7 +70,7 @@ public sealed class FixAfterImportTests : IDisposable
             new SettingsStore(_dir.Combine("settings.json")),
             new ArchiveDownloader(new HttpClient(_http), _dir.Combine("Archives")),
             new FakeVersionSource(GetVersions),
-            _ => Task.FromResult(false));
+            (_, _) => Task.FromResult(false));
         var install = new GameInstall(_game.Root, GameLauncher.Epic, GameHost.CrossOver, GameKind.Client, null, "test",
             new GameBuild(513885, "1.2.4.1"));
         _resolution = new ModResolutionService(new FakeVersionSource(GetVersions), service);

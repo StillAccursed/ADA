@@ -307,6 +307,12 @@ public partial class GameInstallViewModel(GameInstall install, ModInstallService
         FixProblem = null;
     }
 
+    [RelayCommand]
+    private void DismissNotice()
+    {
+        Notice = null;
+    }
+
     /// <summary>
     /// Looks for what the installed mods need (a quick local look first, the resolver only if
     /// something is missing), so mods imported from another manager work. Never throws.

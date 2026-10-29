@@ -22,7 +22,7 @@ internal static class DiskSpace
     }
 
     // MB below 10 GB, GB above: "17.2 GB" reads better than "17,612 MB" for a large profile.
-    private static string Format(long bytes) => bytes >= 10L * 1024 * 1024 * 1024
+    internal static string Format(long bytes) => bytes >= 10L * 1024 * 1024 * 1024
         ? $"{bytes / (1024.0 * 1024 * 1024):N1} GB"
         : $"{bytes / (1024 * 1024):N0} MB";
 }

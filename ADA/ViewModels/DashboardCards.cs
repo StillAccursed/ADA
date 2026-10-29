@@ -79,7 +79,8 @@ public partial class DashboardViewModel
     [ObservableProperty]
     public partial string RecentModsState { get; private set; } = "Loading cached releases…";
 
-    public string GameStateText => IsGameRunning ? "Running" : "Not running";
+    /// <summary>"Not installed" when no copy was detected; otherwise whether the game process is running.</summary>
+    public string GameStateText => Installs.Count == 0 ? "Not installed" : IsGameRunning ? "Running" : "Not running";
 
     public string ProfilesText => $"{Profiles.Count} profile{(Profiles.Count == 1 ? "" : "s")}";
 

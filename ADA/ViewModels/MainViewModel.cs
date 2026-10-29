@@ -53,7 +53,6 @@ public partial class MainViewModel : ViewModelBase
 
             new("Satisfactory", "", null),
             new("Mods", "▦", mods),
-            new("Profiles", "☰", new PlaceholderViewModel("Profiles", "Switch, import and export mod profiles. Coming in Phase 2.")),
             new("Servers", "⇅", new PlaceholderViewModel("Servers", "Deploy profiles to dedicated servers over FTP and SFTP. Coming in Phase 3.")),
 
             new("Installations", "", null),

@@ -71,6 +71,14 @@ public partial class ModItemViewModel(CatalogMod mod, Action<ModItemViewModel, b
     /// <summary>Ficsit's current EXP report, independent of the selected mod version and local game.</summary>
     public BranchCompatibilityViewModel ExperimentalCompatibility { get; } = new(mod.CompatibilityExperimental);
 
+    /// <summary>Whether the newest release has a game-client build; refined once its full version is loaded.</summary>
+    [ObservableProperty]
+    public partial PlatformCompatibilityViewModel ClientCompatibility { get; internal set; } = PlatformCompatibilityViewModel.ForClient(mod.Latest);
+
+    /// <summary>Whether the newest release has a dedicated-server build; refined once its full version is loaded.</summary>
+    [ObservableProperty]
+    public partial PlatformCompatibilityViewModel ServerCompatibility { get; internal set; } = PlatformCompatibilityViewModel.ForServer(mod.Latest);
+
     /// <summary>The version installed in the selected game, or null.</summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsInstalled), nameof(InstalledText), nameof(CanBeRequested), nameof(CanInstallHere))]

@@ -14,24 +14,41 @@
                 <Border Padding="20,16" CornerRadius="8" BorderThickness="1"
                         Background="{DynamicResource SurfaceRaisedBrush}"
                         BorderBrush="{DynamicResource BorderSubtleBrush}">
-                    <Grid ColumnDefinitions="*,Auto">
-                        <StackPanel Spacing="4" Margin="0,0,24,0">
-                            <TextBlock Text="Interface scale" FontWeight="SemiBold"
-                                       Foreground="{DynamicResource TextPrimaryBrush}" />
-                            <TextBlock TextWrapping="Wrap" Foreground="{DynamicResource TextSecondaryBrush}"
-                                       Text="Makes text and controls larger or smaller in every ADA window." />
-                        </StackPanel>
-                        <ComboBox Grid.Column="1" VerticalAlignment="Center" MinWidth="120"
-                                  AutomationProperties.Name="Interface scale"
-                                  ItemsSource="{Binding InterfaceScales}"
-                                  SelectedItem="{Binding InterfaceScale}">
-                            <ComboBox.ItemTemplate>
-                                <DataTemplate x:DataType="x:Int32">
-                                    <TextBlock Text="{Binding StringFormat={}{0}%}" />
-                                </DataTemplate>
-                            </ComboBox.ItemTemplate>
-                        </ComboBox>
-                    </Grid>
+                    <StackPanel Spacing="16">
+                        <Grid ColumnDefinitions="*,Auto">
+                            <StackPanel Spacing="4" Margin="0,0,24,0">
+                                <TextBlock Text="Interface scale" FontWeight="SemiBold"
+                                           Foreground="{DynamicResource TextPrimaryBrush}" />
+                                <TextBlock TextWrapping="Wrap" Foreground="{DynamicResource TextSecondaryBrush}"
+                                           Text="Makes text and controls larger or smaller in every ADA window." />
+                            </StackPanel>
+                            <ComboBox Grid.Column="1" VerticalAlignment="Center" MinWidth="120"
+                                      AutomationProperties.Name="Interface scale"
+                                      ItemsSource="{Binding InterfaceScales}"
+                                      SelectedItem="{Binding InterfaceScale}">
+                                <ComboBox.ItemTemplate>
+                                    <DataTemplate x:DataType="x:Int32">
+                                        <TextBlock Text="{Binding StringFormat={}{0}%}" />
+                                    </DataTemplate>
+                                </ComboBox.ItemTemplate>
+                            </ComboBox>
+                        </Grid>
+
+                        <Border Height="1" Background="{DynamicResource BorderSubtleBrush}" />
+
+                        <Grid ColumnDefinitions="*,Auto">
+                            <StackPanel Spacing="4" Margin="0,0,24,0">
+                                <TextBlock Text="Theme" FontWeight="SemiBold"
+                                           Foreground="{DynamicResource TextPrimaryBrush}" />
+                                <TextBlock TextWrapping="Wrap" Foreground="{DynamicResource TextSecondaryBrush}"
+                                           Text="Light or dark colours. System matches your computer's appearance and follows it when it changes." />
+                            </StackPanel>
+                            <ComboBox Grid.Column="1" VerticalAlignment="Center" MinWidth="120"
+                                      AutomationProperties.Name="Theme"
+                                      ItemsSource="{Binding Themes}"
+                                      SelectedItem="{Binding Theme}" />
+                        </Grid>
+                    </StackPanel>
                 </Border>
             </StackPanel>
 

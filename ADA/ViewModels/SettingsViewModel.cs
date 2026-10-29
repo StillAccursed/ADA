@@ -48,6 +48,13 @@ public partial class SettingsViewModel : ViewModelBase
     [ObservableProperty]
     public partial int InterfaceScale { get; set; }
 
+    /// <summary>Themes the page offers: System, Light and Dark.</summary>
+    public IReadOnlyList<string> Themes => AppSettings.THEMES;
+
+    /// <summary>Colour theme; System follows the operating system. Applied to every window once saved.</summary>
+    [ObservableProperty]
+    public partial string Theme { get; set; } = AppSettings.THEME_SYSTEM;
+
     public int MinDashboardLatestModsCount => AppSettings.MIN_DASHBOARD_LATEST_MODS_COUNT;
 
     public int MaxDashboardLatestModsCount => AppSettings.MAX_DASHBOARD_LATEST_MODS_COUNT;
@@ -88,6 +95,7 @@ public partial class SettingsViewModel : ViewModelBase
         ModsPageSize = _settings.ModsPageSize;
         DashboardLatestModsCount = _settings.DashboardLatestModsCount;
         InterfaceScale = _settings.InterfaceScale;
+        Theme = _settings.Theme;
         _loading = false;
     }
 
@@ -133,6 +141,14 @@ public partial class SettingsViewModel : ViewModelBase
         }
     }
 
+    partial void OnThemeChanged(string value)
+    {
+        if (!_loading && Themes.Contains(value))
+        {
+            Update(_settings with { Theme = value });
+        }
+    }
+
     private void Update(AppSettings settings)
     {
         _settings = settings;
@@ -164,6 +180,7 @@ public partial class SettingsViewModel : ViewModelBase
                 ModsPageSize = settings.ModsPageSize,
                 DashboardLatestModsCount = settings.DashboardLatestModsCount,
                 InterfaceScale = settings.InterfaceScale,
+                Theme = settings.Theme,
             }), ct);
             ErrorText = null;
         }

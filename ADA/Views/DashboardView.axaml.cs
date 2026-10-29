@@ -12,10 +12,6 @@ public partial class DashboardView : UserControl
     private GameInstallViewModel? _game;
     private int _layoutMode = -1;
 
-    // Whether the selected installation needed attention at the last change; the details panel
-    // opens only when this becomes true, so a user can collapse it while a problem remains.
-    private bool _neededAttention;
-
     public DashboardView()
     {
         InitializeComponent();
@@ -73,27 +69,25 @@ public partial class DashboardView : UserControl
             _game.PropertyChanged -= OnInstallChanged;
         }
         _game = game;
-        _neededAttention = false;
         if (game is not null)
         {
             game.PropertyChanged += OnInstallChanged;
-            ExpandIfNewlyNeeded();
         }
+        UpdateAttentionCard();
     }
 
-    private void OnInstallChanged(object? sender, PropertyChangedEventArgs e) => ExpandIfNewlyNeeded();
+    private void OnInstallChanged(object? sender, PropertyChangedEventArgs e) => UpdateAttentionCard();
 
-    /// <summary>Opens the details panel when the installation starts needing attention, never again until it stops.</summary>
-    private void ExpandIfNewlyNeeded()
+    /// <summary>
+    /// Shows the attention card while the selected installation is working, has a result or problem
+    /// to report, or offers found-mod import, fix or repair actions; hides it otherwise.
+    /// </summary>
+    private void UpdateAttentionCard()
     {
-        var needsAttention = _game is { } game
+        AttentionCard.IsVisible = _game is { } game
             && ((game.IsBusy && !string.IsNullOrEmpty(game.ProgressText))
+                || !string.IsNullOrEmpty(game.Notice)
                 || game.HasFoundMods || game.HasFix || game.HasFixProblem || game.HasRepairs);
-        if (needsAttention && !_neededAttention)
-        {
-            InstallationDetails.IsExpanded = true;
-        }
-        _neededAttention = needsAttention;
     }
 
     private void ArrangeCards()

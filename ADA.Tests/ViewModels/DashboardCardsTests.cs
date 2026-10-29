@@ -29,7 +29,7 @@ public sealed class DashboardCardsTests : IDisposable
         _settings = new(_dir.Combine("settings.json"));
         _profileStore = new(_dir.Combine("Profiles"), _dir.Combine("profiles.json"));
         _service = new(_settings, new(new HttpClient(new FakeHttpHandler()), _dir.Combine("Archives")),
-            new FakeVersionSource((_, _) => Task.FromResult<IReadOnlyList<CatalogVersion>>([])), _ => Task.FromResult(false));
+            new FakeVersionSource((_, _) => Task.FromResult<IReadOnlyList<CatalogVersion>>([])), (_, _) => Task.FromResult(false));
         _profiles = new(_profileStore, _service);
         _resolution = new(new FakeVersionSource((_, _) => Task.FromResult<IReadOnlyList<CatalogVersion>>([])), _service);
     }

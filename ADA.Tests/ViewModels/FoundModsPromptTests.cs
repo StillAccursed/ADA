@@ -41,7 +41,7 @@ public sealed class FoundModsPromptTests : IDisposable
             new SettingsStore(_dir.Combine("settings.json")),
             new ArchiveDownloader(new HttpClient(new FakeHttpHandler()), _dir.Combine("Archives")),
             new FakeVersionSource((_, _) => Task.FromResult<IReadOnlyList<CatalogVersion>>([])),
-            _ => Task.FromResult(false));
+            (_, _) => Task.FromResult(false));
         var install = new GameInstall(_game.Root, GameLauncher.Steam, GameHost.Windows, GameKind.Client, null, "test");
         var card = new GameInstallViewModel(install, service, new ModResolutionService(new FakeVersionSource((_, _) => Task.FromResult<IReadOnlyList<CatalogVersion>>([])), service), new GameProfiles(_store, service), NullLogger<GameInstallViewModel>.Instance);
         await card.CheckAsync();

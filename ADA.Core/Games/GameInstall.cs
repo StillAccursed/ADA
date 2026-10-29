@@ -5,6 +5,9 @@ public enum GameLauncher
 {
     Steam,
     Epic,
+
+    /// <summary>A server reached over SFTP: which store it came from can't be read remotely.</summary>
+    Unknown,
 }
 
 /// <summary>How the Windows game is being run on this machine.</summary>
@@ -30,10 +33,14 @@ public enum GameKind
 }
 
 /// <summary>
-/// A Satisfactory install found through a launcher's own records. There is deliberately no way to
-/// construct one from a user-chosen folder; see <see cref="GameInstallValidator"/>.
+/// A Satisfactory install: a local one found through a launcher's own records, or a dedicated
+/// server the user added and that passed Test Connection. A local install is deliberately never
+/// built from a user-chosen folder; see <see cref="GameInstallValidator"/>.
 /// </summary>
-/// <param name="GamePath">Host filesystem path of the game root (the folder that contains <c>FactoryGame</c>).</param>
+/// <param name="GamePath">
+/// Host filesystem path of the game root (the folder that contains <c>FactoryGame</c>); for a server,
+/// its key instead (see <see cref="IsRemote"/>).
+/// </param>
 /// <param name="Launcher">Store that owns the install.</param>
 /// <param name="Host">How the game runs on this OS.</param>
 /// <param name="Kind">Client or dedicated server.</param>
@@ -52,11 +59,24 @@ public sealed record GameInstall(
     string Location,
     GameBuild? Build = null)
 {
+    /// <summary>Install keys for servers start with this; see <see cref="IsRemote"/>.</summary>
+    public const string REMOTE_SCHEME = "sftp://";
+
     public string ModsPath => Path.Combine(GamePath, "FactoryGame", "Mods");
 
-    public string DisplayName => Kind == GameKind.DedicatedServer
-        ? $"Satisfactory Dedicated Server ({Launcher})"
-        : $"Satisfactory ({Launcher})";
+    /// <summary>
+    /// A server reached over SFTP. Its <see cref="GamePath"/> is a key (<c>sftp://{server id}</c>),
+    /// not a path on this machine, so it must never be opened as a folder.
+    /// </summary>
+    public bool IsRemote => GamePath.StartsWith(REMOTE_SCHEME, StringComparison.Ordinal);
+
+    public string DisplayName => (Kind, Launcher) switch
+    {
+        // Location is the name the user gave the server.
+        (_, GameLauncher.Unknown) => $"{Location} (Dedicated Server)",
+        (GameKind.DedicatedServer, _) => $"Satisfactory Dedicated Server ({Launcher})",
+        _ => $"Satisfactory ({Launcher})",
+    };
 
     public string BuildText => Build is null
         ? "Game build unknown"

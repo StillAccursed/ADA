@@ -23,6 +23,9 @@ public sealed class ModInstallServiceTests : IDisposable
     private readonly Dictionary<string, byte[]> _files = [];
     private bool _gameRunning;
 
+    // With _gameRunning, only this install counts as running; null means every install does.
+    private GameInstall? _runningInstall;
+
     public ModInstallServiceTests()
     {
         _game = new GameFolder(_dir.Combine("Satisfactory"));
@@ -37,7 +40,7 @@ public sealed class ModInstallServiceTests : IDisposable
         _settings,
         new ArchiveDownloader(new HttpClient(_http), _archives, time: new InstantTimeProvider()),
         new FakeVersionSource((reference, _) => Task.FromResult<IReadOnlyList<CatalogVersion>>(_catalog.GetValueOrDefault(reference) ?? [])),
-        _ => Task.FromResult(_gameRunning));
+        (game, _) => Task.FromResult(_gameRunning && (_runningInstall is null || _runningInstall == game)));
 
     /// <summary>Publishes a mod version on the fake ficsit.app; returns the catalogue entry.</summary>
     private CatalogVersion Publish(string reference, string version, bool gameFeature = false,
@@ -320,6 +323,23 @@ public sealed class ModInstallServiceTests : IDisposable
 
         await Assert.ThrowsAsync<GameRunningException>(() => Service().InstallAsync(_install, [sml]));
         Assert.Empty(_http.RequestBodies);
+    }
+
+    [Fact]
+    public async Task Asks_whether_the_install_being_changed_is_running()
+    {
+        var other = _install with { GamePath = _dir.Combine("Other") };
+        var sml = Publish("SML", "3.12.0");
+        Serve(sml);
+        _gameRunning = true;
+
+        _runningInstall = _install;
+        await Assert.ThrowsAsync<GameRunningException>(() => Service().InstallAsync(_install, [sml]));
+        Assert.Empty(_http.RequestBodies);
+
+        _runningInstall = other;
+        await Service().InstallAsync(_install, [sml]);
+        Assert.NotNull(_game.Read("Mods/SML"));
     }
 
     [Fact]

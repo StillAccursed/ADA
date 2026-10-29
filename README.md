@@ -99,11 +99,13 @@ ADA also relies on these open-source projects:
 | [linq2db](https://github.com/linq2db/linq2db) | Database queries and table mapping | MIT |
 | [Polly](https://github.com/App-vNext/Polly) | Retries and backoff | BSD-3-Clause |
 | [CliWrap](https://github.com/Tyrrrz/CliWrap) | Running system commands | MIT |
+| [SSH.NET](https://github.com/sshnet/SSH.NET) | SFTP connections to dedicated servers | MIT |
+| [Bouncy Castle](https://github.com/bcgit/bc-csharp) (via SSH.NET) | SSH cryptography | MIT |
 | [Serilog](https://serilog.net/) | Log files | Apache-2.0 |
 | [Semver](https://github.com/WalkerCodeRanger/semver) | Version parsing | MIT |
 | [xUnit](https://xunit.net/) | Tests | Apache-2.0 |
 
-ADA's own source is available under the [MIT licence](LICENSE). Third-party projects retain their own licences; see [Third-party notices](THIRD-PARTY-NOTICES.md) for the mod description renderer and its dependencies. Mod data and downloads remain subject to ficsit.app's terms.
+ADA's own source is available under the [MIT licence](LICENSE). Third-party projects retain their own licences; see [Third-party notices](THIRD-PARTY-NOTICES.md) for the mod description renderer, the SFTP client and their dependencies. Mod data and downloads remain subject to ficsit.app's terms.
 
 ADA is independently written using public API documentation and observed file formats. It does not copy or port code from Satisfactory Mod Manager.
 

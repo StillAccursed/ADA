@@ -1,54 +1,52 @@
+using ADA.Infrastructure.IO;
+
 namespace ADA.Infrastructure.Installing;
 
 /// <summary>
-/// The folders the install engine uses inside one game install. Locations stored in records and
-/// the journal are relative to <c>FactoryGame</c> with <c>/</c> separators, e.g. <c>Mods/GameFeatures/X</c>.
+/// The paths the install engine uses inside one game install, relative to <c>FactoryGame</c> (see
+/// <see cref="GamePaths"/>). Locations in records and the journal use the same form, e.g.
+/// <c>Mods/GameFeatures/X</c>.
 /// </summary>
-internal sealed class GameModFolders(string gameRoot)
+internal static class GameModFolders
 {
-    public string FactoryGame { get; } = Path.Combine(gameRoot, "FactoryGame");
+    public const string MODS = "Mods";
 
-    public string Mods => Path.Combine(FactoryGame, "Mods");
+    public const string GAME_FEATURES = MODS + "/GameFeatures";
 
-    public string GameFeatures => Path.Combine(Mods, "GameFeatures");
+    /// <summary>Hidden working area beside <c>Mods</c>, on the same filesystem, so moves into <c>Mods</c> are renames.</summary>
+    public const string WORK = ".ada";
 
-    /// <summary>Hidden working area on the game's own drive, so moves into <c>Mods</c> are renames.</summary>
-    public string Work => Path.Combine(FactoryGame, ".ada");
-
-    public string InstalledRecord => Path.Combine(Work, "installed.json");
+    public const string INSTALLED_RECORD = WORK + "/installed.json";
 
     /// <summary>The mods the user asked for, as opposed to those installed only as dependencies.</summary>
-    public string RequestedRecord => Path.Combine(Work, "requested.json");
+    public const string REQUESTED_RECORD = WORK + "/requested.json";
 
-    public string Journal => Path.Combine(Work, "journal.json");
+    public const string JOURNAL = WORK + "/journal.json";
 
-    public string ProfileActivation => Path.Combine(Work, "profile-activation.json");
+    public const string PROFILE_ACTIVATION = WORK + "/profile-activation.json";
 
-    public string Lock => Path.Combine(Work, "lock");
+    public const string LOCK = WORK + "/lock";
 
-    public string Transaction(string id) => Path.Combine(Work, "txn-" + id);
+    /// <summary>Transaction folders are named with this prefix, so recovery can find strays.</summary>
+    public const string TRANSACTION_PREFIX = "txn-";
+
+    public static string Transaction(string id) => $"{WORK}/{TRANSACTION_PREFIX}{id}";
 
     /// <summary>New versions, extracted and verified before they go live.</summary>
-    public string NewStaged(string txn, string reference) => Path.Combine(Transaction(txn), "new", reference);
+    public static string NewStaged(string txn, string reference) => $"{Transaction(txn)}/new/{reference}";
 
     /// <summary>Versions moved out of <c>Mods</c> (updated or uninstalled), kept until the transaction ends.</summary>
-    public string OldStaged(string txn, string reference) => Path.Combine(Transaction(txn), "old", reference);
+    public static string OldStaged(string txn, string reference) => $"{Transaction(txn)}/old/{reference}";
 
     /// <summary>New versions taken back out of <c>Mods</c> during a rollback.</summary>
-    public string Trash(string txn, string reference) => Path.Combine(Transaction(txn), "trash", reference);
+    public static string Trash(string txn, string reference) => $"{Transaction(txn)}/trash/{reference}";
 
     public static string LocationFor(string reference, bool gameFeature) =>
-        gameFeature ? $"Mods/GameFeatures/{reference}" : $"Mods/{reference}";
+        gameFeature ? $"{GAME_FEATURES}/{reference}" : $"{MODS}/{reference}";
 
-    public string Absolute(string location) => Path.Combine(FactoryGame, location.Replace('/', Path.DirectorySeparatorChar));
-
-    public void EnsureWorkFolder()
+    public static void EnsureWorkFolder(IGameFiles files)
     {
-        var info = Directory.CreateDirectory(Work);
-        // The leading dot hides it on macOS and Linux; Windows needs the attribute.
-        if (OperatingSystem.IsWindows() && !info.Attributes.HasFlag(FileAttributes.Hidden))
-        {
-            info.Attributes |= FileAttributes.Hidden;
-        }
+        files.CreateDirectory(WORK);
+        files.MarkHidden(WORK);
     }
 }

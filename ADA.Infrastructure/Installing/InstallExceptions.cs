@@ -1,10 +1,26 @@
+using ADA.Core.Games;
+
 namespace ADA.Infrastructure.Installing;
 
 /// <summary>A mod change failed in a way the user should see; the message explains it and is shown as-is.</summary>
 public class InstallException(string message, Exception? inner = null) : Exception(message, inner);
 
-public sealed class GameRunningException()
-    : InstallException("Satisfactory is running. Close the game before changing mods; it locks mod files.");
+public sealed class GameRunningException : InstallException
+{
+    private const string GAME_MESSAGE = "Satisfactory is running. Close the game before changing mods; it locks mod files.";
+    private const string SERVER_MESSAGE = "The server is running. Stop it before changing its mods; it locks mod files.";
+
+    public GameRunningException() : base(GAME_MESSAGE)
+    {
+    }
+
+    private GameRunningException(string message) : base(message)
+    {
+    }
+
+    /// <summary>The message that fits <paramref name="game"/>: a server says to stop the server.</summary>
+    public static GameRunningException For(GameInstall game) => game.IsRemote ? new(SERVER_MESSAGE) : new();
+}
 
 /// <summary>
 /// Another check or change already holds this installation. Background checks treat this as

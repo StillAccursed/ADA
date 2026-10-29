@@ -1,4 +1,3 @@
-using System.Text.Json;
 using ADA.Core.Games;
 using ADA.Platform.Paths;
 
@@ -43,19 +42,10 @@ internal static class GameBuildReader
     {
         try
         {
-            using var doc = JsonDocument.Parse(File.ReadAllText(file));
-            var root = doc.RootElement;
-            if (!root.TryGetProperty("Changelist", out var cl) || !cl.TryGetInt32(out var changelist) || changelist <= 0)
-            {
-                return null;
-            }
-
-            var version = root.TryGetProperty("GameVersion", out var v) && v.ValueKind == JsonValueKind.String
-                ? v.GetString()
-                : null;
-            return new GameBuild(changelist, version);
+            using var stream = File.OpenRead(file);
+            return GameBuild.FromVersionFile(stream);
         }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException or JsonException)
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
             return null;
         }

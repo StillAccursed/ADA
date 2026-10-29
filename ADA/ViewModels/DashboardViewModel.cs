@@ -33,6 +33,7 @@ public partial class DashboardViewModel : ViewModelBase
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(StatusText))]
+    [NotifyPropertyChangedFor(nameof(GameStateText))]
     public partial bool IsScanning { get; set; }
 
     public string StatusText => IsScanning

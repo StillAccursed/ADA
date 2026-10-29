@@ -1,6 +1,7 @@
 using System.Text.Json.Nodes;
 using ADA.Core.Catalog;
 using ADA.Infrastructure.Installing;
+using ADA.Infrastructure.IO;
 using ADA.Tests.Fixtures;
 
 namespace ADA.Tests.Installing;
@@ -188,7 +189,7 @@ public sealed class TransactionCleanupTests : IDisposable
 
     private static ModChange.Install Install(string archive) => new(archive, TargetPlatform.Windows);
 
-    private Journal JournalFromDisk() => new JournalStore(Path.Combine(_game.Work, "journal.json")).Load()!;
+    private Journal JournalFromDisk() => new JournalStore(new LocalGameFiles(_game.FactoryGame), GameModFolders.JOURNAL).Load()!;
 
     private void AssertCommittedUpdate(string archive, bool gameFeature)
     {

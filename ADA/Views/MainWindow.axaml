@@ -41,6 +41,24 @@
                            HorizontalAlignment="Center"
                            Stretch="Uniform"
                            AutomationProperties.Name="ADA" />
+                    <!-- The install every page works on; servers join this list once they're set up. -->
+                    <ComboBox DockPanel.Dock="Top"
+                              Margin="16,0,16,8"
+                              HorizontalAlignment="Stretch"
+                              PlaceholderText="No game found"
+                              AutomationProperties.Name="Installation"
+                              ItemsSource="{Binding Dashboard.Installs}"
+                              SelectedItem="{Binding Dashboard.SelectedInstall}">
+                        <ComboBox.ItemTemplate>
+                            <DataTemplate x:DataType="vm:GameInstallViewModel">
+                                <StackPanel ToolTip.Tip="{Binding Install.DisplayName}">
+                                    <TextBlock Text="{Binding Install.DisplayName}" TextTrimming="CharacterEllipsis" />
+                                    <TextBlock Text="{Binding Install.BuildText}" FontSize="11" TextTrimming="CharacterEllipsis"
+                                               Foreground="{DynamicResource TextSecondaryBrush}" />
+                                </StackPanel>
+                            </DataTemplate>
+                        </ComboBox.ItemTemplate>
+                    </ComboBox>
                     <!-- Footer: check installed mods for updates; the catalogue's last refresh underneath. -->
                     <StackPanel DockPanel.Dock="Bottom" Margin="16,8,16,16" Spacing="6">
                         <Border Height="1" Margin="-8,0,-8,8" Background="{DynamicResource BorderSubtleBrush}" />

@@ -25,8 +25,8 @@ public partial class App : Application
     {
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
-            // Scale first so the first frame is already the right size; Load never throws.
-            InterfaceScale.Apply(new SettingsStore(AppPaths.ForCurrentOS().SettingsFile).Load().InterfaceScale);
+            // Scale and theme first so the first frame is already right; Load never throws.
+            Appearance.Apply(new SettingsStore(AppPaths.ForCurrentOS().SettingsFile).Load());
             // Show the window at once; folders, the database and services are set up behind it.
             var window = new MainWindow();
             desktop.MainWindow = window;
@@ -62,7 +62,7 @@ public partial class App : Application
                 return _services.GetRequiredService<MainViewModel>();
             });
 
-            InterfaceScale.Follow(_services!.GetRequiredService<SettingsStore>());
+            Appearance.Follow(_services!.GetRequiredService<SettingsStore>());
 
             window.DataContext = main;
             main.Start();

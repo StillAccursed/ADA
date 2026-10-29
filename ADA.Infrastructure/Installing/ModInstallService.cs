@@ -24,19 +24,25 @@ public sealed record RepairResult(IReadOnlyList<string> Repaired, IReadOnlyDicti
 /// retry setting), hands them to <see cref="ModInstaller"/>, then applies the "Keep downloaded
 /// archives" setting. Also runs launch-time recovery and checks, and repairs damaged mods.
 /// </summary>
-/// <remarks>Every method does its disk and network work off the calling thread, so it is safe to call from the UI.</remarks>
+/// <remarks>
+/// Every method does its disk and network work off the calling thread, so it is safe to call from the UI.
+/// <c>isGameRunning</c> answers for one install; local installs answer for every Satisfactory
+/// process on this machine, since processes can't be matched to an install.
+/// </remarks>
 public sealed class ModInstallService(
     SettingsStore settings,
     ArchiveDownloader downloader,
     IModVersionSource versions,
-    Func<CancellationToken, Task<bool>> isGameRunning,
-    ILogger<ModInstallService>? log = null)
+    Func<GameInstall, CancellationToken, Task<bool>> isGameRunning,
+    ILogger<ModInstallService>? log = null,
+    GameFilesFactory? files = null)
 {
     // Enough to fill a typical connection without hammering ficsit.app.
     private const int PARALLEL_DOWNLOADS = 3;
     private const int PARALLEL_LOOKUPS = 4;
 
     private readonly ILogger _log = log ?? NullLogger<ModInstallService>.Instance;
+    private readonly GameFilesFactory _files = files ?? new GameFilesFactory();
     private readonly ConcurrentDictionary<string, byte> _operations = new(StringComparer.Ordinal);
 
     /// <summary>Raised on the operation's calling thread when a mutation finishes or fails.</summary>
@@ -54,12 +60,19 @@ public sealed class ModInstallService(
     };
 
     /// <summary>
-    /// A new installer for the game. It re-checks that the game isn't running just before it changes
-    /// anything, blocking the calling thread, so only call it inside <c>Task.Run</c>: there the wait
-    /// blocks a pool thread, never the UI.
+    /// A new installer for the game, on its local or server files. It re-checks that this game
+    /// isn't running just before it changes anything, blocking the calling thread, so only call it
+    /// inside <c>Task.Run</c>: there the wait blocks a pool thread, never the UI.
     /// </summary>
+    /// <remarks>
+    /// The re-check throws <see cref="GameRunningException.For"/> itself, because the installer
+    /// doesn't know whether it's working on a server and would otherwise say to close the game.
+    /// </remarks>
+    /// <exception cref="Servers.ServerUnavailableException">The game is a server that isn't connected.</exception>
     public ModInstaller InstallerFor(GameInstall game) =>
-        new(game.GamePath, () => isGameRunning(CancellationToken.None).GetAwaiter().GetResult(), checkpoint: null, log: _log);
+        new(_files.For(game), () => isGameRunning(game, CancellationToken.None).GetAwaiter().GetResult()
+            ? throw GameRunningException.For(game)
+            : false, checkpoint: null, log: _log);
 
     /// <summary>
     /// Run on launch for each detected game: finish or undo an interrupted transaction, then the
@@ -69,7 +82,7 @@ public sealed class ModInstallService(
     {
         using var operation = BeginOperation(game);
         var installer = InstallerFor(game);
-        var deferred = installer.HasInterruptedTransaction && await isGameRunning(ct);
+        var deferred = installer.HasInterruptedTransaction && await isGameRunning(game, ct);
         var recovery = deferred ? RecoveryResult.CLEAN : installer.Recover();
         if (recovery.HadInterruptedTransaction)
         {
@@ -107,9 +120,9 @@ public sealed class ModInstallService(
         string name, Action<string> activate, IProgress<ModInstallProgress>? progress, CancellationToken ct)
     {
         using var operation = BeginOperation(game);
-        if (await isGameRunning(ct))
+        if (await isGameRunning(game, ct))
         {
-            throw new GameRunningException();
+            throw GameRunningException.For(game);
         }
         var installer = InstallerFor(game);
         installer.ThrowIfUnsettled("switching profiles");
@@ -136,9 +149,9 @@ public sealed class ModInstallService(
         IReadOnlyList<string> uninstall, IProgress<ModInstallProgress>? progress, CancellationToken ct,
         ProfileActivation? activation = null)
     {
-        if (await isGameRunning(ct))
+        if (await isGameRunning(game, ct))
         {
-            throw new GameRunningException();
+            throw GameRunningException.For(game);
         }
 
         var current = settings.Current;

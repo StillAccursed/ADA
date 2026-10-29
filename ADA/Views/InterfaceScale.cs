@@ -1,10 +1,8 @@
 using System.Runtime.CompilerServices;
-using ADA.Infrastructure.Settings;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Media;
-using Avalonia.Threading;
 
 namespace ADA.Views;
 
@@ -57,15 +55,6 @@ internal static class InterfaceScale
         window.Width = design.Width * Factor;
         window.Height = design.Height * Factor;
         ScaleMinimum(window);
-    }
-
-    /// <summary>
-    /// Re-applies the scale whenever settings are saved. Changed is raised on the saving thread and
-    /// for every setting, so this posts to the UI thread and relies on Apply ignoring an unchanged scale.
-    /// </summary>
-    public static void Follow(SettingsStore settings)
-    {
-        settings.Changed += (_, _) => Dispatcher.UIThread.Post(() => Apply(settings.Current.InterfaceScale));
     }
 
     private static double Factor => _percent / 100.0;

@@ -4,7 +4,7 @@
              xmlns:views="using:ADA.Views"
              x:Class="ADA.App"
              RequestedThemeVariant="Default">
-             <!-- "Default" ThemeVariant follows system theme variant. "Dark" or "Light" are other available options. -->
+             <!-- "Default" follows the OS; Appearance.Apply replaces it with the saved theme at startup. -->
 
     <!-- Each page's view, by view model. Compiled, so nothing is looked up by reflection. -->
     <Application.DataTemplates>

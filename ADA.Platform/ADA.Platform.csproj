@@ -3,6 +3,8 @@
   <PropertyGroup>
     <RootNamespace>ADA.Platform</RootNamespace>
     <AssemblyName>ADA.Platform</AssemblyName>
+    <!-- LibraryImport's generated marshalling code needs it; no unsafe code is written by hand. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
   <ItemGroup>

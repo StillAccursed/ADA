@@ -30,7 +30,7 @@ internal static class DashboardFactory
         catalog ??= new CatalogStatusViewModel(new CatalogSync(new FicsitApiClient(new HttpClient(new FakeHttpHandler())), store),
             NullLogger<CatalogStatusViewModel>.Instance);
         installs ??= new ModInstallService(settings, new(new HttpClient(new FakeHttpHandler()), dir.Combine("Archives")),
-            new FakeVersionSource((_, _) => Task.FromResult<IReadOnlyList<CatalogVersion>>([])), _ => Task.FromResult(false));
+            new FakeVersionSource((_, _) => Task.FromResult<IReadOnlyList<CatalogVersion>>([])), (_, _) => Task.FromResult(false));
         profiles ??= new GameProfiles(new ProfileStore(dir.Combine("Profiles"), dir.Combine("profiles.json")), installs);
         resolution ??= new ModResolutionService(new FakeVersionSource((_, _) => Task.FromResult<IReadOnlyList<CatalogVersion>>([])), installs);
         return new DashboardViewModel(detector, catalog, createInstall, NullLogger<DashboardViewModel>.Instance,

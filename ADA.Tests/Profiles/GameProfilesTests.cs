@@ -30,7 +30,7 @@ public sealed class GameProfilesTests : IDisposable
         new SettingsStore(_dir.Combine("settings.json")),
         new ArchiveDownloader(new HttpClient(new FakeHttpHandler()), _dir.Combine("Archives")),
         new FakeVersionSource((_, _) => Task.FromResult<IReadOnlyList<CatalogVersion>>([])),
-        _ => Task.FromResult(false));
+        (_, _) => Task.FromResult(false));
 
     private GameProfiles Profiles() => new(_store, Installs());
 

@@ -25,6 +25,10 @@ namespace ADA.Core.Settings;
 /// Size of the whole interface as a percentage; one of <see cref="INTERFACE_SCALES"/>, otherwise
 /// <see cref="DEFAULT_INTERFACE_SCALE"/>.
 /// </param>
+/// <param name="Theme">
+/// Colour theme; one of <see cref="THEMES"/>, otherwise <see cref="THEME_SYSTEM"/>, which follows
+/// the operating system's appearance.
+/// </param>
 public sealed record AppSettings(
     bool KeepDownloadedArchives = true,
     int DownloadRetries = AppSettings.DEFAULT_DOWNLOAD_RETRIES,
@@ -34,7 +38,8 @@ public sealed record AppSettings(
     bool EndlessScroll = true,
     int ModsPageSize = AppSettings.DEFAULT_MODS_PAGE_SIZE,
     int DashboardLatestModsCount = AppSettings.DEFAULT_DASHBOARD_LATEST_MODS_COUNT,
-    int InterfaceScale = AppSettings.DEFAULT_INTERFACE_SCALE)
+    int InterfaceScale = AppSettings.DEFAULT_INTERFACE_SCALE,
+    string Theme = AppSettings.THEME_SYSTEM)
 {
     internal const int DEFAULT_DOWNLOAD_RETRIES = 5;
     public const int MIN_DOWNLOAD_RETRIES = 0;
@@ -44,6 +49,9 @@ public sealed record AppSettings(
     public const int MIN_DASHBOARD_LATEST_MODS_COUNT = 1;
     public const int MAX_DASHBOARD_LATEST_MODS_COUNT = 20;
     internal const int DEFAULT_INTERFACE_SCALE = 100;
+    public const string THEME_SYSTEM = "System";
+    public const string THEME_LIGHT = "Light";
+    public const string THEME_DARK = "Dark";
 
     /// <summary>The page sizes the Settings page offers; any other saved value falls back to the default.</summary>
     public static readonly IReadOnlyList<int> MODS_PAGE_SIZES = Array.AsReadOnly([25, 50, 100, 200, 500]);
@@ -53,6 +61,9 @@ public sealed record AppSettings(
     /// scaled minimum size (760×480 → 1140×720) still fits a 13" laptop screen.
     /// </summary>
     public static readonly IReadOnlyList<int> INTERFACE_SCALES = Array.AsReadOnly([75, 90, 100, 110, 125, 150]);
+
+    /// <summary>Themes the Settings page offers; any other saved value falls back to System.</summary>
+    public static readonly IReadOnlyList<string> THEMES = Array.AsReadOnly([THEME_SYSTEM, THEME_LIGHT, THEME_DARK]);
 
     public static AppSettings Default { get; } = new();
 
@@ -64,5 +75,6 @@ public sealed record AppSettings(
         DashboardLatestModsCount = Math.Clamp(DashboardLatestModsCount,
             MIN_DASHBOARD_LATEST_MODS_COUNT, MAX_DASHBOARD_LATEST_MODS_COUNT),
         InterfaceScale = INTERFACE_SCALES.Contains(InterfaceScale) ? InterfaceScale : DEFAULT_INTERFACE_SCALE,
+        Theme = THEMES.Contains(Theme) ? Theme : THEME_SYSTEM,
     };
 }

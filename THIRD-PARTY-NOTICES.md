@@ -1,7 +1,8 @@
 # Third-party notices
 
-These notices cover the packages added for formatted mod descriptions. Other project
-dependencies and their licences are listed in [README.md](README.md#credits).
+These notices cover the packages added for formatted mod descriptions and for dedicated
+server connections. Other project dependencies and their licences are listed in
+[README.md](README.md#credits).
 ADA's own source remains licensed under MIT.
 
 ## Markdown.Avalonia
@@ -27,6 +28,18 @@ Copyright (c) 2017-2026 The AvaloniaUI Project.
 Source: https://github.com/zzzprojects/html-agility-pack
 
 HtmlAgilityPack 1.11.42. Copyright (c) ZZZ Projects Inc.
+
+## SSH.NET
+
+Source: https://github.com/sshnet/SSH.NET
+
+SSH.NET 2026.0.0. Copyright © Renci 2010-2026.
+
+## Bouncy Castle
+
+Source: https://github.com/bcgit/bc-csharp
+
+BouncyCastle.Cryptography 2.7.0, used by SSH.NET. Copyright © Legion of the Bouncy Castle Inc. 2000-2026.
 
 ## MIT licence applying to the packages above
 

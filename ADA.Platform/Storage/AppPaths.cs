@@ -7,7 +7,7 @@ namespace ADA.Platform.Storage;
 /// Linux    ~/.ada
 /// macOS    ~/Library/Application Support/ADA
 ///   Databases/   SQLite files (mod catalogue)
-///   Config/      settings, profiles (Config/Profiles/*.olp) and each game's active profile
+///   Config/      settings, profiles (Config/Profiles/*.olp), each game's active profile and saved servers
 ///   Staging/     downloaded archives (Staging/Archives)
 ///   Logs/        daily log files, the last week kept
 /// </code>
@@ -39,6 +39,9 @@ public sealed class AppPaths
 
     /// <summary>Which profile each game uses.</summary>
     public string ProfilesState => Path.Combine(Config, "profiles.json");
+
+    /// <summary>Saved dedicated servers (no secrets; those are in the OS secret store).</summary>
+    public string ServersFile => Path.Combine(Config, "servers.json");
 
     /// <param name="root">Overrides the OS default; for tests only.</param>
     public AppPaths(string root) => Root = root;

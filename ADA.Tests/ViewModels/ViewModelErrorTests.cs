@@ -35,7 +35,7 @@ public sealed class ViewModelErrorTests : IDisposable
             new SettingsStore(_dir.Combine("settings.json")),
             new ArchiveDownloader(new HttpClient(new FakeHttpHandler()), _dir.Combine("Staging")),
             new FakeVersionSource((_, _) => throw new FicsitApiException("Could not reach ficsit.app.")),
-            _ => Task.FromResult(false));
+            (_, _) => Task.FromResult(false));
         var install = new GameInstall(game.Root, GameLauncher.Steam, GameHost.Windows, GameKind.Client, null, "test");
         var vm = new GameInstallViewModel(install, service, new ModResolutionService(new FakeVersionSource((_, _) => Task.FromResult<IReadOnlyList<CatalogVersion>>([])), service), new GameProfiles(new ProfileStore(_dir.Combine("Profiles"), _dir.Combine("profiles.json")), service), NullLogger<GameInstallViewModel>.Instance);
 

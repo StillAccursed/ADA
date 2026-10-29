@@ -34,7 +34,7 @@ public sealed class ProfileSwitchTests : IDisposable
         settings.Save(new(DownloadRetries: 0));
         _service = new(settings, new(new HttpClient(_http), _dir.Combine("Archives")),
             new FakeVersionSource((reference, _) => Task.FromResult<IReadOnlyList<CatalogVersion>>(_catalog.GetValueOrDefault(reference) ?? [])),
-            _ => Task.FromResult(_running));
+            (_, _) => Task.FromResult(_running));
         _profiles = new(_store, _service);
         _resolution = new(new FakeVersionSource((reference, _) => Task.FromResult<IReadOnlyList<CatalogVersion>>(_catalog.GetValueOrDefault(reference) ?? [])), _service);
         _store.SetActive(_game.Root, "Current");

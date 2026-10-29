@@ -1,5 +1,6 @@
 using ADA.Core.Catalog;
 using ADA.Core.Games;
+using ADA.Core.Secrets;
 using ADA.Imaging;
 using ADA.Infrastructure.Catalog;
 using ADA.Infrastructure.Downloads;
@@ -7,8 +8,10 @@ using ADA.Infrastructure.Ficsit;
 using ADA.Infrastructure.Installing;
 using ADA.Infrastructure.IO;
 using ADA.Infrastructure.Profiles;
+using ADA.Infrastructure.Servers;
 using ADA.Infrastructure.Settings;
 using ADA.Platform.Detection;
+using ADA.Platform.Secrets;
 using ADA.Platform.Storage;
 using ADA.ViewModels;
 using Microsoft.Extensions.DependencyInjection;
@@ -22,6 +25,7 @@ public static class Services
 {
     private const string API_CLIENT = "ficsit-api";
     private const string DOWNLOAD_CLIENT = "ficsit-downloads";
+    private const string SERVER_API_CLIENT = "server-api";
 
     /// <summary>
     /// Builds the container and validates it immediately, so a missing registration fails at startup
@@ -37,6 +41,13 @@ public static class Services
         // total limit; ArchiveDownloader instead retries a connection that stops sending data.
         services.AddHttpClient(API_CLIENT, http => Configure(http, TimeSpan.FromSeconds(30)));
         services.AddHttpClient(DOWNLOAD_CLIENT, http => Configure(http, Timeout.InfiniteTimeSpan));
+        // Only asks whether a server is up, so a short wait. Dedicated servers use self-signed
+        // certificates; see SatisfactoryServerApi for why accepting them is safe for this client only.
+        services.AddHttpClient(SERVER_API_CLIENT, http => http.Timeout = TimeSpan.FromSeconds(3))
+            .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+            {
+                ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator,
+            });
 
         services.AddSingleton(sp => new FicsitApiClient(Http(sp, API_CLIENT)));
         services.AddSingleton(sp => new ModCatalogStore(paths.CatalogDatabase));
@@ -53,8 +64,9 @@ public static class Services
             sp.GetRequiredService<SettingsStore>(),
             sp.GetRequiredService<ArchiveDownloader>(),
             sp.GetRequiredService<IModVersionSource>(),
-            GameProcesses.IsAnyRunningAsync,
-            sp.GetRequiredService<ILogger<ModInstallService>>()));
+            sp.GetRequiredService<GameRunningChecks>().IsRunningAsync,
+            sp.GetRequiredService<ILogger<ModInstallService>>(),
+            sp.GetRequiredService<GameFilesFactory>()));
         services.AddSingleton<ModResolutionService>();
         services.AddSingleton(_ => new ProfileStore(paths.Profiles, paths.ProfilesState));
         services.AddSingleton(sp => new GameProfiles(
@@ -62,6 +74,17 @@ public static class Services
             sp.GetRequiredService<ModInstallService>(),
             sp.GetRequiredService<ILogger<GameProfiles>>()));
         services.AddSingleton(_ => GameDetection.ForCurrentOS());
+        services.AddSingleton(_ => SecretStores.ForCurrentOS());
+        services.AddSingleton(sp => new ServerSecrets(sp.GetRequiredService<ISecretStore>(),
+            sp.GetRequiredService<ILogger<ServerSecrets>>()));
+        services.AddSingleton(sp => new ServerStore(paths.ServersFile, sp.GetRequiredService<ILogger<ServerStore>>()));
+        services.AddSingleton(sp => new SatisfactoryServerApi(Http(sp, SERVER_API_CLIENT)));
+        services.AddSingleton(sp => new ServerConnections(sp.GetRequiredService<ServerStore>(), sp.GetRequiredService<ServerSecrets>(),
+            sp.GetRequiredService<SatisfactoryServerApi>(), sp.GetRequiredService<ILogger<ServerConnections>>()));
+        services.AddSingleton(sp => new ServerSetupCheck(sp.GetRequiredService<ServerConnections>(), sp.GetRequiredService<SatisfactoryServerApi>()));
+        // Any local Satisfactory process blocks every local install: ps can't say which install it runs from.
+        services.AddSingleton(sp => new GameRunningChecks(sp.GetRequiredService<ServerConnections>(), GameProcesses.IsAnyRunningAsync));
+        services.AddSingleton(sp => new GameFilesFactory(sp.GetRequiredService<ServerConnections>()));
         services.AddSingleton(sp => new ModLogos(Http(sp, API_CLIENT), sp.GetRequiredService<ILogger<ModLogos>>()));
 
         services.AddSingleton<CatalogStatusViewModel>();

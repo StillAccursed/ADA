@@ -20,24 +20,24 @@ public sealed record InstalledMod(
 
 /// <summary>
 /// Which mods ADA installed in one game, kept in <c>FactoryGame/.ada/installed.json</c> on the
-/// same drive as <c>Mods</c>, so the record and the folders it describes can't drift apart.
+/// same filesystem as <c>Mods</c>, so the record and the folders it describes can't drift apart.
 /// </summary>
-internal sealed class InstalledModsStore(string path)
+internal sealed class InstalledModsStore(IGameFiles files, string path)
 {
     public Dictionary<string, InstalledMod> Load()
     {
-        if (!File.Exists(path))
+        if (!files.FileExists(path))
         {
             return new Dictionary<string, InstalledMod>(StringComparer.OrdinalIgnoreCase);
         }
 
-        using var stream = File.OpenRead(path);
+        using var stream = files.OpenRead(path);
         var list = JsonSerializer.Deserialize(stream, InstallJsonContext.Default.ListInstalledMod) ?? [];
         return list.ToDictionary(m => m.Reference, StringComparer.OrdinalIgnoreCase);
     }
 
     public void Save(IReadOnlyDictionary<string, InstalledMod> mods) =>
-        AtomicFile.Write(path, stream => JsonSerializer.Serialize(stream,
+        AtomicFile.Write(files, path, stream => JsonSerializer.Serialize(stream,
             mods.Values.OrderBy(m => m.Reference, StringComparer.OrdinalIgnoreCase).ToList(),
             InstallJsonContext.Default.ListInstalledMod));
 }
@@ -47,23 +47,23 @@ internal sealed class InstalledModsStore(string path)
 /// are dependencies, removed once nothing needs them. Only intent: <see cref="InstalledModsStore"/>
 /// stays the record of what is on disk.
 /// </summary>
-internal sealed class RequestedModsStore(string path)
+internal sealed class RequestedModsStore(IGameFiles files, string path)
 {
     /// <returns>Null if never written (mods installed before ADA tracked this).</returns>
     public HashSet<string>? Load()
     {
-        if (!File.Exists(path))
+        if (!files.FileExists(path))
         {
             return null;
         }
 
-        using var stream = File.OpenRead(path);
+        using var stream = files.OpenRead(path);
         var list = JsonSerializer.Deserialize(stream, InstallJsonContext.Default.ListString) ?? [];
         return list.ToHashSet(StringComparer.OrdinalIgnoreCase);
     }
 
     public void Save(IEnumerable<string> references) =>
-        AtomicFile.Write(path, stream => JsonSerializer.Serialize(stream,
+        AtomicFile.Write(files, path, stream => JsonSerializer.Serialize(stream,
             references.Distinct(StringComparer.OrdinalIgnoreCase).Order(StringComparer.OrdinalIgnoreCase).ToList(),
             InstallJsonContext.Default.ListString));
 }
@@ -104,31 +104,25 @@ internal sealed record Journal(string TransactionId, DateTimeOffset StartedAt, b
 /// <summary>Profile metadata to finalise after an entire profile transaction commits.</summary>
 internal sealed record ProfileActivation(string Name, List<string> Requested);
 
-internal sealed class JournalStore(string path)
+internal sealed class JournalStore(IGameFiles files, string path)
 {
-    public bool Exists => File.Exists(path);
+    public bool Exists => files.FileExists(path);
 
     public Journal? Load()
     {
-        if (!File.Exists(path))
+        if (!files.FileExists(path))
         {
             return null;
         }
 
-        using var stream = File.OpenRead(path);
+        using var stream = files.OpenRead(path);
         return JsonSerializer.Deserialize(stream, InstallJsonContext.Default.Journal);
     }
 
     public void Save(Journal journal) =>
-        AtomicFile.Write(path, stream => JsonSerializer.Serialize(stream, journal, InstallJsonContext.Default.Journal));
+        AtomicFile.Write(files, path, stream => JsonSerializer.Serialize(stream, journal, InstallJsonContext.Default.Journal));
 
-    public void Delete()
-    {
-        if (File.Exists(path))
-        {
-            File.Delete(path);
-        }
-    }
+    public void Delete() => files.DeleteFile(path);
 }
 
 [JsonSourceGenerationOptions(JsonSerializerDefaults.Web, WriteIndented = true, UseStringEnumConverter = true)]
