@@ -1,6 +1,12 @@
+using System.Security.Authentication;
+using System.Security.Cryptography;
+using System.Security.Cryptography.X509Certificates;
 using ADA.Core.Games;
 using ADA.Core.Servers;
+using ADA.Infrastructure.Installing;
 using ADA.Infrastructure.IO;
+using FluentFTP;
+using FluentFTP.Exceptions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Renci.SshNet;
@@ -22,7 +28,12 @@ public enum ServerState
 public sealed class ServerUnavailableException(string message, Exception? inner = null) : IOException(message, inner);
 
 /// <summary>Connecting failed; the message says why and is shown as-is.</summary>
-public sealed class ServerConnectException(string message, Exception? inner = null) : Exception(message, inner);
+/// <param name="needsSecret">No password is saved, or the key needs its passphrase: asking the user can fix it.</param>
+public sealed class ServerConnectException(string message, Exception? inner = null, bool needsSecret = false)
+    : Exception(message, inner)
+{
+    public bool NeedsSecret { get; } = needsSecret;
+}
 
 /// <summary>
 /// The one server ADA is connected to. Connecting to another disconnects it first. The choice is
@@ -42,9 +53,17 @@ public sealed class ServerConnections(ServerStore store, ServerSecrets secrets, 
     private readonly ILogger _log = log ?? NullLogger<ServerConnections>.Instance;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private SftpClient? _client;
+    private FluentFtpSession? _ftp;
+    private CancellationTokenSource? _reachability;
+
+    // 1 while a reachability probe runs, so a hung share never piles up probes.
+    private int _checking;
     private CancellationTokenSource? _retry;
 
     public event EventHandler? Changed;
+
+    /// <summary>How often a connected folder or FTP server is checked; tests shorten it.</summary>
+    internal TimeSpan ReachabilityInterval { get; init; } = TimeSpan.FromSeconds(15);
 
     /// <summary>The server that's connected, connecting or unavailable; null when none is.</summary>
     public ServerConnection? Server { get; private set; }
@@ -98,9 +117,110 @@ public sealed class ServerConnections(ServerStore store, ServerSecrets secrets, 
     public Task RetryAsync(CancellationToken ct = default) =>
         Server is { } server && State == ServerState.Unavailable ? ConnectCoreAsync(server, explicitConnect: false, fromRetry: false, ct) : Task.CompletedTask;
 
-    /// <summary>Whether the server behind <paramref name="game"/> answers its API; false when it doesn't.</summary>
+    /// <summary>
+    /// Whether the server behind <paramref name="game"/> answers its API; false when it doesn't, or
+    /// when a folder server was saved without an address, so there's nowhere to ask.
+    /// </summary>
     public Task<bool> IsRunningAsync(GameInstall game, CancellationToken ct = default) =>
-        Server is { } server && Matches(game, server) ? api.IsRunningAsync(server.Address, server.ApiPort, ct) : Task.FromResult(false);
+        Server is { } server && Matches(game, server) && !string.IsNullOrWhiteSpace(server.Address)
+            ? api.IsRunningAsync(server.Address, server.ApiPort, ct)
+            : Task.FromResult(false);
+
+    /// <summary>
+    /// For a connected folder server, checks its folder is still there (a network share can be
+    /// unmounted at any time); for FTP, that the connection still answers. If not, marks the server
+    /// unavailable and retries in the background. Runs every <see cref="ReachabilityInterval"/> by
+    /// itself once such a server connects; SFTP notices a dropped connection without it.
+    /// </summary>
+    /// <remarks>
+    /// The probe runs outside the connection gate, so a hung share can't hold up Connect or
+    /// Disconnect, and an FTP connection busy with a transfer counts as alive. The result is only
+    /// applied if the gate is free and the same connection is still current; otherwise this round is
+    /// skipped. A probe still running from the last round makes this one a no-op.
+    /// </remarks>
+    public async Task CheckReachableAsync(CancellationToken ct = default)
+    {
+        if (Server is not { } server || State != ServerState.Connected || server.Transport == ServerTransport.Sftp
+            || Interlocked.Exchange(ref _checking, 1) == 1)
+        {
+            return;
+        }
+        try
+        {
+            var session = _ftp;
+            var problem = await Task.Run(() => server.Transport == ServerTransport.Folder
+                ? Directory.Exists(FactoryGame(server)) ? null : FolderMissing(server)
+                : session?.TryNoop() == true ? null : $"Lost the connection to {server.Name}.", ct);
+            if (problem is null || !await _gate.WaitAsync(0, ct))
+            {
+                return;
+            }
+            try
+            {
+                if (ReferenceEquals(Server, server) && State == ServerState.Connected && ReferenceEquals(_ftp, session))
+                {
+                    _log.LogWarning("{Server} is no longer reachable: {Problem}", server.Name, problem);
+                    SetState(server, ServerState.Unavailable, problem, Install);
+                    ScheduleRetry(server);
+                }
+            }
+            finally
+            {
+                _gate.Release();
+            }
+        }
+        finally
+        {
+            Volatile.Write(ref _checking, 0);
+        }
+    }
+
+    /// <summary>Free space where the connected server's game is; null when it's not connected or can't tell.</summary>
+    public Task<long?> AvailableFreeSpaceAsync(GameInstall game, CancellationToken ct = default) => Task.Run(() =>
+    {
+        try
+        {
+            return FilesFor(game) switch
+            {
+                SftpGameFiles files => files.AvailableFreeSpace(),
+                FolderGameFiles files => files.AvailableFreeSpace(),
+                _ => null,
+            };
+        }
+        catch (ServerUnavailableException)
+        {
+            return null;
+        }
+    }, ct);
+
+    /// <summary>Who holds the connected server's lock, if anyone other than this ADA; null when it's free, unreadable or not connected.</summary>
+    public Task<LockHolder?> LockHolderAsync(CancellationToken ct = default) => Task.Run(() =>
+    {
+        // Holder reads swallow I/O failures, so an unreadable lock reads as free here.
+        return LockFileFor() is { } file ? RemoteLock.HeldByOther(file) : null;
+    }, ct);
+
+    /// <summary>
+    /// Removes the connected server's lock after the user has confirmed its holder stopped. Recovery
+    /// runs on the next operation, as after a crash.
+    /// </summary>
+    /// <exception cref="ServerUnavailableException">The server isn't connected, or removing the lock failed.</exception>
+    public Task BreakLockAsync(CancellationToken ct = default) => Task.Run(() =>
+    {
+        if (Server is not { } server || LockFileFor() is not { } file)
+        {
+            throw new ServerUnavailableException("Connect to the server first.");
+        }
+        try
+        {
+            RemoteLock.Break(file);
+            _log.LogWarning("Took over {Server}'s lock at the user's request", server.Name);
+        }
+        catch (IOException e)
+        {
+            throw new ServerUnavailableException($"Couldn't remove the lock: {e.Message}", e);
+        }
+    }, ct);
 
     /// <summary>The connected server's files.</summary>
     /// <exception cref="ServerUnavailableException"><paramref name="game"/> isn't the connected server, or it's unreachable.</exception>
@@ -110,7 +230,21 @@ public sealed class ServerConnections(ServerStore store, ServerSecrets secrets, 
         {
             throw new ServerUnavailableException("Connect to this server on the Servers page first.");
         }
-        if (State != ServerState.Connected || _client is not { IsConnected: true } client)
+        if (State != ServerState.Connected)
+        {
+            throw new ServerUnavailableException(Problem ?? $"{server.Name} isn't connected right now.");
+        }
+        if (server.Transport == ServerTransport.Folder)
+        {
+            return new FolderGameFiles(FactoryGame(server), _log);
+        }
+        if (server.Transport == ServerTransport.Ftp)
+        {
+            return _ftp is { } ftp
+                ? new FtpGameFiles(ftp, server.GameRoot, _log)
+                : throw new ServerUnavailableException(Problem ?? $"{server.Name} isn't connected right now.");
+        }
+        if (_client is not { IsConnected: true } client)
         {
             throw new ServerUnavailableException(Problem ?? $"{server.Name} isn't connected right now.");
         }
@@ -142,12 +276,47 @@ public sealed class ServerConnections(ServerStore store, ServerSecrets secrets, 
             SetState(server, ServerState.Connecting, null, null);
             try
             {
-                var client = await OpenAsync(server, ct);
-                var build = await Task.Run(() => ServerSetupCheck.ReadBuild(client, server.GameRoot), ct);
-                _client = client;
-                _client.ErrorOccurred += OnConnectionError;
+                GameBuild? build;
+                if (server.Transport == ServerTransport.Folder)
+                {
+                    build = await OpenFolderAsync(server, ct);
+                }
+                else if (server.Transport == ServerTransport.Ftp)
+                {
+                    var ftp = await OpenFtpAsync(server, ct);
+                    try
+                    {
+                        build = await ReadBuildAsync(new FtpServerFolders(ftp), server, ct);
+                    }
+                    catch
+                    {
+                        // Not stored yet, so nothing else would close it.
+                        ftp.Dispose();
+                        throw;
+                    }
+                    _ftp = ftp;
+                }
+                else
+                {
+                    var client = await OpenAsync(server, ct);
+                    try
+                    {
+                        build = await ReadBuildAsync(new SftpServerFolders(client), server, ct);
+                    }
+                    catch
+                    {
+                        client.Dispose();
+                        throw;
+                    }
+                    _client = client;
+                    _client.ErrorOccurred += OnConnectionError;
+                }
                 store.SetConnected(server.Id);
                 SetState(server, ServerState.Connected, null, ToInstall(server, build));
+                if (server.Transport != ServerTransport.Sftp)
+                {
+                    StartReachabilityChecks();
+                }
                 _log.LogInformation("Connected to {Server}", server.Name);
             }
             catch (ServerConnectException e) when (!explicitConnect)
@@ -178,7 +347,7 @@ public sealed class ServerConnections(ServerStore store, ServerSecrets secrets, 
         secret ??= await secrets.LoadAsync(server.Id, ct);
         if (secret is null && server.Auth == ServerAuth.Password)
         {
-            throw new ServerConnectException($"Enter the password for {server.Name} to connect.");
+            throw new ServerConnectException($"Enter the password for {server.Name} to connect.", needsSecret: true);
         }
 
         var client = new SftpClient(new ConnectionInfo(server.Address, server.Port, server.User, Login(server, secret)) { Timeout = CONNECT_TIMEOUT })
@@ -213,6 +382,109 @@ public sealed class ServerConnections(ServerStore store, ServerSecrets secrets, 
         }
     }
 
+    /// <summary>
+    /// "Connects" a folder server: checks its folder is there, then reads its build. There's no
+    /// connection to keep open; <see cref="CheckReachableAsync"/> notices if the folder goes away.
+    /// </summary>
+    /// <exception cref="ServerConnectException">The folder isn't there, e.g. its share isn't mounted.</exception>
+    private async Task<GameBuild?> OpenFolderAsync(ServerConnection server, CancellationToken ct)
+    {
+        if (!await Task.Run(() => Directory.Exists(FactoryGame(server)), ct))
+        {
+            throw new ServerConnectException(FolderMissing(server));
+        }
+        return await ReadBuildAsync(new LocalServerFolders(), server, ct);
+    }
+
+    private static string FolderMissing(ServerConnection server) =>
+        $"{server.Name}'s folder isn't available. If it's on a network share, check the share is mounted.";
+
+    private static string FactoryGame(ServerConnection server) => Path.Combine(server.GameRoot, "FactoryGame");
+
+    /// <summary>The connected server's lock file; null when no server is connected.</summary>
+    private ILockFile? LockFileFor() => Server switch
+    {
+        { Transport: ServerTransport.Folder } folder when State == ServerState.Connected =>
+            FolderGameFiles.LockFile(FactoryGame(folder), GameModFolders.LOCK),
+        { Transport: ServerTransport.Ftp } ftp when State == ServerState.Connected && _ftp is { } session =>
+            new FtpLockFile(session, LockPath(ftp)),
+        { Transport: ServerTransport.Sftp } server when _client is { IsConnected: true } client => new SftpLockFile(client, LockPath(server)),
+        _ => null,
+    };
+
+    /// <summary>
+    /// Opens an FTPS connection: explicit TLS only, so a server offering only plain FTP is refused
+    /// rather than sent the password unencrypted. The certificate is pinned like an SSH host key: an
+    /// empty saved fingerprint trusts the first one seen (only the setup check passes one).
+    /// </summary>
+    /// <exception cref="ServerConnectException">Unreachable, unencrypted, refused the login, or its certificate changed.</exception>
+    internal async Task<FluentFtpSession> OpenFtpAsync(ServerConnection server, CancellationToken ct, string? secret = null,
+        Action<string>? certificateSeen = null)
+    {
+        secret ??= await secrets.LoadAsync(server.Id, ct);
+        if (secret is null)
+        {
+            throw new ServerConnectException($"Enter the password for {server.Name} to connect.", needsSecret: true);
+        }
+
+        var client = new FtpClient(server.Address, server.User, secret, server.Port, new FtpConfig
+        {
+            EncryptionMode = FtpEncryptionMode.Explicit,
+            DataConnectionEncryption = true,
+            ValidateAnyCertificate = false,
+            ConnectTimeout = (int)CONNECT_TIMEOUT.TotalMilliseconds,
+        });
+        var identityChanged = false;
+        client.ValidateCertificate += (_, e) =>
+        {
+            var fingerprint = CertificateFingerprint(e.Certificate);
+            certificateSeen?.Invoke(fingerprint);
+            e.Accept = server.HostKeyFingerprint.Length == 0 || fingerprint == server.HostKeyFingerprint;
+            identityChanged |= !e.Accept;
+        };
+
+        try
+        {
+            await Task.Run(client.Connect, ct);
+            return new FluentFtpSession(client);
+        }
+        catch (Exception e) when (e is FtpException or AuthenticationException or IOException or TimeoutException
+                                      or System.Net.Sockets.SocketException)
+        {
+            client.Dispose();
+            throw new ServerConnectException(FtpConnectProblem(server, e, identityChanged), e);
+        }
+    }
+
+    /// <summary>What to tell the user when an FTPS connection fails.</summary>
+    internal static string FtpConnectProblem(ServerConnection server, Exception e, bool identityChanged) => e switch
+    {
+        _ when identityChanged =>
+            $"{server.Name}'s certificate has changed since it was added, so ADA won't connect. If the host renewed it, remove the server and add it again.",
+        FtpSecurityNotAvailableException =>
+            "This server only offers unencrypted FTP, which would send your password in plain text. Use SFTP if the host offers it.",
+        FtpAuthenticationException => $"{server.Name} refused the login. Check the user name and password.",
+        _ => $"Couldn't reach {server.Address}:{server.Port}: {e.Message}",
+    };
+
+    /// <summary>SHA-256 of the certificate, base64 without padding, the same form as an SSH host key fingerprint.</summary>
+    internal static string CertificateFingerprint(X509Certificate certificate) =>
+        Convert.ToBase64String(SHA256.HashData(certificate.GetRawCertData())).TrimEnd('=');
+
+    /// <summary>The server's game build, or null if it can't be read; a missing build doesn't stop the connection.</summary>
+    private async Task<GameBuild?> ReadBuildAsync(IServerFolders folders, ServerConnection server, CancellationToken ct)
+    {
+        try
+        {
+            return await Task.Run(() => ServerSetupCheck.ReadBuild(folders, server.GameRoot), ct);
+        }
+        catch (IOException e)
+        {
+            _log.LogWarning(e, "Couldn't read {Server}'s game build", server.Name);
+            return null;
+        }
+    }
+
     /// <exception cref="ServerConnectException">The key file is missing, unreadable or needs its passphrase.</exception>
     private static AuthenticationMethod Login(ServerConnection server, string? secret)
     {
@@ -227,7 +499,7 @@ public sealed class ServerConnections(ServerStore store, ServerSecrets secrets, 
         }
         catch (SshPassPhraseNullOrEmptyException e)
         {
-            throw new ServerConnectException("The key file needs its passphrase.", e);
+            throw new ServerConnectException("The key file needs its passphrase.", e, needsSecret: true);
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or SshException)
         {
@@ -269,14 +541,39 @@ public sealed class ServerConnections(ServerStore store, ServerSecrets secrets, 
         });
     }
 
+    /// <summary>Checks the current folder or FTP server every <see cref="ReachabilityInterval"/> until <see cref="Close"/>.</summary>
+    private void StartReachabilityChecks()
+    {
+        var watch = _reachability = new CancellationTokenSource();
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                while (true)
+                {
+                    await Task.Delay(ReachabilityInterval, watch.Token);
+                    await CheckReachableAsync(watch.Token);
+                }
+            }
+            catch (Exception e) when (e is OperationCanceledException or ObjectDisposedException)
+            {
+                // Disconnected, reconnecting, or shutting down.
+            }
+        });
+    }
+
     private void Close()
     {
+        _reachability?.Cancel();
+        _reachability = null;
         if (_client is { } client)
         {
             client.ErrorOccurred -= OnConnectionError;
             client.Dispose();
             _client = null;
         }
+        _ftp?.Dispose();
+        _ftp = null;
     }
 
     private void SetState(ServerConnection? server, ServerState state, string? problem, GameInstall? install)
@@ -287,6 +584,9 @@ public sealed class ServerConnections(ServerStore store, ServerSecrets secrets, 
 
     private static bool Matches(GameInstall game, ServerConnection server) => game.GamePath == InstallKey(server.Id);
 
-    private static GameInstall ToInstall(ServerConnection server, GameBuild? build) => new(
+    private static string LockPath(ServerConnection server) => $"{server.GameRoot.TrimEnd('/')}/FactoryGame/{GameModFolders.LOCK}";
+
+    /// <summary>A saved server as an install: the same key and display name whether or not it's connected.</summary>
+    public static GameInstall ToInstall(ServerConnection server, GameBuild? build) => new(
         InstallKey(server.Id), GameLauncher.Unknown, server.Host, GameKind.DedicatedServer, null, server.Name, build);
 }

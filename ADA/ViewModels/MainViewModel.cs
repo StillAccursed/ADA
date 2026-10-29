@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using ADA.Infrastructure.Servers;
 using CommunityToolkit.Mvvm.ComponentModel;
 
 namespace ADA.ViewModels;
@@ -25,6 +26,7 @@ public partial class MainViewModel : ViewModelBase
     private readonly DashboardViewModel _dashboard;
     private readonly NavItem _dashboardNav;
     private readonly Func<UpdatesViewModel> _updates;
+    private readonly ServerConnections _connections;
 
     public IReadOnlyList<NavItem> NavItems { get; }
 
@@ -40,11 +42,12 @@ public partial class MainViewModel : ViewModelBase
     [ObservableProperty]
     public partial NavItem SelectedNav { get; set; }
 
-    public MainViewModel(DashboardViewModel dashboard, ModsViewModel mods, CatalogStatusViewModel catalog, SettingsViewModel settings,
-        Func<UpdatesViewModel> updates)
+    public MainViewModel(DashboardViewModel dashboard, ModsViewModel mods, ServersViewModel servers, ServerConnections connections,
+        CatalogStatusViewModel catalog, SettingsViewModel settings, Func<UpdatesViewModel> updates)
     {
         _dashboard = dashboard;
         _updates = updates;
+        _connections = connections;
         Catalog = catalog;
         _dashboardNav = new NavItem("Dashboard", "◧", dashboard);
         NavItems =
@@ -53,7 +56,7 @@ public partial class MainViewModel : ViewModelBase
 
             new("Satisfactory", "", null),
             new("Mods", "▦", mods),
-            new("Servers", "⇅", new PlaceholderViewModel("Servers", "Deploy profiles to dedicated servers over FTP and SFTP. Coming in Phase 3.")),
+            new("Servers", "⇅", servers),
 
             new("Installations", "", null),
             new("Saves", "▤", new PlaceholderViewModel("Saves", "Coming soon")),
@@ -69,12 +72,16 @@ public partial class MainViewModel : ViewModelBase
         catalog.PropertyChanged += OnCatalogChanged;
     }
 
-    /// <summary>On launch: find installs, show the cached catalogue at once, then fetch the latest mods.</summary>
+    /// <summary>
+    /// On launch: find installs, reconnect the server the user left connected, show the cached
+    /// catalogue at once, then fetch the latest mods.
+    /// </summary>
     public void Start()
     {
         _dashboard.AttachUiContext();
         _dashboard.ScanCommand.Execute(null);
         _ = _dashboard.WatchGameAsync();
+        _ = _connections.ResumeAsync();
         _ = Catalog.LoadAsync();
         _ = Catalog.KeepFreshAsync(CATALOG_REFRESH_INTERVAL);
     }

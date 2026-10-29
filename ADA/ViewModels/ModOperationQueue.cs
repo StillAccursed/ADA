@@ -25,7 +25,7 @@ internal sealed class ModOperationQueue
     private readonly ModResolutionService _resolution;
     private readonly GameProfiles _profiles;
     private readonly DashboardViewModel _dashboard;
-    private readonly Func<bool> _isGameRunning;
+    private readonly Func<GameInstallViewModel, bool> _isGameRunning;
     private readonly Func<GameInstallViewModel, Task> _refreshAfter;
     private readonly ILogger _log;
 
@@ -66,10 +66,13 @@ internal sealed class ModOperationQueue
     /// <summary>Completes when the current worker drains the queue or pauses for the game; for tests.</summary>
     internal Task Pending { get; private set; } = Task.CompletedTask;
 
-    /// <param name="isGameRunning">Checked before each request starts and again after it is planned.</param>
+    /// <param name="isGameRunning">
+    /// Whether a request's own game is running; checked before it starts and again after it is
+    /// planned. A running game holds up the queue at its first request for that game.
+    /// </param>
     /// <param name="refreshAfter">Refreshes the page for a game after each request, whether or not it succeeded.</param>
     internal ModOperationQueue(ModResolutionService resolution, GameProfiles profiles, DashboardViewModel dashboard,
-        Func<bool> isGameRunning, Func<GameInstallViewModel, Task> refreshAfter, ILogger log)
+        Func<GameInstallViewModel, bool> isGameRunning, Func<GameInstallViewModel, Task> refreshAfter, ILogger log)
     {
         _resolution = resolution;
         _profiles = profiles;
@@ -125,12 +128,12 @@ internal sealed class ModOperationQueue
         return Task.WhenAll(waiting);
     }
 
-    /// <summary>Starts at most one worker; does nothing while the game runs or nothing is queued.</summary>
+    /// <summary>Starts at most one worker; does nothing while the next request's game runs or nothing is queued.</summary>
     internal void Resume()
     {
         lock (_lock)
         {
-            if (_processing || _operations.Count == 0 || _isGameRunning())
+            if (_processing || !_operations.TryPeek(out var head) || _isGameRunning(head.Game))
             {
                 return;
             }
@@ -187,7 +190,7 @@ internal sealed class ModOperationQueue
                 ModOperation operation;
                 lock (_lock)
                 {
-                    if (_isGameRunning() || !_operations.TryPeek(out var next))
+                    if (!_operations.TryPeek(out var next) || _isGameRunning(next.Game))
                     {
                         break;
                     }
@@ -203,12 +206,17 @@ internal sealed class ModOperationQueue
                 }
                 catch (GameRunningException)
                 {
-                    // The install engine can see a start before the process watcher. Publish it
-                    // there too, so even a short game session produces the later close notification.
-                    _dashboard.IsGameRunning = true;
-                    foreach (var game in _dashboard.Installs)
+                    // The install engine can see a start before the watcher. Publish it for this
+                    // game, so even a short session produces the later stop notification; a local
+                    // start also blocks every other local install, as the process watcher would.
+                    operation.Game.IsGameRunning = true;
+                    if (!operation.Game.Install.IsRemote)
                     {
-                        game.IsGameRunning = true;
+                        _dashboard.IsGameRunning = true;
+                        foreach (var game in _dashboard.Installs.Where(g => !g.Install.IsRemote))
+                        {
+                            game.IsGameRunning = true;
+                        }
                     }
                     GameStartDetected?.Invoke(this, EventArgs.Empty);
                     break;
@@ -241,7 +249,7 @@ internal sealed class ModOperationQueue
 
                 lock (_lock)
                 {
-                    if (_operations.Count == 0 || _isGameRunning())
+                    if (!_operations.TryPeek(out var head) || _isGameRunning(head.Game))
                     {
                         break;
                     }
@@ -279,9 +287,9 @@ internal sealed class ModOperationQueue
                 ? await _resolution.PlanInstallVersionAsync(game, operation.References[0], version)
                 : await _resolution.PlanInstallAsync(game, operation.References);
 
-        if (_isGameRunning())
+        if (_isGameRunning(operation.Game))
         {
-            throw new GameRunningException();
+            throw GameRunningException.For(game);
         }
         if (!plan.Succeeded)
         {
@@ -305,7 +313,7 @@ internal sealed class ModOperationQueue
         var outcome = Describe(result);
         try
         {
-            await _profiles.RecordInstalledAsync(game);
+            await _profiles.RecordInstalledAsync(game, plan.LeavesProfile);
         }
         catch (Exception e)
         {

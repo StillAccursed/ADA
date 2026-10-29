@@ -6,7 +6,9 @@ namespace ADA.Core.Resolution;
 /// <summary>
 /// Chooses one version of each mod so that every requested mod and all its dependencies fit
 /// together: each dependency's semver range holds, each version supports the game's build (CL) and
-/// has a build for the platform. SML is resolved like any other mod.
+/// has a build for the platform. SML is resolved like any other mod. A mod with no build for the
+/// platform that the other side of a multiplayer session doesn't need (a graphics mod on a server)
+/// is left out and reported as skipped.
 /// </summary>
 /// <remarks>
 /// Two phases: <see cref="ResolveAsync"/> first fetches the versions of every mod that could be
@@ -62,7 +64,11 @@ public sealed class DependencyResolver(IModVersionSource versions)
     private sealed record Dependency(string Reference, SemVersionRange Range, string Text, bool Optional);
 
     /// <param name="Rejection">Why no version is usable at all, when <see cref="Candidates"/> is empty.</param>
-    private sealed record ModCandidates(IReadOnlyList<Candidate> Candidates, string? Rejection);
+    /// <param name="NotNeeded">
+    /// No build for this platform, and no version that supports the game build is needed on the
+    /// other side of a multiplayer session; resolved by leaving the mod out.
+    /// </param>
+    private sealed record ModCandidates(IReadOnlyList<Candidate> Candidates, string? Rejection, bool NotNeeded = false);
 
     /// <summary>Fetches every mod reachable through a usable version's dependencies, a layer at a time.</summary>
     private async Task<Dictionary<string, ModCandidates>> DiscoverAsync(IEnumerable<string> roots, ResolveRequest request,
@@ -101,6 +107,7 @@ public sealed class DependencyResolver(IModVersionSource versions)
 
         var usable = new List<Candidate>();
         var noBuild = 0;
+        var noBuildForGame = new List<CatalogVersion>();
         var wrongGame = new List<(SemVersion Version, string Range)>();
         foreach (var version in versions)
         {
@@ -109,12 +116,17 @@ public sealed class DependencyResolver(IModVersionSource versions)
                 continue;
             }
 
+            var supportsGame = GameVersionRange.TryParse(version.GameVersionRange, out var game) && game.Contains(request.GameChangelist);
             if (version.TargetFor(request.Platform) is null)
             {
                 noBuild++;
+                if (supportsGame)
+                {
+                    noBuildForGame.Add(version);
+                }
                 continue;
             }
-            if (!GameVersionRange.TryParse(version.GameVersionRange, out var game) || !game.Contains(request.GameChangelist))
+            if (!supportsGame)
             {
                 wrongGame.Add((semver, version.GameVersionRange));
                 continue;
@@ -140,6 +152,15 @@ public sealed class DependencyResolver(IModVersionSource versions)
         if (usable.Count > 0)
         {
             return new ModCandidates(usable, null);
+        }
+
+        // Only left out when no build for this platform exists for the game at all: a mod that
+        // just needs a newer game here is still reported as that.
+        if (wrongGame.Count == 0 && noBuildForGame.Count > 0)
+        {
+            return noBuildForGame.All(v => !v.RequiredOnRemote)
+                ? new ModCandidates([], null, NotNeeded: true)
+                : new ModCandidates([], $"{reference} has no {request.Platform} build. Players need it on the other side too, so it can't be left out.");
         }
 
         if (wrongGame.Count > 0)
@@ -206,7 +227,7 @@ public sealed class DependencyResolver(IModVersionSource versions)
             }
 
             var requestedNames = requested.Select(r => r.Requirement.Reference).ToHashSet(StringComparer.OrdinalIgnoreCase);
-            return new ResolveResult(Order(solution, requestedNames), []);
+            return new ResolveResult(Order(solution, requestedNames), [], Skipped(solution, requested));
         }
 
         private Dictionary<string, Candidate>? Solve(Dictionary<string, Candidate> chosen, Dictionary<string, List<Constraint>> constraints)
@@ -218,7 +239,7 @@ public sealed class DependencyResolver(IModVersionSource versions)
             List<Candidate>? options = null;
             foreach (var (reference, list) in constraints)
             {
-                if (chosen.ContainsKey(reference) || list.All(c => c.Optional))
+                if (chosen.ContainsKey(reference) || list.All(c => c.Optional) || IsNotNeeded(reference))
                 {
                     continue;
                 }
@@ -296,6 +317,43 @@ public sealed class DependencyResolver(IModVersionSource versions)
                 .ThenBy(c => c.Version.Stability) // Release, then Beta, then Alpha
                 .ThenByDescending(c => c.SemVer, SemVersion.PrecedenceComparer)
                 .ToList();
+        }
+
+        private bool IsNotNeeded(string reference) => catalog.TryGetValue(reference, out var mod) && mod.NotNeeded;
+
+        /// <summary>
+        /// Not-needed mods that the request or a chosen version requires, with who asked. Constraints
+        /// from versions the search tried and dropped don't count, so the list matches the plan.
+        /// </summary>
+        private List<SkippedMod> Skipped(Dictionary<string, Candidate> chosen,
+            IReadOnlyList<(ModRequirement Requirement, SemVersionRange Range)> requested)
+        {
+            var askedBy = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+            foreach (var (requirement, _) in requested.Where(r => IsNotNeeded(r.Requirement.Reference)))
+            {
+                AskedBy(requirement.Reference).Add("requested");
+            }
+            foreach (var (reference, candidate) in chosen)
+            {
+                foreach (var dep in candidate.Dependencies.Where(d => !d.Optional && IsNotNeeded(d.Reference)))
+                {
+                    AskedBy(dep.Reference).Add($"{reference} {candidate.Version.Version}");
+                }
+            }
+            return askedBy
+                .OrderBy(a => a.Key, StringComparer.OrdinalIgnoreCase)
+                .Select(a => new SkippedMod(a.Key, a.Value.OrderByDescending(r => r == "requested").ThenBy(r => r, StringComparer.Ordinal).ToList()))
+                .ToList();
+
+            List<string> AskedBy(string reference)
+            {
+                if (!askedBy.TryGetValue(reference, out var list))
+                {
+                    askedBy[reference] = list = [];
+                }
+
+                return list;
+            }
         }
 
         private string Explain(string reference, List<Constraint> constraints)

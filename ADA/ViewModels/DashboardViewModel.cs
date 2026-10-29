@@ -4,6 +4,7 @@ using ADA.Infrastructure.Catalog;
 using ADA.Infrastructure.Installing;
 using ADA.Infrastructure.IO;
 using ADA.Infrastructure.Profiles;
+using ADA.Infrastructure.Servers;
 using ADA.Infrastructure.Settings;
 using ADA.Platform.Detection;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -14,6 +15,9 @@ namespace ADA.ViewModels;
 
 public partial class DashboardViewModel : ViewModelBase
 {
+    // The server's API is asked whether it's running every this many process checks (15 seconds by default).
+    private const int SERVER_POLL_TICKS = 5;
+
     private static readonly TimeSpan CLOSE_GRACE_PERIOD = TimeSpan.FromSeconds(15);
     private readonly TimeSpan _watchInterval;
     private readonly Func<CancellationToken, Task<IReadOnlyList<GameProcess>>> _findRunning;
@@ -21,7 +25,17 @@ public partial class DashboardViewModel : ViewModelBase
     private readonly IGameDetector _detector;
     private readonly Func<GameInstall, GameInstallViewModel> _createInstall;
     private readonly ILogger<DashboardViewModel> _log;
+    private readonly ServerConnections? _servers;
+    private readonly ProfileSync? _sync;
+    private readonly ConfigPush? _configPush;
+    private readonly ModInstallService _installs;
     private IReadOnlyList<GameProcess> _gameProcesses = [];
+
+    // The connected server's install, kept apart from detection so a rescan doesn't drop it. Null while no server is connected.
+    private GameInstallViewModel? _serverInstall;
+
+    // An install asked for by SelectInstall before it was listed; selected as soon as it appears.
+    private string? _pendingSelection;
 
     public CatalogStatusViewModel Catalog { get; }
 
@@ -38,16 +52,22 @@ public partial class DashboardViewModel : ViewModelBase
 
     public string StatusText => IsScanning
         ? "Looking for Satisfactory…"
-        : Installs.Count switch
+        : Installs.Count(i => !i.Install.IsRemote) switch
         {
             0 => "No Satisfactory install found. ADA only manages copies installed through Steam or the Epic Games Launcher.",
             1 => "1 install found.",
             var n => $"{n} installs found.",
         };
 
+    /// <summary>A local Satisfactory process is running. Each install, including a server, also has its own state.</summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowCloseOffer))]
     public partial bool IsGameRunning { get; set; }
+
+    /// <summary>The connected server can't be reached; shown on the Needs Attention card whichever install is selected.</summary>
+    public string? ServerProblem => _servers is { State: ServerState.Unavailable, Server: { } server }
+        ? $"{server.Name} is unavailable: {_servers.Problem}"
+        : null;
 
     /// <summary>The user clicked "Close Satisfactory" and is being asked to confirm.</summary>
     [ObservableProperty]
@@ -70,12 +90,13 @@ public partial class DashboardViewModel : ViewModelBase
     /// </summary>
     /// <param name="findRunning">Process lookup; tests replace it. Defaults to <see cref="GameProcesses.FindRunningAsync"/>.</param>
     /// <param name="watchInterval">How often <see cref="WatchGameAsync"/> checks; three seconds by default.</param>
+    /// <param name="servers">The server connection; its install joins <see cref="Installs"/> while connected. Null where servers aren't used.</param>
     public DashboardViewModel(IGameDetector detector, CatalogStatusViewModel catalog,
         Func<GameInstall, GameInstallViewModel> installViewModel, ILogger<DashboardViewModel> log,
         ModCatalogStore store, SettingsStore settings, GameProfiles profiles, ModResolutionService resolution,
         DashboardStorageReader storage, ModInstallService installs, ArchiveCache archives, ModChangelogs changelogs,
         Func<CancellationToken, Task<IReadOnlyList<GameProcess>>>? findRunning = null,
-        TimeSpan? watchInterval = null)
+        TimeSpan? watchInterval = null, ServerConnections? servers = null, ProfileSync? sync = null, ConfigPush? configPush = null)
     {
         _detector = detector;
         Catalog = catalog;
@@ -89,16 +110,41 @@ public partial class DashboardViewModel : ViewModelBase
         _resolution = resolution;
         _storage = storage;
         _changelogs = changelogs;
+        _installs = installs;
+        _servers = servers;
+        _sync = sync;
+        _configPush = configPush;
         _uiContext = SynchronizationContext.Current;
         settings.Changed += OnCardSourceChanged;
         profiles.Changed += OnCardSourceChanged;
         installs.Changed += OnCardSourceChanged;
         archives.Changed += OnCardSourceChanged;
         catalog.PropertyChanged += OnCatalogChanged;
+        if (servers is not null)
+        {
+            servers.Changed += OnServersChanged;
+        }
     }
 
     /// <summary>Looks for mod updates in every game; run after the catalogue has been checked. Never throws.</summary>
     public Task FindUpdatesAsync() => Task.WhenAll(Installs.ToList().Select(i => i.FindUpdatesAsync()));
+
+    /// <summary>
+    /// Selects the install with this key, e.g. a server the user just chose to switch to. If it isn't
+    /// listed yet (its connection is still being reported), it's selected as soon as it is.
+    /// </summary>
+    public void SelectInstall(string gamePath)
+    {
+        if (Installs.FirstOrDefault(i => i.Install.GamePath == gamePath) is { } install)
+        {
+            _pendingSelection = null;
+            SelectedInstall = install;
+        }
+        else
+        {
+            _pendingSelection = gamePath;
+        }
+    }
 
     /// <summary>
     /// Watches for Satisfactory starting and stopping for as long as the app runs. A failed check is
@@ -108,11 +154,16 @@ public partial class DashboardViewModel : ViewModelBase
     {
         using var timer = new PeriodicTimer(_watchInterval);
         var failing = false;
+        var tick = 0;
         do
         {
             try
             {
                 await RefreshGameStateAsync(ct);
+                if (tick++ % SERVER_POLL_TICKS == 0)
+                {
+                    await RefreshServerStateAsync(ct);
+                }
                 failing = false;
             }
             catch (Exception e) when (e is not OperationCanceledException)
@@ -147,6 +198,7 @@ public partial class DashboardViewModel : ViewModelBase
         HasUpdates = Installs.Any(i => i.HasUpdates);
         OnPropertyChanged(nameof(CanChooseProfile));
         OnPropertyChanged(nameof(Notifications));
+        OnPropertyChanged(nameof(ServerStateText));
         if (e.PropertyName == nameof(GameInstallViewModel.IsBusy) && sender is GameInstallViewModel { IsBusy: false })
         {
             _ = RefreshCardsAsync();
@@ -169,7 +221,7 @@ public partial class DashboardViewModel : ViewModelBase
         {
             // Detection reads registry hives and walks folders; keep it off the UI thread.
             var found = await Task.Run(_detector.Detect);
-            foreach (var old in Installs)
+            foreach (var old in Installs.Where(i => !ReferenceEquals(i, _serverInstall)))
             {
                 old.PropertyChanged -= OnInstallChanged;
             }
@@ -181,9 +233,14 @@ public partial class DashboardViewModel : ViewModelBase
                 vm.PropertyChanged += OnInstallChanged;
                 Installs.Add(vm);
             }
+            if (_serverInstall is { } server)
+            {
+                Installs.Add(server);
+            }
             SelectedInstall = Installs.FirstOrDefault(i => i.Install.GamePath == selectedPath) ?? Installs.FirstOrDefault();
             HasUpdates = false;
             _log.LogInformation("Found {Count} Satisfactory install(s): {Paths}", found.Count, found.Select(f => f.GamePath));
+            OnPropertyChanged(nameof(StatusText));
         }
         catch (Exception e)
         {
@@ -259,7 +316,7 @@ public partial class DashboardViewModel : ViewModelBase
                 ConfirmingClose = false;
             }
 
-            foreach (var install in Installs)
+            foreach (var install in Installs.Where(i => !i.Install.IsRemote))
             {
                 install.IsGameRunning = running;
                 // Just closed: finish any recovery that was waiting, and re-check.
@@ -273,5 +330,101 @@ public partial class DashboardViewModel : ViewModelBase
         {
             _refreshGate.Release();
         }
+    }
+
+    /// <summary>Tries the unavailable server again now, rather than waiting for the next background attempt.</summary>
+    [RelayCommand]
+    private Task RetryServerAsync() => _servers?.RetryAsync() ?? Task.CompletedTask;
+
+    /// <summary>
+    /// Asks the connected server whether it's running; its own state, separate from local processes.
+    /// Whether it's reachable at all is checked by <see cref="ServerConnections"/> on its own timer,
+    /// so a slow server never holds up the local check.
+    /// </summary>
+    private async Task RefreshServerStateAsync(CancellationToken ct)
+    {
+        if (_servers is not null && _serverInstall is { IsUnavailable: false } server)
+        {
+            var running = await _servers.IsRunningAsync(server.Install, ct);
+            // The server may have been replaced while the API answered.
+            if (ReferenceEquals(server, _serverInstall) && server.IsGameRunning != running)
+            {
+                server.IsGameRunning = running;
+                if (!running)
+                {
+                    _ = server.CheckAsync();
+                }
+            }
+        }
+    }
+
+    private void OnServersChanged(object? sender, EventArgs e)
+    {
+        if (_uiContext is { } context && SynchronizationContext.Current != context)
+        {
+            context.Post(_ => UpdateServerInstall(), null);
+        }
+        else
+        {
+            UpdateServerInstall();
+        }
+    }
+
+    /// <summary>
+    /// Brings the server's entry in line with the connection: added after the local installs while a
+    /// server is connected, connecting or unavailable, and removed when none is. A replaced entry stays
+    /// selected if its predecessor was; a removed one hands the selection to the first local install.
+    /// </summary>
+    private void UpdateServerInstall()
+    {
+        OnPropertyChanged(nameof(ServerProblem));
+        OnPropertyChanged(nameof(Notifications));
+        var wanted = _servers switch
+        {
+            { State: ServerState.Connected, Install: { } install } => install,
+            { State: ServerState.Connecting or ServerState.Unavailable, Server: { } server } => _servers.Install ?? ServerConnections.ToInstall(server, null),
+            _ => null,
+        };
+
+        var old = _serverInstall;
+        var wasSelected = old is not null && ReferenceEquals(SelectedInstall, old);
+        if (old is not null && old.Install != wanted)
+        {
+            old.PropertyChanged -= OnInstallChanged;
+            Installs.Remove(old);
+            _serverInstall = null;
+        }
+        if (wanted is not null && _serverInstall is null)
+        {
+            var vm = _createInstall(wanted);
+            vm.PropertyChanged += OnInstallChanged;
+            Installs.Add(vm);
+            _serverInstall = vm;
+        }
+
+        if (_serverInstall is { } current)
+        {
+            current.UnavailableReason = _servers!.State switch
+            {
+                ServerState.Connecting => "Still connecting.",
+                ServerState.Unavailable => _servers.Problem ?? "It can't be reached.",
+                _ => null,
+            };
+            if ((wasSelected && !ReferenceEquals(old, current)) || current.Install.GamePath == _pendingSelection)
+            {
+                _pendingSelection = null;
+                SelectedInstall = current;
+            }
+            if (!ReferenceEquals(old, current) && !current.IsUnavailable)
+            {
+                _ = current.CheckAsync();
+            }
+        }
+        else if (wasSelected)
+        {
+            SelectedInstall = Installs.FirstOrDefault();
+        }
+        OnPropertyChanged(nameof(ServerStateText));
+        _ = RefreshCardsAsync(); // the Multiplayer row compares with the server
     }
 }

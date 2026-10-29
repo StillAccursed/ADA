@@ -53,6 +53,7 @@ public partial class ModsViewModel : ViewModelBase
     private readonly Lock _resultsLock = new();
     private int _searchGeneration;
     private SynchronizationContext? _viewContext;
+    private readonly List<GameInstallViewModel> _watchedGames = [];
     private IReadOnlyList<CatalogMod> _matches = [];
     private bool _endlessScroll;
     private int _modsPageSize;
@@ -62,6 +63,8 @@ public partial class ModsViewModel : ViewModelBase
     private ModFilter _resultFilter;
     private int _resultTagCount;
 
+    // Games the queue changed since it last went idle; offered a server update when it does.
+    private readonly HashSet<GameInstallViewModel> _changedInRun = [];
     private readonly ModOperationQueue _operationQueue;
 
     public ObservableCollection<GameInstallViewModel> Games => _dashboard.Installs;
@@ -192,7 +195,7 @@ public partial class ModsViewModel : ViewModelBase
 
     /// <summary>Explains how many operations are waiting and whether the game must close first.</summary>
     public string OperationQueueText => $"{PendingOperationCount} operation{(PendingOperationCount == 1 ? "" : "s")} waiting"
-        + (IsGameRunning ? " until Satisfactory closes." : ".");
+        + (!IsGameRunning ? "." : SelectedGame?.Install.IsRemote == true ? " until the server stops." : " until Satisfactory closes.");
 
     /// <summary>The batch button submits work behind the current operation when the worker is busy.</summary>
     public string InstallQueuedButtonText => IsBusy ? "Queue installs" : "Install queued";
@@ -206,9 +209,18 @@ public partial class ModsViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(GameRunningText), nameof(OperationQueueText))]
     public partial bool IsGameRunning { get; set; }
 
-    public string? GameRunningText => IsGameRunning
-        ? "Satisfactory is running. Close it to install or uninstall mods."
+    public string? GameRunningText => !IsGameRunning ? null
+        : SelectedGame?.Install.IsRemote == true
+            ? $"{SelectedGame.Install.Location} is running. Stop the server to install or uninstall mods."
+            : "Satisfactory is running. Close it to install or uninstall mods.";
+
+    /// <summary>The selected server can't be reached; why, for the banner above the list. Null otherwise.</summary>
+    public string? UnavailableText => SelectedGame is { IsUnavailable: true } game
+        ? $"{game.Install.Location} can't be used right now: {game.UnavailableReason}"
         : null;
+
+    /// <summary>Tries the selected server again; the banner's Retry.</summary>
+    public IAsyncRelayCommand RetryServerCommand => _dashboard.RetryServerCommand;
 
     [ObservableProperty]
     public partial string? ProgressText { get; set; }
@@ -217,16 +229,16 @@ public partial class ModsViewModel : ViewModelBase
     [ObservableProperty]
     public partial string? Notice { get; set; }
 
-    private bool CanPlan => SelectedGame is { } game && SelectedMod is { } mod
+    private bool CanPlan => SelectedGame is { IsUnavailable: false } game && SelectedMod is { } mod
         && !IsGameRunning && !_operationQueue.IsActiveFor(game, mod.Reference);
 
     private bool CanInstall => CanPlan && SelectedMod is { CanInstallHere: true };
 
     private bool CanUninstall => CanPlan && SelectedMod is { ShowUninstall: true };
 
-    private bool CanQueue => SelectedGame is not null && SelectedMod is { CanBeRequested: true };
+    private bool CanQueue => SelectedGame is not null && SelectedMod is { } mod && (mod.IsQueued || mod.CanBeRequested);
 
-    private bool CanInstallQueued => HasQueue && SelectedGame is { } game && !IsGameRunning
+    private bool CanInstallQueued => HasQueue && SelectedGame is { IsUnavailable: false } game && !IsGameRunning
         && CurrentQueue()!.Any(reference => !_operationQueue.Contains(game, reference));
 
     /// <summary>Completes when the most recent change of layout, sort or filter is saved; for tests.</summary>
@@ -254,12 +266,11 @@ public partial class ModsViewModel : ViewModelBase
         _log = log;
         _choices = settings is null ? null : new ModsPageChoices(settings, log);
         _details = new ModDetailsLoader(store, versions, logos, () => SelectedGame?.Install, () => _installed, log);
-        _operationQueue = new ModOperationQueue(resolution, profiles, dashboard, () => IsGameRunning, RefreshAfterOperationAsync, log);
+        _operationQueue = new ModOperationQueue(resolution, profiles, dashboard, game => game.IsGameRunning, RefreshAfterOperationAsync, log);
         _operationQueue.StateChanged += (_, _) => UpdateOperationState();
         _operationQueue.ProgressChanged += (_, text) => ProgressText = text;
-        _operationQueue.BusyChanged += (_, busy) => IsBusy = busy;
+        _operationQueue.BusyChanged += (_, busy) => OnQueueBusyChanged(busy);
         _operationQueue.OutcomesChanged += (_, text) => Notice = text;
-        _operationQueue.GameStartDetected += (_, _) => IsGameRunning = true;
         var browsing = settings?.Current ?? AppSettings.Default;
         _endlessScroll = browsing.EndlessScroll;
         _modsPageSize = browsing.ModsPageSize;
@@ -270,6 +281,7 @@ public partial class ModsViewModel : ViewModelBase
         RestoreChoices();
 
         dashboard.Installs.CollectionChanged += OnInstallsChanged;
+        WatchGames();
         dashboard.PropertyChanged += OnDashboardChanged;
         dashboard.Catalog.PropertyChanged += OnCatalogChanged;
         SelectedGame = dashboard.SelectedInstall ?? dashboard.Installs.FirstOrDefault();
@@ -421,6 +433,10 @@ public partial class ModsViewModel : ViewModelBase
         {
             _dashboard.SelectedInstall = value;
         }
+        IsGameRunning = value?.IsGameRunning ?? false;
+        OnPropertyChanged(nameof(GameRunningText));
+        OnPropertyChanged(nameof(OperationQueueText));
+        OnPropertyChanged(nameof(UnavailableText));
         QueueCount = CurrentQueue()?.Count ?? 0;
         UpdateOperationState();
         _ = RefreshAsync(resetWindow: true);
@@ -500,7 +516,8 @@ public partial class ModsViewModel : ViewModelBase
 
     private bool CanQuickChange(ModItemViewModel? mod)
     {
-        return mod is not null && SelectedGame is { } game && !IsGameRunning
+        return mod is not null && SelectedGame is { IsUnavailable: false } game && !IsGameRunning
+            && (mod.IsUninstallAction || mod.CanBeRequested)
             && !_operationQueue.IsActiveFor(game, mod.Reference);
     }
 
@@ -515,9 +532,29 @@ public partial class ModsViewModel : ViewModelBase
         return _operationQueue.EnqueueAsync(game, kind, references, version);
     }
 
+    /// <summary>
+    /// Follows the queue's busy state. When a run ends, each local game it changed is offered to
+    /// bring a server that shares its profile up to date (the Dashboard asks at most once at a time).
+    /// </summary>
+    private void OnQueueBusyChanged(bool busy)
+    {
+        IsBusy = busy;
+        if (busy)
+        {
+            return;
+        }
+        var changed = _changedInRun.ToList();
+        _changedInRun.Clear();
+        foreach (var game in changed.Where(g => !g.Install.IsRemote))
+        {
+            _ = _dashboard.OfferServerUpdateAsync(game);
+        }
+    }
+
     /// <summary>Updates the captured game's batch and profile display, then the currently visible game.</summary>
     private async Task RefreshAfterOperationAsync(GameInstallViewModel game)
     {
+        _changedInRun.Add(game);
         if (_queues.TryGetValue(game.Install.GamePath, out var changedQueue))
         {
             var installed = await Task.Run(() => _installs.InstallerFor(game.Install).Installed);
@@ -980,20 +1017,89 @@ public partial class ModsViewModel : ViewModelBase
 
         InstallCommand.NotifyCanExecuteChanged();
         UninstallCommand.NotifyCanExecuteChanged();
+        ToggleQueueCommand.NotifyCanExecuteChanged();
+        QuickChangeCommand.NotifyCanExecuteChanged();
     }
 
     private void ApplyInstalled(ModItemViewModel item)
     {
         item.InstalledVersion = _installed.GetValueOrDefault(item.Reference)?.Version;
         item.IsDependencyOnly = item.IsInstalled && !_requested.Contains(item.Reference);
+        item.NoBuildHere = NoBuildHere(item.Mod);
         ApplyOperationState(item);
+    }
+
+    /// <summary>
+    /// Why the selected game can't take this mod at all, when none of its newest builds are for the
+    /// game's platform. Null when it can, or when the mod's builds aren't known.
+    /// </summary>
+    private NoBuildNote? NoBuildHere(CatalogMod mod)
+    {
+        if (SelectedGame is not { } game || mod.Latest is not { Count: > 0 } latest)
+        {
+            return null;
+        }
+
+        var platform = ModInstallService.TargetFor(game.Install);
+        if (latest.Any(l => l.Targets.Contains(platform)))
+        {
+            return null;
+        }
+        return platform == TargetPlatform.Windows
+            ? new NoBuildNote("Server only", "No build for the game. It only runs on dedicated servers.")
+            : new NoBuildNote("No server build",
+                $"No {(platform == TargetPlatform.LinuxServer ? "Linux" : "Windows")} server build. Mods without a server build are usually client-only, and the server doesn't need them; install it in your game instead.");
     }
 
     private void OnInstallsChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
+        WatchGames();
         if (SelectedGame is null || !Games.Contains(SelectedGame))
         {
             SelectedGame = Games.FirstOrDefault();
+        }
+    }
+
+    /// <summary>Follows every install's own state: the selected one's running and reachability, and any stopping game resuming the queue.</summary>
+    private void WatchGames()
+    {
+        foreach (var game in _watchedGames)
+        {
+            game.PropertyChanged -= OnGameChanged;
+        }
+        _watchedGames.Clear();
+        _watchedGames.AddRange(Games);
+        foreach (var game in _watchedGames)
+        {
+            game.PropertyChanged += OnGameChanged;
+        }
+    }
+
+    private void OnGameChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (sender is not GameInstallViewModel game)
+        {
+            return;
+        }
+        if (e.PropertyName == nameof(GameInstallViewModel.IsGameRunning))
+        {
+            if (ReferenceEquals(game, SelectedGame))
+            {
+                IsGameRunning = game.IsGameRunning;
+            }
+            if (!game.IsGameRunning)
+            {
+                _operationQueue.Resume();
+            }
+        }
+        else if (e.PropertyName == nameof(GameInstallViewModel.UnavailableReason) && ReferenceEquals(game, SelectedGame))
+        {
+            OnPropertyChanged(nameof(UnavailableText));
+            UpdateOperationState();
+            InstallCommand.NotifyCanExecuteChanged();
+            UninstallCommand.NotifyCanExecuteChanged();
+            QuickChangeCommand.NotifyCanExecuteChanged();
+            InstallQueuedCommand.NotifyCanExecuteChanged();
         }
     }
 
@@ -1003,10 +1109,6 @@ public partial class ModsViewModel : ViewModelBase
             && !ReferenceEquals(SelectedGame, _dashboard.SelectedInstall))
         {
             SelectedGame = _dashboard.SelectedInstall;
-        }
-        if (e.PropertyName == nameof(DashboardViewModel.IsGameRunning))
-        {
-            IsGameRunning = _dashboard.IsGameRunning;
         }
     }
 

@@ -3,7 +3,6 @@ using ADA.Core.Games;
 using ADA.Core.Servers;
 using Renci.SshNet;
 using Renci.SshNet.Common;
-using Renci.SshNet.Sftp;
 
 namespace ADA.Infrastructure.Servers;
 
@@ -20,10 +19,15 @@ public sealed record SetupResult(IReadOnlyList<SetupStep> Steps, string? HostKey
 }
 
 /// <summary>
-/// The Add Server page's Test Connection: logs in, finds the game, and checks ADA can manage mods
-/// there safely. Stops at the first blocking failure. Changes nothing on the server except two
+/// The Add Server page's Test Connection: logs in (for SFTP and FTPS), finds the server, and checks ADA can
+/// manage mods there safely. Stops at the first blocking failure. Changes nothing except two
 /// temporary files, which it removes.
 /// </summary>
+/// <remarks>
+/// A game install is never accepted as a server, whatever files were added to it: a saved server
+/// only ever gets server builds, and this check keeps a game client from being added by mistake or
+/// with a renamed file (see the step 9 proposal).
+/// </remarks>
 public sealed partial class ServerSetupCheck(ServerConnections connections, SatisfactoryServerApi api)
 {
     private const int MAX_SEARCH_DEPTH = 3;
@@ -32,19 +36,36 @@ public sealed partial class ServerSetupCheck(ServerConnections connections, Sati
     // Win64 holds Windows server builds; Linux the native Linux server.
     private static readonly (string Folder, GameHost Host)[] BINARY_FOLDERS = [("Linux", GameHost.Linux), ("Win64", GameHost.Windows)];
 
+    // A game client's launchers, in the install folder.
+    private static readonly string[] CLIENT_LAUNCHERS = ["FactoryGameSteam.exe", "FactoryGameEGS.exe", "FactoryGame.exe"];
+
+    private const string GAME_INSTALL_PROBLEM =
+        "This is a game install, not a dedicated server. ADA manages games installed through Steam or the Epic Games "
+        + "Launcher, and dedicated servers on the Servers page.";
+
     /// <param name="draft">The details as entered. An empty host key fingerprint trusts whatever key the server presents.</param>
-    /// <param name="secret">The password or key passphrase as typed; null uses the saved one.</param>
+    /// <param name="secret">The password or key passphrase as typed; null uses the saved one. Unused for a folder.</param>
+    /// <param name="detectedRoots">Installs ADA already lists; a folder server that's one of them gets a warning.</param>
     public async Task<SetupResult> RunAsync(ServerConnection draft, string? secret, IProgress<SetupStep>? progress = null,
-        CancellationToken ct = default)
+        CancellationToken ct = default, IReadOnlyCollection<string>? detectedRoots = null)
     {
         var steps = new List<SetupStep>();
-        string? fingerprint = null;
         void Report(SetupStep step)
         {
             steps.Add(step);
             progress?.Report(step);
         }
 
+        if (draft.Transport == ServerTransport.Folder)
+        {
+            return await CheckFolderAsync(draft, detectedRoots ?? [], Report, steps, ct);
+        }
+        if (draft.Transport == ServerTransport.Ftp)
+        {
+            return await CheckFtpAsync(draft, secret, Report, steps, ct);
+        }
+
+        string? fingerprint = null;
         SftpClient client;
         try
         {
@@ -59,50 +80,28 @@ public sealed partial class ServerSetupCheck(ServerConnections connections, Sati
         using (client)
         {
             Report(new SetupStep("Log in", true, $"Logged in to {draft.Address}:{draft.Port} as {draft.User}."));
-            string? root;
-            GameHost? host;
-            GameBuild? build;
-            try
-            {
-                (root, host, build) = await Task.Run(() => CheckFiles(client, NormalisedRoot(draft.GameRoot), Report), ct);
-            }
-            catch (SshException e)
-            {
-                Report(new SetupStep("Connection", false, $"The server stopped answering: {e.Message}"));
-                return new SetupResult(steps, fingerprint, null, null, null);
-            }
-            if (root is not null && steps.All(s => s.Passed || !s.Blocking))
-            {
-                var running = await api.IsRunningAsync(draft.Address, draft.ApiPort, ct);
-                Report(new SetupStep("Server API", running, running
-                    ? "The server API answered, so the server is running. Stop it before changing mods."
-                    : $"No answer on port {draft.ApiPort}: the server is stopped, or the port isn't reachable from this PC. "
-                      + "If it can't be reached, stop the server yourself before changing mods.", Blocking: false));
-            }
+            var (root, host, build) = await Task.Run(() => CheckFiles(new SftpServerFolders(client), NormalisedRoot(draft.GameRoot), Report), ct);
+            await CheckApiAsync(draft, root, steps, Report, ct);
             return new SetupResult(steps, fingerprint, root, host, build);
         }
     }
 
     /// <summary>
-    /// The game build in the server's <c>Engine/Binaries</c> folders, or null if there's no readable
+    /// The game build from the server's <c>Engine/Binaries</c> folders, or null if there's no readable
     /// <c>*-Shipping.version</c> file.
     /// </summary>
-    internal static GameBuild? ReadBuild(SftpClient client, string gameRoot)
+    /// <exception cref="IOException">The folders stopped answering.</exception>
+    internal static GameBuild? ReadBuild(IServerFolders folders, string gameRoot)
     {
         foreach (var (folder, _) in BINARY_FOLDERS)
         {
-            var binaries = $"{gameRoot}/Engine/Binaries/{folder}";
-            if (Attributes(client, binaries) is not { IsDirectory: true })
-            {
-                continue;
-            }
-            var versionFiles = client.ListDirectory(binaries)
-                .Where(e => e.IsRegularFile && e.Name.EndsWith("-Shipping.version", StringComparison.OrdinalIgnoreCase))
-                .Select(e => e.FullName)
+            var binaries = folders.Combine(gameRoot, $"Engine/Binaries/{folder}");
+            var versionFiles = folders.FileNames(binaries)
+                .Where(n => n.EndsWith("-Shipping.version", StringComparison.OrdinalIgnoreCase))
                 .Order(StringComparer.Ordinal);
-            foreach (var file in versionFiles)
+            foreach (var name in versionFiles)
             {
-                using var stream = client.OpenRead(file);
+                using var stream = folders.OpenRead(folders.Combine(binaries, name));
                 if (GameBuild.FromVersionFile(stream) is { } build)
                 {
                     return build;
@@ -126,18 +125,100 @@ public sealed partial class ServerSetupCheck(ServerConnections connections, Sati
         return path.Length > 1 ? path.TrimEnd('/') : path;
     }
 
-    private static (string? Root, GameHost? Host, GameBuild? Build) CheckFiles(SftpClient client, string entered, Action<SetupStep> report)
+    private async Task<SetupResult> CheckFtpAsync(ServerConnection draft, string? secret, Action<SetupStep> report,
+        List<SetupStep> steps, CancellationToken ct)
     {
-        string? root;
+        string? fingerprint = null;
+        FluentFtpSession session;
         try
         {
-            root = FindRoot(client, entered);
+            session = await connections.OpenFtpAsync(draft with { GameRoot = NormalisedRoot(draft.GameRoot) }, ct, secret, f => fingerprint = f);
         }
-        catch (SshException e)
+        catch (ServerConnectException e)
         {
-            report(new SetupStep("Find the game", false, $"Couldn't look in {entered}: {e.Message}"));
+            report(new SetupStep("Log in", false, e.Message));
+            return new SetupResult(steps, fingerprint, null, null, null);
+        }
+
+        using (session)
+        {
+            report(new SetupStep("Log in", true, $"Logged in to {draft.Address}:{draft.Port} as {draft.User}, over TLS."));
+            var (root, host, build) = await Task.Run(() => CheckFiles(new FtpServerFolders(session), NormalisedRoot(draft.GameRoot), report), ct);
+            await CheckApiAsync(draft, root, steps, report, ct);
+            return new SetupResult(steps, fingerprint, root, host, build);
+        }
+    }
+
+    private async Task<SetupResult> CheckFolderAsync(ServerConnection draft, IReadOnlyCollection<string> detectedRoots,
+        Action<SetupStep> report, List<SetupStep> steps, CancellationToken ct)
+    {
+        var entered = draft.GameRoot.Trim();
+        var folders = new LocalServerFolders();
+        if (!Path.IsPathFullyQualified(entered) || !folders.IsDirectory(entered))
+        {
+            report(new SetupStep("Open the folder", false,
+                $"Can't open {entered}. If it's on a network share, check the share is mounted, then choose the folder again."));
+            return new SetupResult(steps, null, null, null, null);
+        }
+        report(new SetupStep("Open the folder", true, $"Opened {entered}."));
+
+        var (root, host, build) = await Task.Run(() => CheckFiles(folders, entered, report), ct);
+        if (root is not null && detectedRoots.Any(d => SamePath(d, root)))
+        {
+            report(new SetupStep("Already listed", false,
+                "ADA already lists this server from Steam or Epic. Adding it here too would give it two sets of profiles.", Blocking: false));
+        }
+        await CheckApiAsync(draft, root, steps, report, ct);
+        return new SetupResult(steps, null, root, host, build);
+    }
+
+    /// <summary>Asks the server API whether it's running, once every blocking check has passed. Never blocks.</summary>
+    private async Task CheckApiAsync(ServerConnection draft, string? root, List<SetupStep> steps, Action<SetupStep> report, CancellationToken ct)
+    {
+        if (root is null || !steps.All(s => s.Passed || !s.Blocking))
+        {
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(draft.Address))
+        {
+            report(new SetupStep("Server API", false,
+                "No server address given, so ADA can't tell whether the server is running. Stop it yourself before changing mods.",
+                Blocking: false));
+            return;
+        }
+        var running = await api.IsRunningAsync(draft.Address, draft.ApiPort, ct);
+        report(new SetupStep("Server API", running, running
+            ? "The server API answered, so the server is running. Stop it before changing mods."
+            : $"No answer on port {draft.ApiPort}: the server is stopped, or the port isn't reachable from this PC. "
+              + "If it can't be reached, stop the server yourself before changing mods.", Blocking: false));
+    }
+
+    /// <summary>
+    /// Finds the server below <paramref name="entered"/> and checks ADA can manage it, reporting each
+    /// step; the transport-independent part of the check. Never throws: a connection that stops
+    /// answering is reported as a step.
+    /// </summary>
+    internal static (string? Root, GameHost? Host, GameBuild? Build) CheckFiles(IServerFolders folders, string entered, Action<SetupStep> report)
+    {
+        try
+        {
+            return CheckFilesCore(folders, entered, report);
+        }
+        catch (IOException e)
+        {
+            report(new SetupStep("Connection", false, $"The server's files stopped answering: {e.Message}"));
             return (null, null, null);
         }
+    }
+
+    private static (string? Root, GameHost? Host, GameBuild? Build) CheckFilesCore(IServerFolders folders, string entered, Action<SetupStep> report)
+    {
+        if (IsGameInstall(folders, entered))
+        {
+            report(new SetupStep("Find the game", false, GAME_INSTALL_PROBLEM));
+            return (null, null, null);
+        }
+        var root = FindRoot(folders, entered);
         if (root is null)
         {
             report(new SetupStep("Find the game", false,
@@ -146,36 +227,44 @@ public sealed partial class ServerSetupCheck(ServerConnections connections, Sati
         }
         report(new SetupStep("Find the game", true, root == entered ? $"Found the game in {root}." : $"Found the game in {root}, below the folder entered."));
 
-        var host = DetectHost(client, root);
-        report(new SetupStep("Server OS", host is not null, host switch
+        var host = ServerBinaryHost(folders, root);
+        report(new SetupStep("Dedicated server", host is not null, host switch
         {
-            GameHost.Linux => "A Linux server.",
-            GameHost.Windows => "A Windows server.",
-            _ => "Couldn't tell whether this is a Linux or Windows server. Choose it below.",
-        }, Blocking: false));
+            GameHost.Linux => "A Linux dedicated server.",
+            GameHost.Windows => "A Windows dedicated server.",
+            _ => "There's no server program in Engine/Binaries (FactoryServer-Linux-Shipping or FactoryServer-Win64-Shipping), "
+                 + "so this isn't a complete dedicated server install.",
+        }));
+        if (host is null)
+        {
+            return (null, null, null);
+        }
 
-        var build = ReadBuild(client, root);
+        var build = ReadBuild(folders, root);
         report(new SetupStep("Game build", build is not null, build is null
             ? "Couldn't read the game build, so ADA can't check which mod versions fit."
             : $"Game {build.GameVersion ?? "?"} · CL {build.Changelist}.", Blocking: false));
 
-        var factoryGame = $"{root}/FactoryGame";
-        var writable = CanWrite(client, factoryGame);
+        var factoryGame = folders.Combine(root, "FactoryGame");
+        var writable = CanWrite(folders, factoryGame);
         report(new SetupStep("Can write", writable is null, writable ?? "ADA can create and delete files in FactoryGame."));
         if (writable is not null)
         {
             return (root, host, build);
         }
 
-        var replace = CanReplaceSafely(client, factoryGame);
+        var replace = CanReplaceSafely(folders, factoryGame);
         report(new SetupStep("Safe file replace", replace is null, replace ?? "The server can replace a file in one step."));
         return (root, host, build);
     }
 
-    /// <summary>The entered folder if it holds <c>FactoryGame</c>; otherwise the nearest server install below it.</summary>
-    private static string? FindRoot(SftpClient client, string entered)
+    /// <summary>
+    /// The entered folder if it holds <c>FactoryGame</c>; otherwise the nearest server install below it.
+    /// Game installs found while searching are skipped, so the search can't settle on one.
+    /// </summary>
+    private static string? FindRoot(IServerFolders folders, string entered)
     {
-        if (Attributes(client, $"{entered}/FactoryGame") is { IsDirectory: true })
+        if (folders.IsDirectory(folders.Combine(entered, "FactoryGame")))
         {
             return entered;
         }
@@ -187,13 +276,17 @@ public sealed partial class ServerSetupCheck(ServerConnections connections, Sati
             var next = new List<string>();
             foreach (var folder in level)
             {
-                foreach (var child in Folders(client, folder))
+                foreach (var child in folders.Folders(folder))
                 {
                     if (++searched > MAX_SEARCHED_FOLDERS)
                     {
                         return null;
                     }
-                    if (IsServerInstall(client, child))
+                    if (IsGameInstall(folders, child))
+                    {
+                        continue;
+                    }
+                    if (IsServerInstall(folders, child))
                     {
                         return child;
                     }
@@ -205,121 +298,98 @@ public sealed partial class ServerSetupCheck(ServerConnections connections, Sati
         return null;
     }
 
-    private static bool IsServerInstall(SftpClient client, string folder) =>
-        Attributes(client, $"{folder}/FactoryGame") is { IsDirectory: true }
-        && (Attributes(client, $"{folder}/FactoryServer.sh") is { IsRegularFile: true }
-            || Attributes(client, $"{folder}/FactoryServer.exe") is { IsRegularFile: true });
+    private static bool IsServerInstall(IServerFolders folders, string folder) =>
+        folders.IsDirectory(folders.Combine(folder, "FactoryGame"))
+        && (folders.FileSize(folders.Combine(folder, "FactoryServer.sh")) is not null
+            || folders.FileSize(folders.Combine(folder, "FactoryServer.exe")) is not null);
 
-    /// <summary>The folders inside <paramref name="folder"/>; none when it can't be listed (e.g. no permission).</summary>
-    private static IEnumerable<string> Folders(SftpClient client, string folder)
-    {
-        try
-        {
-            return client.ListDirectory(folder)
-                .Where(e => e.IsDirectory && e.Name is not ("." or ".."))
-                .Select(e => e.FullName)
-                .ToList();
-        }
-        catch (SshException)
-        {
-            return [];
-        }
-    }
+    /// <summary>A game client: one of its launchers, or a client program in <c>FactoryGame/Binaries/Win64</c>.</summary>
+    private static bool IsGameInstall(IServerFolders folders, string folder) =>
+        CLIENT_LAUNCHERS.Any(launcher => folders.FileSize(folders.Combine(folder, launcher)) is not null)
+        || folders.FileNames(folders.Combine(folder, "FactoryGame/Binaries/Win64"))
+            .Any(n => n.StartsWith("FactoryGame", StringComparison.OrdinalIgnoreCase)
+                      && n.EndsWith("-Win64-Shipping.exe", StringComparison.OrdinalIgnoreCase));
 
-    private static GameHost? DetectHost(SftpClient client, string root)
+    /// <summary>
+    /// The OS of the server program in <c>Engine/Binaries</c>, which every dedicated server has and a
+    /// renamed launcher doesn't provide; null when there's no such program, or it's empty.
+    /// </summary>
+    private static GameHost? ServerBinaryHost(IServerFolders folders, string root)
     {
-        if (Attributes(client, $"{root}/FactoryServer.sh") is { IsRegularFile: true })
+        if (folders.FileSize(folders.Combine(root, "Engine/Binaries/Linux/FactoryServer-Linux-Shipping")) is > 0)
         {
             return GameHost.Linux;
         }
-        if (Attributes(client, $"{root}/FactoryServer.exe") is { IsRegularFile: true })
+        var win64 = folders.Combine(root, "Engine/Binaries/Win64");
+        if (folders.FileNames(win64).Any(n => n.StartsWith("FactoryServer-Win64-Shipping", StringComparison.OrdinalIgnoreCase)
+                                             && n.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)
+                                             && folders.FileSize(folders.Combine(win64, n)) is > 0))
         {
             return GameHost.Windows;
-        }
-        // Some hosts hide the executables; the engine's binaries folder still shows the OS.
-        foreach (var (folder, host) in BINARY_FOLDERS)
-        {
-            if (Attributes(client, $"{root}/Engine/Binaries/{folder}") is { IsDirectory: true })
-            {
-                return host;
-            }
         }
         return null;
     }
 
     /// <returns>Null when a file can be created and deleted; otherwise why not.</returns>
-    private static string? CanWrite(SftpClient client, string factoryGame)
+    private static string? CanWrite(IServerFolders folders, string factoryGame)
     {
-        var probe = $"{factoryGame}/.ada-write-test-{Guid.NewGuid():N}";
+        var probe = folders.Combine(factoryGame, $".ada-write-test-{Guid.NewGuid():N}");
         try
         {
-            client.Open(probe, FileMode.CreateNew, FileAccess.Write).Dispose();
-            client.DeleteFile(probe);
+            folders.CreateEmpty(probe);
+            folders.DeleteFile(probe);
             return null;
         }
-        catch (SshException e)
+        catch (IOException e)
         {
-            TryDelete(client, probe);
-            return $"ADA can't write in {factoryGame}: {e.Message}. The user needs permission to change the server's files.";
+            TryDelete(folders, probe);
+            return $"ADA can't write in {factoryGame}: {e.Message}. ADA needs permission to change the server's files.";
         }
     }
 
     /// <summary>
-    /// Replaces one temporary file with another using <c>posix-rename@openssh.com</c>. Without it, ADA
-    /// could lose its record of installed mods if the connection dropped mid-save.
+    /// Replaces one temporary file with another in one step. Without that, ADA could lose its record of
+    /// installed mods if the connection dropped mid-save.
     /// </summary>
     /// <returns>Null when it works; otherwise why the server can't be used.</returns>
-    private static string? CanReplaceSafely(SftpClient client, string factoryGame)
+    private static string? CanReplaceSafely(IServerFolders folders, string factoryGame)
     {
         var id = Guid.NewGuid().ToString("N");
-        var from = $"{factoryGame}/.ada-replace-test-{id}.new";
-        var to = $"{factoryGame}/.ada-replace-test-{id}";
+        var from = folders.Combine(factoryGame, $".ada-replace-test-{id}.new");
+        var to = folders.Combine(factoryGame, $".ada-replace-test-{id}");
         try
         {
-            client.Open(from, FileMode.CreateNew, FileAccess.Write).Dispose();
-            client.Open(to, FileMode.CreateNew, FileAccess.Write).Dispose();
-            client.RenameFile(from, to, isPosix: true);
+            folders.CreateEmpty(from);
+            folders.CreateEmpty(to);
+            folders.Replace(from, to);
             return null;
         }
-        catch (Exception e) when (e is SshException or NotSupportedException)
+        catch (IOException)
         {
-            return "This server's SFTP can't replace a file in one step (posix-rename), so ADA can't keep its records "
-                   + "safe there. Servers running OpenSSH support it.";
+            return folders.ReplaceUnsupported;
         }
         finally
         {
-            TryDelete(client, from);
-            TryDelete(client, to);
+            TryDelete(folders, from);
+            TryDelete(folders, to);
         }
     }
 
-    private static void TryDelete(SftpClient client, string path)
+    private static void TryDelete(IServerFolders folders, string path)
     {
         try
         {
-            client.DeleteFile(path);
+            folders.DeleteFile(path);
         }
-        catch (SshException)
+        catch (IOException)
         {
-            // Not there, which is the goal.
+            // Left for the user; it's an empty file named .ada-…-test.
         }
     }
 
-    private static SftpFileAttributes? Attributes(SftpClient client, string path)
-    {
-        try
-        {
-            return client.GetAttributes(path);
-        }
-        catch (SftpPathNotFoundException)
-        {
-            return null;
-        }
-        catch (SftpPermissionDeniedException)
-        {
-            return null;
-        }
-    }
+    private static bool SamePath(string a, string b) =>
+        string.Equals(Path.TrimEndingDirectorySeparator(Path.GetFullPath(a)), Path.TrimEndingDirectorySeparator(Path.GetFullPath(b)),
+            OperatingSystem.IsLinux() ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase);
 
     [GeneratedRegex("^[A-Za-z]:/")]
     private static partial Regex WindowsDrive();

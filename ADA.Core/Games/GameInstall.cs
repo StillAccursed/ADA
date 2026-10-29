@@ -59,14 +59,18 @@ public sealed record GameInstall(
     string Location,
     GameBuild? Build = null)
 {
-    /// <summary>Install keys for servers start with this; see <see cref="IsRemote"/>.</summary>
+    /// <summary>
+    /// Install keys for saved servers start with this; see <see cref="IsRemote"/>. It's an identifier,
+    /// not a protocol: a folder server uses it too, and profiles and queues are keyed by it, so it
+    /// can't change without orphaning saved servers' state.
+    /// </summary>
     public const string REMOTE_SCHEME = "sftp://";
 
     public string ModsPath => Path.Combine(GamePath, "FactoryGame", "Mods");
 
     /// <summary>
-    /// A server reached over SFTP. Its <see cref="GamePath"/> is a key (<c>sftp://{server id}</c>),
-    /// not a path on this machine, so it must never be opened as a folder.
+    /// A saved server, reached over SFTP or through a folder. Its <see cref="GamePath"/> is a key
+    /// (<c>sftp://{server id}</c>), not a path on this machine, so it must never be opened as a folder.
     /// </summary>
     public bool IsRemote => GamePath.StartsWith(REMOTE_SCHEME, StringComparison.Ordinal);
 

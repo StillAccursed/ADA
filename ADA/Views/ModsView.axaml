@@ -24,8 +24,10 @@
                                Foreground="{DynamicResource SuccessBrush}" />
                     <TextBlock FontSize="12" Text="Queued" IsVisible="{Binding IsQueued}"
                                Foreground="{DynamicResource AccentBrush}" />
+                    <TextBlock FontSize="12" Text="{Binding NoBuildHere.Tag, FallbackValue=''}" IsVisible="{Binding HasNoBuildHere}"
+                               ToolTip.Tip="{Binding NoBuildHere.Reason, FallbackValue=''}" Foreground="{DynamicResource TextSecondaryBrush}" />
                 </StackPanel>
-                <Button Grid.Column="3" Classes="quickAction" Content="{Binding QuickActionText}"
+                <Button Grid.Column="3" Classes="quickAction" Content="{Binding QuickActionText}" IsVisible="{Binding ShowQuickAction}"
                         Classes.install="{Binding !IsUninstallAction}" Classes.uninstall="{Binding IsUninstallAction}"
                         Command="{Binding $parent[views:ModsView].((vm:ModsViewModel)DataContext).QuickChangeCommand}"
                         CommandParameter="{Binding}" VerticalAlignment="Center" />
@@ -53,9 +55,13 @@
                                Foreground="{DynamicResource SuccessBrush}" />
                 </Panel>
                 <Button Grid.Row="3" Classes="quickAction" Content="{Binding QuickActionText}" Margin="0,8,0,0"
+                        IsVisible="{Binding ShowQuickAction}"
                         Classes.install="{Binding !IsUninstallAction}" Classes.uninstall="{Binding IsUninstallAction}"
                         Command="{Binding $parent[views:ModsView].((vm:ModsViewModel)DataContext).QuickChangeCommand}"
                         CommandParameter="{Binding}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
+                <TextBlock Grid.Row="3" Margin="0,8,0,0" FontSize="12" HorizontalAlignment="Center"
+                           Text="{Binding NoBuildHere.Tag, FallbackValue=''}" IsVisible="{Binding !ShowQuickAction}"
+                           ToolTip.Tip="{Binding NoBuildHere.Reason, FallbackValue=''}" Foreground="{DynamicResource TextSecondaryBrush}" />
             </Grid>
         </DataTemplate>
 
@@ -81,13 +87,15 @@
                             <TextBlock FontSize="12" Margin="0,0,14,0" Text="{Binding UpdatedText}" Foreground="{DynamicResource TextSecondaryBrush}" />
                             <TextBlock FontSize="12" Margin="0,0,14,0" Text="{Binding InstalledText}" IsVisible="{Binding IsInstalled}"
                                        Foreground="{DynamicResource SuccessBrush}" />
-                            <TextBlock FontSize="12" Text="Queued" IsVisible="{Binding IsQueued}" Foreground="{DynamicResource AccentBrush}" />
+                            <TextBlock FontSize="12" Margin="0,0,14,0" Text="Queued" IsVisible="{Binding IsQueued}" Foreground="{DynamicResource AccentBrush}" />
+                            <TextBlock FontSize="12" Text="{Binding NoBuildHere.Tag, FallbackValue=''}" IsVisible="{Binding HasNoBuildHere}"
+                                       ToolTip.Tip="{Binding NoBuildHere.Reason, FallbackValue=''}" Foreground="{DynamicResource TextSecondaryBrush}" />
                         </WrapPanel>
                     </StackPanel>
                     <StackPanel Grid.Column="2" Spacing="8" VerticalAlignment="Top">
                         <Button Classes="star" HorizontalAlignment="Right" Content="{Binding FavouriteGlyph}"
                                 Command="{Binding ToggleFavouriteCommand}" ToolTip.Tip="Favourite" />
-                        <Button Classes="quickAction" Content="{Binding QuickActionText}"
+                        <Button Classes="quickAction" Content="{Binding QuickActionText}" IsVisible="{Binding ShowQuickAction}"
                                 Classes.install="{Binding !IsUninstallAction}" Classes.uninstall="{Binding IsUninstallAction}"
                                 Command="{Binding $parent[views:ModsView].((vm:ModsViewModel)DataContext).QuickChangeCommand}"
                                 CommandParameter="{Binding}" />
@@ -103,13 +111,13 @@
             <Setter Property="Padding" Value="10,5" />
         </Style>
         <Style Selector="Button.quickAction.install:not(:disabled) /template/ ContentPresenter#PART_ContentPresenter">
-            <Setter Property="Background" Value="#237548" />
-            <Setter Property="BorderBrush" Value="#237548" />
+            <Setter Property="Background" Value="{DynamicResource PositiveActionBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource PositiveActionBrush}" />
             <Setter Property="Foreground" Value="White" />
         </Style>
         <Style Selector="Button.quickAction.uninstall:not(:disabled) /template/ ContentPresenter#PART_ContentPresenter">
-            <Setter Property="Background" Value="#B42318" />
-            <Setter Property="BorderBrush" Value="#B42318" />
+            <Setter Property="Background" Value="{DynamicResource DangerActionBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource DangerActionBrush}" />
             <Setter Property="Foreground" Value="White" />
         </Style>
         <Style Selector="Button.star">
@@ -211,6 +219,16 @@
                     </Button.Flyout>
                 </Button>
             </WrapPanel>
+            <!-- The selected server can't be reached: nothing can be installed or removed until it can. -->
+            <Border DockPanel.Dock="Top" Margin="0,0,0,8" Padding="14,10" CornerRadius="8" BorderThickness="1"
+                    IsVisible="{Binding UnavailableText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                    Background="{DynamicResource SurfaceRaisedBrush}" BorderBrush="{DynamicResource WarningBrush}">
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                    <TextBlock Text="{Binding UnavailableText}" TextWrapping="Wrap" VerticalAlignment="Center"
+                               Foreground="{DynamicResource WarningBrush}" />
+                    <Button Grid.Column="1" Content="Retry" Command="{Binding RetryServerCommand}" />
+                </Grid>
+            </Border>
             <TextBlock DockPanel.Dock="Top" Text="{Binding ResultsText}" Margin="2,0,0,8" FontSize="12"
                        Foreground="{DynamicResource TextSecondaryBrush}" />
 
@@ -339,6 +357,9 @@
                             <Button HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Classes="accent"
                                     Content="{Binding SelectedMod.InstallText}" Command="{Binding InstallCommand}"
                                     IsVisible="{Binding SelectedMod.CanInstallHere}" />
+                            <TextBlock Text="{Binding SelectedMod.NoBuildHere.Reason, FallbackValue=''}" TextWrapping="Wrap"
+                                       IsVisible="{Binding SelectedMod.HasNoBuildHere, FallbackValue=False}"
+                                       Foreground="{DynamicResource TextSecondaryBrush}" />
                             <Button HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Content="{Binding SelectedMod.UninstallText}"
                                     Command="{Binding UninstallCommand}" IsVisible="{Binding SelectedMod.ShowUninstall}" />
                             <Button HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Content="Add to queue"

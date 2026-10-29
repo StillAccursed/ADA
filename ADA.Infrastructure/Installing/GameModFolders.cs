@@ -27,6 +27,12 @@ internal static class GameModFolders
 
     public const string LOCK = WORK + "/lock";
 
+    /// <summary>Mod configs, one <c>{ModReference}.cfg</c> each, as SML keeps them on both a game and a server.</summary>
+    public const string CONFIGS = "Configs";
+
+    /// <summary>The server configs the last push replaced, so it can be undone.</summary>
+    public const string CONFIG_BACKUP = WORK + "/config-backup";
+
     /// <summary>Transaction folders are named with this prefix, so recovery can find strays.</summary>
     public const string TRANSACTION_PREFIX = "txn-";
 

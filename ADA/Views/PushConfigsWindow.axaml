@@ -1,0 +1,42 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:ADA.ViewModels"
+        x:Class="ADA.Views.PushConfigsWindow"
+        x:DataType="vm:PushConfigsViewModel"
+        Title="Push mod configs"
+        Width="500" Height="520" MinWidth="400" MinHeight="320"
+        WindowStartupLocation="CenterOwner"
+        Background="{DynamicResource SurfaceBrush}">
+    <LayoutTransformControl LayoutTransform="{DynamicResource InterfaceScaleTransform}">
+        <DockPanel Margin="24,20">
+            <StackPanel DockPanel.Dock="Top" Spacing="6" Margin="0,0,0,12">
+                <TextBlock Text="{Binding Title}" FontSize="20" FontWeight="SemiBold" TextWrapping="Wrap"
+                           Foreground="{DynamicResource TextPrimaryBrush}" />
+                <TextBlock Text="{Binding FromText}" TextWrapping="Wrap" Foreground="{DynamicResource TextSecondaryBrush}" />
+            </StackPanel>
+
+            <StackPanel DockPanel.Dock="Bottom" Spacing="8" Margin="0,12,0,0">
+                <TextBlock Text="{Binding Note}" TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource TextSecondaryBrush}" />
+                <TextBlock Text="{Binding RunningText}" TextWrapping="Wrap" Foreground="{DynamicResource WarningBrush}"
+                           IsVisible="{Binding RunningText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                <SelectableTextBlock Text="{Binding Outcome}" TextWrapping="Wrap" Foreground="{DynamicResource TextPrimaryBrush}"
+                                     IsVisible="{Binding Outcome, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="8">
+                    <Button Content="Restore previous configs" Command="{Binding RestoreCommand}" IsVisible="{Binding HasBackup}" />
+                    <Button Grid.Column="2" Content="Close" Command="{Binding CloseCommand}" IsCancel="True" />
+                    <Button Grid.Column="3" Content="Push" Classes="accent" Command="{Binding PushCommand}" IsDefault="True" />
+                </Grid>
+            </StackPanel>
+
+            <ScrollViewer>
+                <ItemsControl ItemsSource="{Binding Configs}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="vm:ConfigChoiceViewModel">
+                            <CheckBox Content="{Binding Label}" IsChecked="{Binding IsChosen}" Margin="0,2" />
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </ScrollViewer>
+        </DockPanel>
+    </LayoutTransformControl>
+</Window>

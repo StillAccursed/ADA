@@ -168,6 +168,19 @@ public sealed class ServerStoreTests : IDisposable
         var properties = json.RootElement[0].EnumerateObject().Select(p => p.Name).Order().ToArray();
 
         Assert.Equal(["address", "apiPort", "auth", "connected", "gameRoot", "host", "hostKeyFingerprint", "id", "name",
-            "port", "privateKeyPath", "user"], properties);
+            "port", "privateKeyPath", "transport", "user"], properties);
+    }
+
+    [Fact]
+    public void An_ftp_server_logs_in_with_a_password_only()
+    {
+        using var dir = new TempDir();
+        var store = new ServerStore(dir.Combine("servers.json"));
+        var ftp = new ServerConnection(Guid.NewGuid(), "Host", "ftp.example", 21, "steam", ServerAuth.Password, "/srv", GameHost.Linux, "abc",
+            Transport: ServerTransport.Ftp);
+
+        Assert.Null(store.ProblemWith(ftp));
+        Assert.Equal("FTP servers log in with a password.",
+            store.ProblemWith(ftp with { Auth = ServerAuth.PrivateKey, PrivateKeyPath = "/k" }));
     }
 }

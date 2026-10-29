@@ -1,0 +1,190 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:ADA.ViewModels"
+             xmlns:views="using:ADA.Views"
+             x:Class="ADA.Views.ServersView"
+             x:DataType="vm:ServersViewModel">
+    <UserControl.Resources>
+        <!-- A bin: lid, handle and body. -->
+        <StreamGeometry x:Key="TrashIcon">M3,4 L13,4 M6,4 L6,2.5 L10,2.5 L10,4 M4.5,4 L5.2,14 L10.8,14 L11.5,4 M7,6.5 L7,12 M9,6.5 L9,12</StreamGeometry>
+
+        <DataTemplate x:Key="ServerRow" x:DataType="vm:ServerItemViewModel">
+            <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="12" Margin="0,4">
+                <StackPanel Spacing="2" VerticalAlignment="Center">
+                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"
+                               Foreground="{DynamicResource TextPrimaryBrush}" />
+                    <TextBlock FontSize="12" Foreground="{DynamicResource TextSecondaryBrush}" TextTrimming="CharacterEllipsis">
+                        <Run Text="{Binding Endpoint}" /><Run Text=" · " /><Run Text="{Binding StatusText}" />
+                    </TextBlock>
+                    <TextBlock FontSize="12" Text="{Binding Problem}" IsVisible="{Binding HasProblem}" TextWrapping="Wrap"
+                               Foreground="{DynamicResource WarningBrush}" />
+                    <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding IsLocked}">
+                        <TextBlock FontSize="12" Text="{Binding LockText}" VerticalAlignment="Center" Foreground="{DynamicResource WarningBrush}" />
+                        <Button Content="Take over" FontSize="12" Padding="8,2"
+                                Command="{Binding $parent[views:ServersView].((vm:ServersViewModel)DataContext).TakeOverLockCommand}"
+                                CommandParameter="{Binding}" />
+                    </StackPanel>
+                </StackPanel>
+                <Button Grid.Column="1" Classes="connect" Classes.disconnect="{Binding IsConnected}" Content="{Binding ConnectText}"
+                        Command="{Binding $parent[views:ServersView].((vm:ServersViewModel)DataContext).ToggleConnectionCommand}"
+                        CommandParameter="{Binding}" IsEnabled="{Binding !IsBusy}" VerticalAlignment="Center" />
+                <Button Grid.Column="2" Classes="trash" ToolTip.Tip="Remove" AutomationProperties.Name="Remove"
+                        Command="{Binding $parent[views:ServersView].((vm:ServersViewModel)DataContext).RemoveCommand}"
+                        CommandParameter="{Binding}" IsEnabled="{Binding !IsBusy}" VerticalAlignment="Bottom">
+                    <Path Data="{StaticResource TrashIcon}" />
+                </Button>
+            </Grid>
+        </DataTemplate>
+
+        <DataTemplate x:Key="ServerTile" x:DataType="vm:ServerItemViewModel">
+            <Border Width="220" Height="150" Padding="12" CornerRadius="8" BorderThickness="1" Margin="2"
+                    Background="{DynamicResource SurfaceRaisedBrush}" BorderBrush="{DynamicResource BorderSubtleBrush}">
+                <Grid RowDefinitions="Auto,Auto,Auto,*,Auto">
+                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"
+                               Foreground="{DynamicResource TextPrimaryBrush}" />
+                    <TextBlock Grid.Row="1" FontSize="12" Text="{Binding Endpoint}" TextTrimming="CharacterEllipsis"
+                               Foreground="{DynamicResource TextSecondaryBrush}" />
+                    <TextBlock Grid.Row="2" FontSize="12" Text="{Binding StatusText}"
+                               Foreground="{DynamicResource TextSecondaryBrush}" />
+                    <Grid Grid.Row="4" ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                        <Button Classes="connect" Classes.disconnect="{Binding IsConnected}" Content="{Binding ConnectText}"
+                                HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+                                Command="{Binding $parent[views:ServersView].((vm:ServersViewModel)DataContext).ToggleConnectionCommand}"
+                                CommandParameter="{Binding}" IsEnabled="{Binding !IsBusy}" />
+                        <Button Grid.Column="1" Classes="trash" ToolTip.Tip="Remove" AutomationProperties.Name="Remove"
+                                Command="{Binding $parent[views:ServersView].((vm:ServersViewModel)DataContext).RemoveCommand}"
+                                CommandParameter="{Binding}" IsEnabled="{Binding !IsBusy}">
+                            <Path Data="{StaticResource TrashIcon}" />
+                        </Button>
+                    </Grid>
+                </Grid>
+            </Border>
+        </DataTemplate>
+
+        <DataTemplate x:Key="ServerCard" x:DataType="vm:ServerItemViewModel">
+            <Border Padding="14" CornerRadius="8" BorderThickness="1" Margin="0,2"
+                    Background="{DynamicResource SurfaceRaisedBrush}" BorderBrush="{DynamicResource BorderSubtleBrush}">
+                <Grid ColumnDefinitions="*,Auto" RowDefinitions="*,Auto" ColumnSpacing="14">
+                    <StackPanel Grid.RowSpan="2" Spacing="3">
+                        <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="15" TextTrimming="CharacterEllipsis"
+                                   Foreground="{DynamicResource TextPrimaryBrush}" />
+                        <TextBlock Text="{Binding Endpoint}" Foreground="{DynamicResource TextSecondaryBrush}" />
+                        <TextBlock FontSize="12" Foreground="{DynamicResource TextSecondaryBrush}">
+                            <Run Text="{Binding SystemText}" /><Run Text=" · " /><Run Text="{Binding StatusText}" />
+                        </TextBlock>
+                        <TextBlock FontSize="12" Text="{Binding BuildText}" IsVisible="{Binding BuildText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                                   Foreground="{DynamicResource TextSecondaryBrush}" />
+                        <TextBlock FontSize="12" Text="{Binding Problem}" IsVisible="{Binding HasProblem}" TextWrapping="Wrap"
+                                   Foreground="{DynamicResource WarningBrush}" />
+                        <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding IsLocked}">
+                            <TextBlock FontSize="12" Text="{Binding LockText}" VerticalAlignment="Center" Foreground="{DynamicResource WarningBrush}" />
+                            <Button Content="Take over" FontSize="12" Padding="8,2"
+                                    Command="{Binding $parent[views:ServersView].((vm:ServersViewModel)DataContext).TakeOverLockCommand}"
+                                    CommandParameter="{Binding}" />
+                        </StackPanel>
+                    </StackPanel>
+                    <Button Grid.Column="1" Classes="connect" Classes.disconnect="{Binding IsConnected}" Content="{Binding ConnectText}"
+                            VerticalAlignment="Top"
+                            Command="{Binding $parent[views:ServersView].((vm:ServersViewModel)DataContext).ToggleConnectionCommand}"
+                            CommandParameter="{Binding}" IsEnabled="{Binding !IsBusy}" />
+                    <Button Grid.Column="1" Grid.Row="1" Classes="trash" HorizontalAlignment="Right" ToolTip.Tip="Remove"
+                            AutomationProperties.Name="Remove"
+                            Command="{Binding $parent[views:ServersView].((vm:ServersViewModel)DataContext).RemoveCommand}"
+                            CommandParameter="{Binding}" IsEnabled="{Binding !IsBusy}">
+                        <Path Data="{StaticResource TrashIcon}" />
+                    </Button>
+                </Grid>
+            </Border>
+        </DataTemplate>
+    </UserControl.Resources>
+
+    <UserControl.Styles>
+        <Style Selector="Button.connect">
+            <Setter Property="MinWidth" Value="100" />
+            <Setter Property="Padding" Value="12,5" />
+        </Style>
+        <Style Selector="Button.connect:not(:disabled) /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource PositiveActionBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource PositiveActionBrush}" />
+            <Setter Property="Foreground" Value="White" />
+        </Style>
+        <Style Selector="Button.connect.disconnect:not(:disabled) /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource DangerActionBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource DangerActionBrush}" />
+        </Style>
+        <Style Selector="Button.trash">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Padding" Value="6" />
+        </Style>
+        <Style Selector="Button.trash Path">
+            <Setter Property="Width" Value="16" />
+            <Setter Property="Height" Value="16" />
+            <Setter Property="Stretch" Value="Uniform" />
+            <Setter Property="StrokeThickness" Value="1.4" />
+            <Setter Property="Stroke" Value="{DynamicResource TextSecondaryBrush}" />
+        </Style>
+        <Style Selector="Button.trash:pointerover Path">
+            <Setter Property="Stroke" Value="{DynamicResource DangerActionBrush}" />
+        </Style>
+        <Style Selector="ListBox.list">
+            <Setter Property="ItemTemplate" Value="{StaticResource ServerRow}" />
+        </Style>
+        <Style Selector="ListBox.grid">
+            <Setter Property="ItemTemplate" Value="{StaticResource ServerTile}" />
+            <Setter Property="ItemsPanel">
+                <ItemsPanelTemplate>
+                    <WrapPanel />
+                </ItemsPanelTemplate>
+            </Setter>
+        </Style>
+        <Style Selector="ListBox.card">
+            <Setter Property="ItemTemplate" Value="{StaticResource ServerCard}" />
+        </Style>
+        <Style Selector="RadioButton.view">
+            <Setter Property="Theme" Value="{StaticResource {x:Type ToggleButton}}" />
+            <Setter Property="Padding" Value="10,4" />
+        </Style>
+    </UserControl.Styles>
+
+    <Panel>
+        <!-- The list, or the empty state. -->
+        <DockPanel Margin="32,28,32,16" IsVisible="{Binding !IsAdding}">
+            <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" Margin="0,0,0,16">
+                <TextBlock Text="Servers" FontSize="24" FontWeight="SemiBold" VerticalAlignment="Center"
+                           Foreground="{DynamicResource TextPrimaryBrush}" />
+                <Button Grid.Column="1" Classes="accent" Content="+ Add a Server" Command="{Binding AddServerCommand}" />
+            </Grid>
+
+            <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" Margin="0,0,0,8" IsVisible="{Binding ShowsList}">
+                <TextBox PlaceholderText="Search names and addresses" Text="{Binding SearchText}" />
+                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="2" Margin="12,0,0,0">
+                    <RadioButton Classes="view" GroupName="ServerView" Content="List" IsChecked="{Binding IsListView}" />
+                    <RadioButton Classes="view" GroupName="ServerView" Content="Grid" IsChecked="{Binding IsGridView}" />
+                    <RadioButton Classes="view" GroupName="ServerView" Content="Card" IsChecked="{Binding IsCardView}" />
+                </StackPanel>
+            </Grid>
+
+            <TextBlock DockPanel.Dock="Top" Text="{Binding Notice}" TextWrapping="Wrap" Margin="2,0,0,8"
+                       IsVisible="{Binding Notice, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                       Foreground="{DynamicResource WarningBrush}" />
+
+            <Panel>
+                <StackPanel IsVisible="{Binding ShowsEmptyState}" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="10">
+                    <Button Width="96" Height="96" CornerRadius="48" Command="{Binding AddServerCommand}"
+                            HorizontalAlignment="Center" AutomationProperties.Name="Add a Server">
+                        <TextBlock Text="+" FontSize="48" FontWeight="Light" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                   Foreground="{DynamicResource AccentBrush}" />
+                    </Button>
+                    <TextBlock Text="Add a Server" HorizontalAlignment="Center" FontSize="15"
+                               Foreground="{DynamicResource TextSecondaryBrush}" />
+                </StackPanel>
+                <ListBox ItemsSource="{Binding Shown}" Background="Transparent" IsVisible="{Binding ShowsList}"
+                         ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                         Classes.list="{Binding IsListView}" Classes.grid="{Binding IsGridView}" Classes.card="{Binding IsCardView}" />
+            </Panel>
+        </DockPanel>
+
+        <!-- The Add Server page, in the list's place. -->
+        <views:AddServerView DataContext="{Binding Adding}" IsVisible="{Binding $parent[views:ServersView].((vm:ServersViewModel)DataContext).IsAdding}" />
+    </Panel>
+</UserControl>

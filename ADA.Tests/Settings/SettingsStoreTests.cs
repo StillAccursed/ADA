@@ -1,6 +1,8 @@
 using ADA.Core.Settings;
 using ADA.Infrastructure.Settings;
 using ADA.Tests.Fixtures;
+using ADA.ViewModels;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace ADA.Tests.Settings;
 
@@ -48,6 +50,23 @@ public class SettingsStoreTests
         var path = dir.WriteFile("Config/settings.json", """{ "someFutureSetting": 3 }""");
 
         Assert.True(new SettingsStore(path).Load().KeepDownloadedArchives);
+    }
+
+    [Fact]
+    public async Task Older_settings_check_server_uploads_and_the_page_saves_the_choice()
+    {
+        using var dir = new TempDir();
+        var path = dir.WriteFile("Config/settings.json", """{ "keepDownloadedArchives": false }""");
+        var store = new SettingsStore(path);
+        Assert.True(store.Current.CheckServerUploads);
+
+        var page = new SettingsViewModel(store, new(dir.Combine("Archives")), NullLogger<SettingsViewModel>.Instance);
+        Assert.True(page.CheckServerUploads);
+        page.CheckServerUploads = false;
+        await page.PendingSave;
+
+        Assert.False(store.Current.CheckServerUploads);
+        Assert.False(store.Current.KeepDownloadedArchives);
     }
 
     [Theory]

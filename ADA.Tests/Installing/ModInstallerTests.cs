@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using ADA.Core.Catalog;
 using ADA.Infrastructure.Installing;
 using ADA.Tests.Fixtures;
@@ -25,6 +26,41 @@ public sealed class ModInstallerTests : IDisposable
         new SmodBuilder(reference, version).GameFeature(gameFeature).Typical().WriteTo(Path.Combine(_archives, version));
 
     private static ModChange.Install Install(string archive) => new(archive, TargetPlatform.Windows);
+
+    private (ModInstaller Installer, WatchedGameFiles Files) Watched(bool readBack)
+    {
+        var files = new WatchedGameFiles(_game.FactoryGame);
+        return (new ModInstaller(files, () => _gameRunning, null, readBack: readBack), files);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void Reads_each_file_back_only_when_asked_and_records_the_hash_written_either_way(bool readBack)
+    {
+        var (installer, files) = Watched(readBack);
+
+        installer.Apply([Install(Smod("A", "1.0.0"))]);
+
+        Assert.Equal(readBack, files.Reads.Any(r => r.Contains("/new/", StringComparison.Ordinal)));
+        var pak = installer.Installed["A"].Files.Single(f => f.Path.EndsWith(".pak", StringComparison.Ordinal));
+        var onDisk = File.ReadAllBytes(_game.ModFolder($"Mods/A/{pak.Path}"));
+        Assert.Equal(Convert.ToHexStringLower(SHA256.HashData(onDisk)), pak.Sha256);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void A_file_shorter_on_disk_than_written_fails_the_install(bool readBack)
+    {
+        var (installer, files) = Watched(readBack);
+        files.ShortenEnding = ".pak";
+
+        var e = Assert.Throws<InstallException>(() => installer.Apply([Install(Smod("A", "1.0.0"))]));
+
+        Assert.Contains("bytes on disk, not the", e.Message);
+        Assert.Null(_game.Read("Mods/A"));
+    }
 
     [Fact]
     public void Installs_into_Mods_or_GameFeatures_by_the_uplugin_flag()

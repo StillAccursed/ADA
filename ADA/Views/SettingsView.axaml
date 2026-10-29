@@ -106,6 +106,27 @@
             </StackPanel>
 
             <StackPanel Spacing="8">
+                <TextBlock Text="SERVERS" FontSize="12" FontWeight="SemiBold" LetterSpacing="1"
+                           Foreground="{DynamicResource TextSecondaryBrush}" />
+
+                <Border Padding="20,16" CornerRadius="8" BorderThickness="1"
+                        Background="{DynamicResource SurfaceRaisedBrush}"
+                        BorderBrush="{DynamicResource BorderSubtleBrush}">
+                    <Grid ColumnDefinitions="*,Auto">
+                        <StackPanel Spacing="4" Margin="0,0,24,0">
+                            <TextBlock Text="Check every uploaded file" FontWeight="SemiBold"
+                                       Foreground="{DynamicResource TextPrimaryBrush}" />
+                            <TextBlock TextWrapping="Wrap" Foreground="{DynamicResource TextSecondaryBrush}"
+                                       Text="Reads each file back from the server after uploading it and compares it with the original. Turn off on slow connections to only check sizes; SSH already protects the transfer, and Check (full) can verify everything later." />
+                        </StackPanel>
+                        <ToggleSwitch Grid.Column="1" VerticalAlignment="Center"
+                                      OnContent="On" OffContent="Off"
+                                      IsChecked="{Binding CheckServerUploads}" />
+                    </Grid>
+                </Border>
+            </StackPanel>
+
+            <StackPanel Spacing="8">
                 <TextBlock Text="BROWSING" FontSize="12" FontWeight="SemiBold" LetterSpacing="1"
                            Foreground="{DynamicResource TextSecondaryBrush}" />
                 <Border Padding="20,16" CornerRadius="8" BorderThickness="1"

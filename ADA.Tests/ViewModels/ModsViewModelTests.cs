@@ -425,20 +425,103 @@ public sealed class ModsViewModelTests : IDisposable
     }
 
     [Fact]
+    public async Task Each_install_has_its_own_running_state_and_a_server_is_named()
+    {
+        Publish("SML", "3.12.0");
+        var other = new GameFolder(_dir.Combine("Other"));
+        var page = await OpenPageAsync(otherGame: other);
+        page.SelectedMod = Find(page, "SML");
+
+        page.Games[1].IsGameRunning = true;
+        Assert.False(page.IsGameRunning);
+        Assert.True(page.InstallCommand.CanExecute(null));
+
+        page.SelectedGame = page.Games[1];
+        Assert.True(page.IsGameRunning);
+        Assert.Equal("Satisfactory is running. Close it to install or uninstall mods.", page.GameRunningText);
+
+        var installs = new ModInstallService(Settings, new(new HttpClient(_http), _dir.Combine("Archives")),
+            new FakeVersionSource((_, _) => Task.FromResult<IReadOnlyList<CatalogVersion>>([])), (_, _) => Task.FromResult(false));
+        var profiles = new GameProfiles(new ProfileStore(_dir.Combine("Profiles"), _dir.Combine("profiles.json")), installs);
+        var server = new GameInstallViewModel(new GameInstall("sftp://abc", GameLauncher.Unknown, GameHost.Linux, GameKind.DedicatedServer,
+                null, "Home", new GameBuild(513885, "1.2.4.1")), installs,
+            new ModResolutionService(new FakeVersionSource((_, _) => Task.FromResult<IReadOnlyList<CatalogVersion>>([])), installs),
+            profiles, NullLogger<GameInstallViewModel>.Instance) { IsGameRunning = true };
+        page.Games.Add(server);
+        page.SelectedGame = server;
+        page.SelectedMod = Find(page, "SML");
+
+        Assert.Equal("Home is running. Stop the server to install or uninstall mods.", page.GameRunningText);
+        server.IsGameRunning = false;
+        server.UnavailableReason = "Couldn't reach it.";
+        Assert.Equal("Home can't be used right now: Couldn't reach it.", page.UnavailableText);
+        Assert.False(page.InstallCommand.CanExecute(null));
+    }
+
+    [Fact]
+    public async Task A_mod_without_a_build_for_the_selected_server_isnt_offered_for_install()
+    {
+        Publish("BetterGrass", "2.0.0");
+        _store.Upsert([CatalogFixtures.Mod("BetterGrass",
+            latest: [new LatestVersion(VersionStability.Release, "2.0.0", ">=513885", [TargetPlatform.Windows])])], DateTimeOffset.UtcNow);
+        var page = await OpenPageAsync();
+        var mod = Find(page, "BetterGrass");
+        var local = page.SelectedGame!;
+        Assert.False(mod.HasNoBuildHere);
+
+        var installs = new ModInstallService(Settings, new(new HttpClient(_http), _dir.Combine("Archives")),
+            new FakeVersionSource((_, _) => Task.FromResult<IReadOnlyList<CatalogVersion>>([])), (_, _) => Task.FromResult(false));
+        var profiles = new GameProfiles(new ProfileStore(_dir.Combine("Profiles"), _dir.Combine("profiles.json")), installs);
+        var server = new GameInstallViewModel(new GameInstall("sftp://abc", GameLauncher.Unknown, GameHost.Linux, GameKind.DedicatedServer,
+                null, "Home", new GameBuild(513885, "1.2.4.1")), installs,
+            new ModResolutionService(new FakeVersionSource((_, _) => Task.FromResult<IReadOnlyList<CatalogVersion>>([])), installs),
+            profiles, NullLogger<GameInstallViewModel>.Instance);
+        page.Games.Add(server);
+        page.SelectedGame = server;
+        page.SelectedMod = mod;
+        await Wait.Until(() => mod.HasNoBuildHere);
+
+        Assert.Equal("No server build", mod.NoBuildHere!.Tag);
+        Assert.Contains("No Linux server build", mod.NoBuildHere.Reason);
+        Assert.False(mod.CanInstallHere);
+        Assert.False(mod.ShowQuickAction);
+        Assert.False(page.InstallCommand.CanExecute(null));
+        Assert.False(page.QuickChangeCommand.CanExecute(mod));
+        Assert.False(page.ToggleQueueCommand.CanExecute(null));
+
+        page.SelectedGame = local;
+        await Wait.Until(() => !mod.HasNoBuildHere);
+        Assert.True(page.InstallCommand.CanExecute(null));
+    }
+
+    [Fact]
+    public async Task The_quick_action_is_refused_for_an_unavailable_server()
+    {
+        Publish("SML", "3.12.0");
+        var page = await OpenPageAsync();
+
+        page.SelectedGame!.UnavailableReason = "Couldn't reach it.";
+
+        Assert.False(page.QuickChangeCommand.CanExecute(Find(page, "SML")));
+    }
+
+    [Fact]
     public async Task Changes_are_blocked_while_the_game_runs_including_a_late_start()
     {
         Publish("SML", "3.12.0");
         DashboardViewModel? dashboard = null;
         var page = await OpenPageAsync(dashboardReady: value => dashboard = value);
         page.SelectedMod = Find(page, "SML");
-        page.IsGameRunning = true;
+        // Each install has its own running state; the process watcher sets it and the page follows the selected one.
+        page.SelectedGame!.IsGameRunning = true;
+        Assert.True(page.IsGameRunning);
         Assert.False(page.InstallCommand.CanExecute(null));
         Assert.False(page.UninstallCommand.CanExecute(null));
         page.ToggleQueueCommand.Execute(null);
         Assert.False(page.InstallQueuedCommand.CanExecute(null));
 
         // The game started between the check and the click: the install engine refuses, the page explains.
-        page.IsGameRunning = false;
+        page.SelectedGame.IsGameRunning = false;
         _gameRunning = true;
         var installing = page.InstallCommand.ExecuteAsync(null);
         await page.PendingOperations.WaitAsync(TimeSpan.FromSeconds(5));
@@ -454,6 +537,10 @@ public sealed class ModsViewModelTests : IDisposable
         Assert.All(page.Games, game => Assert.True(game.IsGameRunning));
         _gameRunning = false;
         dashboard.IsGameRunning = false;
+        foreach (var game in page.Games)
+        {
+            game.IsGameRunning = false;
+        }
         await installing.WaitAsync(TimeSpan.FromSeconds(5));
         Assert.NotNull(_game.Read("Mods/SML"));
         Assert.False(page.HasPendingOperations);
@@ -794,7 +881,7 @@ public sealed class ModsViewModelTests : IDisposable
         {
             await started.Task.WaitAsync(TimeSpan.FromSeconds(5));
             installingB = page.QuickChangeCommand.ExecuteAsync(Find(page, "B"));
-            page.IsGameRunning = true;
+            page.SelectedGame!.IsGameRunning = true;
             resume.TrySetResult();
             await page.PendingOperations.WaitAsync(TimeSpan.FromSeconds(5));
 
@@ -811,7 +898,7 @@ public sealed class ModsViewModelTests : IDisposable
         finally
         {
             resume.TrySetResult();
-            page.IsGameRunning = false;
+            page.SelectedGame!.IsGameRunning = false;
             await Task.WhenAll(installing, installingB).WaitAsync(TimeSpan.FromSeconds(10));
         }
 

@@ -1,0 +1,157 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:ADA.ViewModels"
+             x:Class="ADA.Views.AddServerView"
+             x:DataType="vm:AddServerViewModel">
+    <UserControl.Styles>
+        <Style Selector="TextBlock.field">
+            <Setter Property="Margin" Value="0,10,0,4" />
+            <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
+        </Style>
+        <Style Selector="TextBlock.hint">
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+            <Setter Property="Margin" Value="0,4,0,0" />
+            <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
+        </Style>
+        <Style Selector="TextBlock.section">
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="LetterSpacing" Value="1" />
+            <Setter Property="Margin" Value="0,20,0,0" />
+            <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
+        </Style>
+        <Style Selector="TextBlock.stepGlyph">
+            <Setter Property="FontWeight" Value="Bold" />
+            <Setter Property="Foreground" Value="{DynamicResource FailureBrush}" />
+        </Style>
+        <Style Selector="TextBlock.stepGlyph.passed">
+            <Setter Property="Foreground" Value="{DynamicResource SuccessBrush}" />
+        </Style>
+        <Style Selector="TextBlock.stepGlyph.warning">
+            <Setter Property="Foreground" Value="{DynamicResource WarningBrush}" />
+        </Style>
+    </UserControl.Styles>
+
+    <DockPanel Margin="32,20,32,20">
+        <Button DockPanel.Dock="Top" Content="‹ Back" Command="{Binding BackCommand}" Margin="0,0,0,12"
+                Background="Transparent" Padding="4,2" />
+
+        <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+            <StackPanel MaxWidth="560" HorizontalAlignment="Left">
+                <TextBlock Text="Add a Server" FontSize="24" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimaryBrush}" />
+
+                <TextBlock Classes="section" Text="CONNECTION" />
+                <StackPanel Orientation="Horizontal" Spacing="16" Margin="0,10,0,0">
+                    <RadioButton GroupName="Transport" Content="SFTP (SSH)" IsChecked="{Binding UsesSftp}" />
+                    <RadioButton GroupName="Transport" Content="FTP (with TLS)" IsChecked="{Binding UsesFtp}" />
+                    <RadioButton GroupName="Transport" Content="Folder or network share" IsChecked="{Binding UsesFolder}" />
+                </StackPanel>
+                <TextBlock Classes="hint" IsVisible="{Binding UsesFolder}"
+                           Text="A dedicated server in a folder this PC can open: installed by hand, or on another PC through a share you've mounted." />
+
+                <TextBlock Classes="section" Text="SERVER" />
+                <TextBlock Classes="field" Text="Name" />
+                <TextBox Text="{Binding Name}" MaxLength="64" PlaceholderText="e.g. Home server" AutomationProperties.Name="Name" />
+                <StackPanel IsVisible="{Binding UsesFolder}">
+                    <TextBlock Classes="field" Text="Server address (optional)" />
+                    <TextBox Text="{Binding Address}" PlaceholderText="IP address or host name" AutomationProperties.Name="Server address" />
+                    <TextBlock Classes="hint" Text="Only used to tell whether the server is running. Without it, stop the server yourself before changing mods." />
+                </StackPanel>
+                <TextBlock Classes="hint" IsVisible="{Binding UsesFtp}"
+                           Text="Only for hosts without SFTP. ADA always connects with TLS, so a server that only offers plain FTP is refused." />
+                <Grid ColumnDefinitions="*,120" ColumnSpacing="12" IsVisible="{Binding UsesLogin}">
+                    <StackPanel>
+                        <TextBlock Classes="field" Text="Address" />
+                        <TextBox Text="{Binding Address}" PlaceholderText="IP address or host name" AutomationProperties.Name="Address" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="1">
+                        <TextBlock Classes="field" Text="{Binding PortLabel}" />
+                        <NumericUpDown Value="{Binding Port}" Minimum="1" Maximum="65535" Increment="1" FormatString="0"
+                                       AutomationProperties.Name="{Binding PortLabel}" />
+                    </StackPanel>
+                </Grid>
+
+                <StackPanel IsVisible="{Binding UsesLogin}">
+                    <TextBlock Classes="section" Text="LOGIN" />
+                    <TextBlock Classes="field" Text="User" />
+                    <TextBox Text="{Binding User}" AutomationProperties.Name="User" />
+                    <StackPanel Orientation="Horizontal" Spacing="16" Margin="0,10,0,0" IsVisible="{Binding UsesSftp}">
+                        <RadioButton GroupName="Auth" Content="Password" IsChecked="{Binding !UsesKey}" />
+                        <RadioButton GroupName="Auth" Content="SSH key" IsChecked="{Binding UsesKey}" />
+                    </StackPanel>
+                    <TextBlock Classes="hint" Text="An SSH key is the safer choice where the server allows one." IsVisible="{Binding UsesSftp}" />
+                    <StackPanel IsVisible="{Binding UsesKeyFile}">
+                        <TextBlock Classes="field" Text="Key file" />
+                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                            <TextBox Text="{Binding KeyPath}" PlaceholderText="e.g. ~/.ssh/id_ed25519" AutomationProperties.Name="Key file" />
+                            <Button Grid.Column="1" Content="Browse…" Click="OnBrowseKey" />
+                        </Grid>
+                    </StackPanel>
+                    <TextBlock Classes="field" Text="{Binding SecretLabel}" />
+                    <TextBox Text="{Binding Secret}" PasswordChar="●" AutomationProperties.Name="{Binding SecretLabel}"
+                             RevealPassword="{Binding #ShowSecret.IsChecked}">
+                        <TextBox.InnerRightContent>
+                            <ToggleButton x:Name="ShowSecret" Classes="revealSecret" Content="Show" Margin="0,0,4,0"
+                                          ToolTip.Tip="Show the password while this is pressed in"
+                                          AutomationProperties.Name="Show password" />
+                        </TextBox.InnerRightContent>
+                    </TextBox>
+                </StackPanel>
+
+                <TextBlock Classes="section" Text="GAME" />
+                <TextBlock Classes="field" Text="Server folder" />
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                    <TextBox Text="{Binding GameRoot}" PlaceholderText="e.g. /home/steam/SatisfactoryDedicatedServer"
+                             AutomationProperties.Name="Server folder" />
+                    <Button Grid.Column="1" Content="Browse…" Click="OnBrowseFolder" IsVisible="{Binding UsesFolder}" />
+                </Grid>
+                <TextBlock Classes="hint" Text="The folder with FactoryServer.sh or FactoryServer.exe, or a folder above it." />
+
+                <Expander Header="Advanced" Margin="0,16,0,0" HorizontalAlignment="Stretch">
+                    <StackPanel>
+                        <TextBlock Classes="field" Text="Server API port" Margin="0,0,0,4" />
+                        <NumericUpDown Value="{Binding ApiPort}" Minimum="1" Maximum="65535" Increment="1" FormatString="0" Width="120"
+                                       HorizontalAlignment="Left" AutomationProperties.Name="Server API port" />
+                        <TextBlock Classes="hint" Text="Used only to tell whether the server is running. 7777 unless the server was set up differently." />
+                    </StackPanel>
+                </Expander>
+
+                <Button Content="Test Connection" Command="{Binding TestCommand}" Margin="0,20,0,0" />
+                <ItemsControl ItemsSource="{Binding Steps}" Margin="0,12,0,0">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="vm:SetupStepViewModel">
+                            <Grid ColumnDefinitions="20,*" Margin="0,3">
+                                <TextBlock Classes="stepGlyph" Classes.passed="{Binding Passed}" Classes.warning="{Binding IsWarning}"
+                                           Text="{Binding Glyph}" />
+                                <StackPanel Grid.Column="1">
+                                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimaryBrush}" />
+                                    <TextBlock Text="{Binding Detail}" TextWrapping="Wrap" FontSize="12"
+                                               Foreground="{DynamicResource TextSecondaryBrush}" />
+                                </StackPanel>
+                            </Grid>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
+                <Border Padding="14,10" CornerRadius="8" BorderThickness="1" Margin="0,12,0,0"
+                        IsVisible="{Binding Fingerprint, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                        Background="{DynamicResource SurfaceRaisedBrush}" BorderBrush="{DynamicResource BorderSubtleBrush}">
+                    <StackPanel Spacing="6">
+                        <TextBlock Text="Server identity" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimaryBrush}" />
+                        <SelectableTextBlock Text="{Binding Fingerprint}" FontFamily="monospace" TextWrapping="Wrap"
+                                             Foreground="{DynamicResource TextPrimaryBrush}" />
+                        <TextBlock Classes="hint" Margin="0"
+                                   Text="Check this matches the server if you can. ADA will refuse to connect if it ever changes." />
+                        <CheckBox Content="I trust this server" IsChecked="{Binding TrustsIdentity}" />
+                    </StackPanel>
+                </Border>
+
+                <TextBlock Text="{Binding Problem}" TextWrapping="Wrap" Margin="0,12,0,0"
+                           IsVisible="{Binding Problem, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                           Foreground="{DynamicResource WarningBrush}" />
+                <Button Content="Add" Classes="accent" Command="{Binding AddCommand}" Margin="0,16,0,8" MinWidth="100" />
+            </StackPanel>
+        </ScrollViewer>
+    </DockPanel>
+</UserControl>

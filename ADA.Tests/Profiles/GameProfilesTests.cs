@@ -64,6 +64,56 @@ public sealed class GameProfilesTests : IDisposable
         Assert.Contains("Mods/Junk", found.Unreadable.Keys);
     }
 
+    private void PlaceLibrary(string location, string relativePath)
+    {
+        var path = Path.Combine(_game.ModFolder(location), "Binaries", relativePath);
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        File.WriteAllText(path, "library");
+    }
+
+    [Fact]
+    public async Task A_client_build_on_a_server_is_refused_and_says_why()
+    {
+        var server = _install with { Kind = GameKind.DedicatedServer, Host = GameHost.Linux };
+        PlaceForeign("Mods/BetterGrass");
+        PlaceLibrary("Mods/BetterGrass", "Win64/FactoryGameSteam-BetterGrass-Win64-Shipping.dll");
+        PlaceForeign("Mods/Storage");
+        PlaceLibrary("Mods/Storage", "Linux/libFactoryServer-Storage-Linux-Shipping.so");
+        PlaceForeign("Mods/Blueprints"); // content only: no libraries
+
+        var found = await Profiles().FindUnmanagedAsync(server);
+
+        Assert.Equal(["Blueprints", "Storage"], found.Mods.Select(m => m.Reference).Order());
+        Assert.StartsWith("Client build, won't run on this server", Assert.Single(found.WrongBuild, w => w.Key == "Mods/BetterGrass").Value);
+    }
+
+    [Fact]
+    public async Task A_server_build_in_the_game_is_refused()
+    {
+        PlaceForeign("Mods/Storage");
+        PlaceLibrary("Mods/Storage", "Win64/FactoryServer-Storage-Win64-Shipping.dll");
+        PlaceForeign("Mods/SML");
+        PlaceLibrary("Mods/SML", "Win64/FactoryGameEGS-SML-Win64-Shipping.dll");
+        PlaceLibrary("Mods/SML", "Win64/FactoryGameEGS-SML-Win64-Shipping.pdb");
+
+        var found = await Profiles().FindUnmanagedAsync(_install);
+
+        Assert.Equal(["SML"], found.Mods.Select(m => m.Reference));
+        Assert.StartsWith("Server build, won't run in the game", Assert.Single(found.WrongBuild).Value);
+    }
+
+    [Theory]
+    [InlineData("FactoryGameSteam-SML-Win64-Shipping.dll", TargetPlatform.Windows, true)]
+    [InlineData("FactoryGameEGS-SML-Win64-Shipping.dll", TargetPlatform.Windows, true)]
+    [InlineData("FactoryGameSteam-SML-Win64-Shipping.dll", TargetPlatform.WindowsServer, false)]
+    [InlineData("FactoryServer-SML-Win64-Shipping.dll", TargetPlatform.WindowsServer, true)]
+    [InlineData("FactoryServer-SML-Win64-Shipping.dll", TargetPlatform.Windows, false)]
+    [InlineData("libFactoryServer-SML-Linux-Shipping.so", TargetPlatform.LinuxServer, true)]
+    [InlineData("libFactoryServer-SML-Linux-Shipping.so", TargetPlatform.WindowsServer, false)]
+    [InlineData("FactoryServer-SML-Win64-Shipping.dll", TargetPlatform.LinuxServer, false)]
+    public void Libraries_are_matched_to_their_platform_by_name(string fileName, TargetPlatform platform, bool expected) =>
+        Assert.Equal(expected, ModBinaries.IsFor(fileName, platform));
+
     [Fact]
     public async Task Importing_into_the_current_profile_takes_mods_over_without_touching_their_files()
     {

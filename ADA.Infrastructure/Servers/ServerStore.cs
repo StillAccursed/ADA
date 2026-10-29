@@ -143,6 +143,15 @@ public sealed class ServerStore(string path, ILogger<ServerStore>? log = null)
         {
             return $"A server called {name} already exists.";
         }
+        if (server.Transport == ServerTransport.Folder)
+        {
+            // No login: only the folder is needed, and the address is optional (for the running check).
+            if (server.ApiPort is < 1 or > 65535)
+            {
+                return "Ports must be between 1 and 65535.";
+            }
+            return string.IsNullOrWhiteSpace(server.GameRoot) ? "Choose the server folder." : null;
+        }
         if (string.IsNullOrWhiteSpace(server.Address))
         {
             return "Enter the server's address.";
@@ -158,6 +167,10 @@ public sealed class ServerStore(string path, ILogger<ServerStore>? log = null)
         if (string.IsNullOrWhiteSpace(server.GameRoot))
         {
             return "Enter the server folder.";
+        }
+        if (server.Transport == ServerTransport.Ftp && server.Auth != ServerAuth.Password)
+        {
+            return "FTP servers log in with a password.";
         }
         if (server.Auth == ServerAuth.PrivateKey && string.IsNullOrWhiteSpace(server.PrivateKeyPath))
         {

@@ -142,6 +142,9 @@ public sealed class GameProfiles(ProfileStore store, ModInstallService installs,
 
     public string? ProblemWithNewName(string? name) => store.ProblemWithNewName(name);
 
+    /// <summary>Forgets the game's active profile; for a server that's being removed. Saved profiles are kept.</summary>
+    public Task ForgetAsync(GameInstall game) => Task.Run(() => store.ClearActive(game.GamePath));
+
     /// <summary>Mods another manager installed that the user hasn't chosen to leave alone.</summary>
     public async Task<FoundMods> FindUnmanagedAsync(GameInstall game, CancellationToken ct = default)
     {
@@ -151,10 +154,13 @@ public sealed class GameProfiles(ProfileStore store, ModInstallService installs,
     }
 
     /// <summary>
-    /// Rewrites the active profile as exactly what ADA has installed; called after every change.
-    /// Does nothing while the game has no profile: <see cref="CreateAsync"/> captures the mods then.
+    /// Rewrites the active profile as what ADA has installed, keeping entries this install doesn't
+    /// have unless <paramref name="removed"/> names them: a client-only mod in a profile shared with a
+    /// server stays in it when the server records. Called after every change. Does nothing while the
+    /// game has no profile: <see cref="CreateAsync"/> captures the mods then.
     /// </summary>
-    public async Task RecordInstalledAsync(GameInstall game)
+    /// <param name="removed">Mods this change uninstalled, which leave the profile; null when it removed none.</param>
+    public async Task RecordInstalledAsync(GameInstall game, IReadOnlyCollection<string>? removed = null)
     {
         await ReconcileAsync(game);
         await Task.Run(() =>
@@ -163,7 +169,7 @@ public sealed class GameProfiles(ProfileStore store, ModInstallService installs,
             installer.ThrowIfUnsettled("recording this profile");
             if (store.ActiveName(game.GamePath) is { } name)
             {
-                store.Save(new ModProfile(name, ToProfileMods(installer.Installed.Values, out _)));
+                SaveAsInstalled(installer, name, removed ?? []);
             }
         });
     }
@@ -257,7 +263,21 @@ public sealed class GameProfiles(ProfileStore store, ModInstallService installs,
     private void Activate(GameInstall game, string name)
     {
         store.SetActive(game.GamePath, name);
-        store.Save(new ModProfile(name, ToProfileMods(installs.InstallerFor(game).Installed.Values, out _)));
+        SaveAsInstalled(installs.InstallerFor(game), name, []);
+    }
+
+    /// <summary>
+    /// Saves the profile as what's installed, plus its entries this install doesn't have (mods it
+    /// has no build of and doesn't need, and their libraries), except those in <paramref name="removed"/>.
+    /// Without that, a server sharing a profile would drop its client-only mods from it.
+    /// </summary>
+    private void SaveAsInstalled(ModInstaller installer, string name, IReadOnlyCollection<string> removed)
+    {
+        var installed = installer.Installed;
+        var gone = new HashSet<string>(removed, StringComparer.OrdinalIgnoreCase);
+        var kept = (store.Get(name)?.Mods ?? [])
+            .Where(m => !installed.ContainsKey(m.Name) && !gone.Contains(m.Name));
+        store.Save(new ModProfile(name, [.. ToProfileMods(installed.Values, out _), .. kept]));
     }
 
     /// <summary>The game has managed mods but no active profile to keep them in.</summary>

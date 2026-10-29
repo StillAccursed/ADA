@@ -5,6 +5,7 @@ using ADA.Infrastructure.Ficsit;
 using ADA.Infrastructure.Installing;
 using ADA.Infrastructure.IO;
 using ADA.Infrastructure.Profiles;
+using ADA.Infrastructure.Servers;
 using ADA.Infrastructure.Settings;
 using ADA.Platform.Detection;
 using ADA.ViewModels;
@@ -23,7 +24,7 @@ internal static class DashboardFactory
         CatalogStatusViewModel? catalog = null, ModCatalogStore? store = null, SettingsStore? settings = null,
         ModInstallService? installs = null, GameProfiles? profiles = null, ModResolutionService? resolution = null,
         Func<CancellationToken, Task<IReadOnlyList<GameProcess>>>? findRunning = null, TimeSpan? watchInterval = null,
-        ModChangelogs? changelogs = null)
+        ModChangelogs? changelogs = null, ServerConnections? servers = null, ProfileSync? sync = null, ConfigPush? configPush = null)
     {
         store ??= new ModCatalogStore(dir.Combine("dashboard-catalog.db"));
         settings ??= new SettingsStore(dir.Combine("dashboard-settings.json"));
@@ -38,6 +39,6 @@ internal static class DashboardFactory
             new ArchiveCache(dir.Combine("Archives")),
             changelogs ?? new ModChangelogs(new FakeVersionSource((_, _) => Task.FromResult<IReadOnlyList<CatalogVersion>>([]))),
             findRunning ?? (_ => Task.FromResult<IReadOnlyList<GameProcess>>([])),
-            watchInterval);
+            watchInterval, servers, sync, configPush);
     }
 }

@@ -19,7 +19,7 @@
                                IsVisible="{Binding ProgressText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
                                Foreground="{DynamicResource TextSecondaryBrush}" />
                     <TextBlock VerticalAlignment="Center" TextWrapping="Wrap"
-                               Text="Close Satisfactory to update mods." IsVisible="{Binding IsGameRunning}"
+                               Text="{Binding GameRunningText}" IsVisible="{Binding IsGameRunning}"
                                Foreground="{DynamicResource WarningBrush}" />
                     <Button Grid.Column="1" Margin="12,0,8,0" Classes="accent" Content="Update all"
                             Command="{Binding UpdateAllCommand}" />

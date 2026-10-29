@@ -23,6 +23,7 @@ public sealed class ModInstaller
     private const long FREE_SPACE_MARGIN = 64L * 1024 * 1024;
 
     private readonly IGameFiles _files;
+    private readonly bool _readBack;
     private readonly Func<bool> _isGameRunning;
     private readonly Action<string> _checkpoint;
     private readonly InstalledModsStore _records;
@@ -70,9 +71,15 @@ public sealed class ModInstaller
     /// <param name="files">The install's files, local or remote. The installer only borrows them.</param>
     /// <param name="checkpoint">Called at every step; crash tests throw from it.</param>
     /// <param name="log">Receives cleanup failures after an installation has already committed.</param>
-    internal ModInstaller(IGameFiles files, Func<bool> isGameRunning, Action<string>? checkpoint, ILogger? log = null)
+    /// <param name="readBack">
+    /// Read each extracted file back and compare its hash with what was written. False checks only
+    /// the size, for slow server connections; the recorded hash is still the one computed while writing.
+    /// </param>
+    internal ModInstaller(IGameFiles files, Func<bool> isGameRunning, Action<string>? checkpoint, ILogger? log = null,
+        bool readBack = true)
     {
         _files = files;
+        _readBack = readBack;
         _isGameRunning = isGameRunning;
         _checkpoint = checkpoint ?? (_ => { });
         _records = new InstalledModsStore(files, GameModFolders.INSTALLED_RECORD);
@@ -349,10 +356,15 @@ public sealed class ModInstaller
     /// Mod folders ADA didn't install, with their name and version from each <c>.uplugin</c>.
     /// Only reads; nothing outside the game's mod folders is looked at.
     /// </summary>
-    internal FoundMods FindUnmanaged()
+    /// <param name="platform">
+    /// The game's platform: a mod whose libraries are all for another platform (a client build copied
+    /// onto a server) is listed in <see cref="FoundMods.WrongBuild"/> instead. Null skips that check.
+    /// </param>
+    internal FoundMods FindUnmanaged(TargetPlatform? platform = null)
     {
         var mods = new List<FoundMod>();
         var unreadable = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var wrongBuild = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         var references = new HashSet<string>(_records.Load().Keys, StringComparer.OrdinalIgnoreCase);
         foreach (var location in Check().Unmanaged)
         {
@@ -368,6 +380,11 @@ public sealed class ModInstaller
             {
                 using var stream = _files.OpenRead(descriptor);
                 var plugin = UPluginDescriptor.Parse(reference, stream);
+                if (platform is { } target && WrongBuild(location, target) is { } wrong)
+                {
+                    wrongBuild[location] = wrong;
+                    continue;
+                }
                 if (!references.Add(reference))
                 {
                     unreadable[location] = $"{reference} is installed in another folder too.";
@@ -381,7 +398,36 @@ public sealed class ModInstaller
                 unreadable[location] = e.Message;
             }
         }
-        return new FoundMods(mods, unreadable);
+        return new FoundMods(mods, unreadable, wrongBuild);
+    }
+
+    /// <summary>
+    /// Whether a folder for this mod is in the game's <c>Mods</c> or <c>Mods/GameFeatures</c>,
+    /// installed by ADA or not. A network call for a server.
+    /// </summary>
+    internal bool HasModFolder(string reference) =>
+        _files.DirectoryExists(GameModFolders.LocationFor(reference, gameFeature: false))
+        || _files.DirectoryExists(GameModFolders.LocationFor(reference, gameFeature: true));
+
+    /// <summary>
+    /// Why the mod folder's libraries are for another platform, or null when they suit this one or it
+    /// has none (a content-only mod runs anywhere). Reads only folder listings.
+    /// </summary>
+    private string? WrongBuild(string location, TargetPlatform platform)
+    {
+        var libraries = ModBinaries.FOLDERS
+            .Select(folder => GamePaths.Combine(location, $"Binaries/{folder}"))
+            .Where(_files.DirectoryExists)
+            .SelectMany(folder => _files.Files(folder).Select(f => f.Path[(f.Path.LastIndexOf('/') + 1)..]))
+            .Where(ModBinaries.IsLibrary)
+            .ToList();
+        if (libraries.Count == 0 || libraries.Any(name => ModBinaries.IsFor(name, platform)))
+        {
+            return null;
+        }
+        return platform == TargetPlatform.Windows
+            ? "Server build, won't run in the game. Remove it, then install it through ADA."
+            : "Client build, won't run on this server. Remove it, then install it through ADA.";
     }
 
     /// <summary>
@@ -572,12 +618,16 @@ public sealed class ModInstaller
                 throw new InstallException($"{reference}: {entry.RelativePath} extracted {written:N0} of {entry.Size:N0} bytes.");
             }
 
-            if (HashFile(target) != expected)
+            var info = _files.FileInfo(target)!;
+            if (info.Length != written)
+            {
+                throw new InstallException($"{reference}: {entry.RelativePath} is {info.Length:N0} bytes on disk, not the {written:N0} written.");
+            }
+            if (_readBack && HashFile(target) != expected)
             {
                 throw new InstallException($"{reference}: {entry.RelativePath} did not read back the same as it was written.");
             }
 
-            var info = _files.FileInfo(target)!;
             files.Add(new InstalledFile(entry.RelativePath, info.Length, expected, info.LastWriteUtc));
             progress?.Report(new InstallProgress(reference, InstallStage.Extracting, i + 1, archive.Entries.Count));
             _checkpoint($"extracted:{reference}:{i}");

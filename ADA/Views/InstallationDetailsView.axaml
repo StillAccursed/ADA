@@ -6,8 +6,11 @@
         <Button Content="Repair" Command="{Binding RepairCommand}" IsVisible="{Binding HasRepairs}" />
         <StackPanel Spacing="10" IsVisible="{Binding HasFoundMods}">
             <TextBlock Text="{Binding FoundTitle}" FontWeight="SemiBold" TextWrapping="Wrap" Foreground="{DynamicResource TextPrimaryBrush}" />
-            <TextBlock Text="{Binding FoundNames}" FontSize="12" TextWrapping="Wrap" Foreground="{DynamicResource TextSecondaryBrush}" />
-            <TextBlock TextWrapping="Wrap" Foreground="{DynamicResource TextSecondaryBrush}"
+            <TextBlock Text="{Binding FoundNames}" FontSize="12" TextWrapping="Wrap" Foreground="{DynamicResource TextSecondaryBrush}"
+                       IsVisible="{Binding HasImportableMods}" />
+            <TextBlock Text="{Binding WrongBuildText}" TextWrapping="Wrap" Foreground="{DynamicResource WarningBrush}"
+                       IsVisible="{Binding HasWrongBuilds}" />
+            <TextBlock TextWrapping="Wrap" Foreground="{DynamicResource TextSecondaryBrush}" IsVisible="{Binding HasImportableMods}"
                        Text="ADA never edits Satisfactory Mod Manager's own files. SMM keeps its own record of what it installed, so after ADA adds or updates mods here, SMM's record won't match this game's Mods folder." />
             <StackPanel Spacing="8" IsVisible="{Binding ShowFoundChoice}">
                 <TextBlock Text="ADA can look after them from now on. Their files stay where they are." TextWrapping="Wrap" Foreground="{DynamicResource TextSecondaryBrush}" />

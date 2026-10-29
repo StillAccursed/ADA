@@ -29,6 +29,11 @@ namespace ADA.Core.Settings;
 /// Colour theme; one of <see cref="THEMES"/>, otherwise <see cref="THEME_SYSTEM"/>, which follows
 /// the operating system's appearance.
 /// </param>
+/// <param name="ServersView">The Servers page's layout (List, Grid or Card), as last chosen; null for the default.</param>
+/// <param name="CheckServerUploads">
+/// After each file is uploaded to a server, read it back and compare hashes. Off checks sizes only,
+/// trusting SSH's own integrity checks for the bytes. Local installs always read back.
+/// </param>
 public sealed record AppSettings(
     bool KeepDownloadedArchives = true,
     int DownloadRetries = AppSettings.DEFAULT_DOWNLOAD_RETRIES,
@@ -39,7 +44,9 @@ public sealed record AppSettings(
     int ModsPageSize = AppSettings.DEFAULT_MODS_PAGE_SIZE,
     int DashboardLatestModsCount = AppSettings.DEFAULT_DASHBOARD_LATEST_MODS_COUNT,
     int InterfaceScale = AppSettings.DEFAULT_INTERFACE_SCALE,
-    string Theme = AppSettings.THEME_SYSTEM)
+    string Theme = AppSettings.THEME_SYSTEM,
+    string? ServersView = null,
+    bool CheckServerUploads = true)
 {
     internal const int DEFAULT_DOWNLOAD_RETRIES = 5;
     public const int MIN_DOWNLOAD_RETRIES = 0;

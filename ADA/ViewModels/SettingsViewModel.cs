@@ -22,6 +22,10 @@ public partial class SettingsViewModel : ViewModelBase
     [ObservableProperty]
     public partial bool KeepDownloadedArchives { get; set; }
 
+    /// <summary>Server uploads are read back and hashed; off checks sizes only.</summary>
+    [ObservableProperty]
+    public partial bool CheckServerUploads { get; set; }
+
     /// <summary>Retries after a failed download. Decimal because that is what NumericUpDown binds to.</summary>
     [ObservableProperty]
     public partial decimal? DownloadRetries { get; set; }
@@ -90,6 +94,7 @@ public partial class SettingsViewModel : ViewModelBase
         _loading = true;
         _settings = store.Current;
         KeepDownloadedArchives = _settings.KeepDownloadedArchives;
+        CheckServerUploads = _settings.CheckServerUploads;
         DownloadRetries = _settings.DownloadRetries;
         EndlessScroll = _settings.EndlessScroll;
         ModsPageSize = _settings.ModsPageSize;
@@ -105,6 +110,14 @@ public partial class SettingsViewModel : ViewModelBase
         if (!_loading)
         {
             Update(_settings with { KeepDownloadedArchives = value });
+        }
+    }
+
+    partial void OnCheckServerUploadsChanged(bool value)
+    {
+        if (!_loading)
+        {
+            Update(_settings with { CheckServerUploads = value });
         }
     }
 
@@ -175,6 +188,7 @@ public partial class SettingsViewModel : ViewModelBase
             await Task.Run(() => _store.Update(current => current with
             {
                 KeepDownloadedArchives = settings.KeepDownloadedArchives,
+                CheckServerUploads = settings.CheckServerUploads,
                 DownloadRetries = settings.DownloadRetries,
                 EndlessScroll = settings.EndlessScroll,
                 ModsPageSize = settings.ModsPageSize,

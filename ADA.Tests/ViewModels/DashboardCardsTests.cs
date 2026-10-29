@@ -108,6 +108,22 @@ public sealed class DashboardCardsTests : IDisposable
     }
 
     [Fact]
+    public async Task Awaiting_a_superseded_refresh_waits_for_the_newer_one()
+    {
+        var vm = Dashboard();
+        var card = Card("First");
+        vm.SelectedInstall = card;
+        var first = vm.RefreshCardsAsync();
+        _profileStore.Save(new("Later", []));
+        _profileStore.SetActive(card.Install.GamePath, "Later");
+        _ = vm.RefreshCardsAsync();
+
+        await first;
+
+        Assert.Equal("Later", vm.SelectedProfile?.Name);
+    }
+
+    [Fact]
     public async Task A_dismissed_prompt_stays_closed_until_new_profile_is_chosen()
     {
         _profileStore.Save(new("Profile 1", []));

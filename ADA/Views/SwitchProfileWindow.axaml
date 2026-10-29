@@ -3,7 +3,7 @@
         xmlns:vm="using:ADA.ViewModels"
         x:Class="ADA.Views.SwitchProfileWindow"
         x:DataType="vm:SwitchProfileViewModel"
-        Title="Switch profile"
+        Title="{Binding WindowTitle}"
         Width="580" Height="600" MinWidth="440" MinHeight="340"
         WindowStartupLocation="CenterOwner"
         Background="{DynamicResource SurfaceBrush}">
@@ -68,7 +68,7 @@
                                      Foreground="{DynamicResource WarningBrush}" />
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
                     <Button Content="Cancel" Command="{Binding CancelCommand}" />
-                    <Button Content="Switch" Classes="accent" Command="{Binding SwitchCommand}" IsVisible="{Binding IsReady}" />
+                    <Button Content="{Binding ApplyText}" Classes="accent" Command="{Binding SwitchCommand}" IsVisible="{Binding IsReady}" />
                 </StackPanel>
             </StackPanel>
 
@@ -85,6 +85,10 @@
                     <Expander Header="{Binding Changes.Remove.Count, StringFormat='Remove ({0})', FallbackValue=''}" IsExpanded="True"
                               IsVisible="{Binding Changes.HasRemove, FallbackValue=False}" HorizontalAlignment="Stretch">
                         <ItemsControl ItemsSource="{Binding Changes.Remove}" ItemTemplate="{StaticResource ChangeLine}" />
+                    </Expander>
+                    <Expander Header="{Binding Changes.NotInstalledHeader, FallbackValue=''}"
+                              IsVisible="{Binding Changes.HasNotInstalled, FallbackValue=False}" HorizontalAlignment="Stretch">
+                        <ItemsControl ItemsSource="{Binding Changes.NotInstalled}" ItemTemplate="{StaticResource ChangeLine}" />
                     </Expander>
                 </StackPanel>
             </ScrollViewer>

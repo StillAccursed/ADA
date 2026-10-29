@@ -82,8 +82,18 @@ public partial class ModItemViewModel(CatalogMod mod, Action<ModItemViewModel, b
     /// <summary>The version installed in the selected game, or null.</summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsInstalled), nameof(InstalledText), nameof(CanBeRequested), nameof(CanInstallHere))]
-    [NotifyPropertyChangedFor(nameof(QuickActionText), nameof(IsUninstallAction), nameof(ShowUninstall))]
+    [NotifyPropertyChangedFor(nameof(QuickActionText), nameof(IsUninstallAction), nameof(ShowUninstall), nameof(ShowQuickAction))]
     public partial string? InstalledVersion { get; set; }
+
+    /// <summary>
+    /// Why the selected game can't take this mod at all, from its newest builds; null when it can.
+    /// Set by the Mods page whenever the selected game or the results change. Uninstalling stays offered.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasNoBuildHere), nameof(CanBeRequested), nameof(CanInstallHere), nameof(ShowQuickAction))]
+    public partial NoBuildNote? NoBuildHere { get; internal set; }
+
+    public bool HasNoBuildHere => NoBuildHere is not null;
 
     /// <summary>Installed only because another mod needs it.</summary>
     [ObservableProperty]
@@ -98,6 +108,7 @@ public partial class ModItemViewModel(CatalogMod mod, Action<ModItemViewModel, b
     /// <summary>The request captured for this mod in the displayed game; null when none is pending.</summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(QuickActionText), nameof(InstallText), nameof(UninstallText), nameof(IsUninstallAction), nameof(CanInstallHere), nameof(ShowUninstall))]
+    [NotifyPropertyChangedFor(nameof(ShowQuickAction))]
     public partial bool? PendingUninstall { get; internal set; }
 
     /// <summary>One-based position in the execution order; zero when this mod has no submitted request.</summary>
@@ -134,8 +145,14 @@ public partial class ModItemViewModel(CatalogMod mod, Action<ModItemViewModel, b
         false => $"Install queued · #{OperationPosition}",
     };
 
-    /// <summary>Install is offered: not installed, or only there as a dependency (installing keeps it).</summary>
-    public bool CanBeRequested => !IsInstalled || IsDependencyOnly;
+    /// <summary>
+    /// Install is offered: not installed, or only there as a dependency (installing keeps it), and the
+    /// selected game has a build of it.
+    /// </summary>
+    public bool CanBeRequested => (!IsInstalled || IsDependencyOnly) && !HasNoBuildHere;
+
+    /// <summary>The list's quick action is hidden only when it would be an install the game has no build for.</summary>
+    public bool ShowQuickAction => IsUninstallAction || PendingUninstall is not null || !HasNoBuildHere;
 
     /// <summary>Offers installation or version switching, and keeps a captured install visible until it completes.</summary>
     public bool CanInstallHere => CanBeRequested || CanSwitchVersion || PendingUninstall is false;
@@ -227,6 +244,11 @@ public partial class ModItemViewModel(CatalogMod mod, Action<ModItemViewModel, b
 }
 
 /// <summary>One version on a mod page's Versions tab.</summary>
+/// <summary>Why a mod can't be installed in the selected game.</summary>
+/// <param name="Tag">A few words for the list, e.g. "No server build".</param>
+/// <param name="Reason">The full explanation, shown on the mod's page and as the tag's tooltip.</param>
+public sealed record NoBuildNote(string Tag, string Reason);
+
 public sealed class VersionRowViewModel(CatalogVersion version, bool supportsGame, bool isInstalled, long? size)
 {
     public string Version { get; } = version.Version;

@@ -62,6 +62,45 @@ public sealed class ProfileSwitchTests : IDisposable
     }
 
     [Fact]
+    public async Task Recording_keeps_profile_mods_this_install_doesnt_have()
+    {
+        // A profile shared with a server: the server skips BetterGrass and its library.
+        _store.Save(new("Current", [new("A", "1.0.0"), new("BetterGrass", "2.0.0"), new("GrassLib", "1.0.0")]));
+        await _service.InstallAsync(_install, [Publish("A", "1.0.0")]);
+
+        await _profiles.RecordInstalledAsync(_install);
+
+        Assert.Equal(["A 1.0.0", "BetterGrass 2.0.0", "GrassLib 1.0.0"],
+            _store.Get("Current")!.Mods.Select(m => $"{m.Name} {m.Version}").Order());
+    }
+
+    [Fact]
+    public async Task Switching_a_server_to_a_shared_profile_keeps_its_client_only_mods()
+    {
+        var server = _install with { Kind = GameKind.DedicatedServer, Host = GameHost.Linux };
+        Publish("BetterGrass", "2.0.0"); // Windows build only
+        var shared = new ModProfile("Playthrough", [new("BetterGrass", "2.0.0")]);
+        _store.Save(shared);
+
+        await _profiles.SwitchAsync(server, shared, _resolution);
+
+        Assert.Equal("Playthrough", _store.ActiveName(_game.Root));
+        Assert.Empty(Installer().Installed);
+        Assert.Equal(["BetterGrass"], _store.Get("Playthrough")!.Mods.Select(m => m.Name));
+    }
+
+    [Fact]
+    public async Task Recording_drops_what_the_change_removed()
+    {
+        _store.Save(new("Current", [new("A", "1.0.0"), new("B", "1.0.0")]));
+        await _service.InstallAsync(_install, [Publish("A", "1.0.0")]);
+
+        await _profiles.RecordInstalledAsync(_install, ["b"]);
+
+        Assert.Equal(["A"], _store.Get("Current")!.Mods.Select(m => m.Name));
+    }
+
+    [Fact]
     public async Task An_empty_profile_removes_managed_mods_and_leaves_foreign_files_alone()
     {
         await _service.InstallAsync(_install, [Publish("A", "1.0.0")]);

@@ -93,6 +93,25 @@ public sealed partial class ProfileStore(string profilesFolder, string stateFile
         Changed?.Invoke(this, EventArgs.Empty);
     }
 
+    /// <summary>Forgets which profile a game used and the folders it left alone. Raises <see cref="Changed"/> if anything was recorded.</summary>
+    internal void ClearActive(string gamePath)
+    {
+        bool changed;
+        lock (_gate)
+        {
+            var state = LoadState();
+            changed = state.Active.Remove(gamePath) | state.LeftAlone.Remove(gamePath);
+            if (changed)
+            {
+                SaveState(state);
+            }
+        }
+        if (changed)
+        {
+            Changed?.Invoke(this, EventArgs.Empty);
+        }
+    }
+
     /// <summary>Mod folders the user chose to leave alone in this game, so they aren't asked about again.</summary>
     internal IReadOnlySet<string> LeftAlone(string gamePath)
     {

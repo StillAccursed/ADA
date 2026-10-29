@@ -28,15 +28,31 @@ public sealed record PlannedInstall(ResolvedMod Mod, string? InstalledVersion)
 /// Whether the set of mods the user asked for changes, e.g. asking for a mod already installed as a
 /// dependency, so it stays when nothing else needs it.
 /// </param>
+/// <param name="Skipped">
+/// Mods left out because the game's platform has no build and doesn't need one (a client-only mod
+/// on a server). They stay requested, so they aren't changes, and never affect the comparisons below.
+/// </param>
 public sealed record ModChangePlan(
     IReadOnlyList<string> Requested,
     IReadOnlyList<PlannedInstall> Install,
     IReadOnlyList<string> Uninstall,
     long DownloadBytes,
     IReadOnlyList<string> Problems,
-    bool RequestedChanged = false)
+    bool RequestedChanged = false,
+    IReadOnlyList<SkippedMod>? Skipped = null)
 {
     public bool Succeeded => Problems.Count == 0;
+
+    public IReadOnlyList<SkippedMod> Skipped { get; init; } = Skipped ?? [];
+
+    /// <summary>
+    /// Removals that also leave the active profile: everything in <see cref="Uninstall"/> except mods
+    /// removed only because this platform skips them (a client-only mod on a server), which other
+    /// installs sharing the profile still use.
+    /// </summary>
+    public IReadOnlyList<string> LeavesProfile => Uninstall
+        .Where(r => !Skipped.Any(s => s.Reference.Equals(r, StringComparison.OrdinalIgnoreCase)))
+        .ToList();
 
     public bool ChangesNothing => Install.Count == 0 && Uninstall.Count == 0 && !RequestedChanged;
 
@@ -254,12 +270,14 @@ public sealed class ModResolutionService(
         var platform = ModInstallService.TargetFor(game);
 
         // The installer refuses these too, but only after downloading; say so before anything starts.
-        var foreign = resolved.Mods
-            .Where(m => !installed.ContainsKey(m.Reference)
-                        && (Directory.Exists(Path.Combine(game.ModsPath, m.Reference))
-                            || Directory.Exists(Path.Combine(game.ModsPath, "GameFeatures", m.Reference))))
-            .Select(m => m.Reference)
-            .ToList();
+        var foreign = await Task.Run(() =>
+        {
+            var installer = installs.InstallerFor(game);
+            return resolved.Mods
+                .Where(m => !installed.ContainsKey(m.Reference) && installer.HasModFolder(m.Reference))
+                .Select(m => m.Reference)
+                .ToList();
+        }, ct);
         if (foreign.Count > 0)
         {
             return ModChangePlan.Failed(
@@ -281,7 +299,8 @@ public sealed class ModResolutionService(
             toRemove,
             toInstall.Sum(i => i.Mod.Version.TargetFor(platform)?.Size ?? 0),
             [],
-            !before.SetEquals(requested));
+            !before.SetEquals(requested),
+            resolved.Skipped);
     }
 
     private static bool IsOlder(string version, string than) =>

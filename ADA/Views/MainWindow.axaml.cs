@@ -10,6 +10,8 @@ public partial class MainWindow : Window
     private DashboardViewModel? _dashboard;
     private CreateProfileViewModel? _shownPrompt;
     private SwitchProfileViewModel? _shownSwitch;
+    private ConfirmViewModel? _shownSyncQuestion;
+    private PushConfigsViewModel? _shownConfigs;
 
     public MainWindow()
     {
@@ -49,6 +51,14 @@ public partial class MainWindow : Window
         {
             ShowSwitchPrompt();
         }
+        else if (e.PropertyName == nameof(DashboardViewModel.SyncQuestion))
+        {
+            ShowSyncQuestion();
+        }
+        else if (e.PropertyName == nameof(DashboardViewModel.ConfigsPrompt))
+        {
+            ShowConfigsPrompt();
+        }
     }
 
     /// <summary>
@@ -74,6 +84,28 @@ public partial class MainWindow : Window
         }
         _shownSwitch = prompt;
         await new SwitchProfileWindow { DataContext = prompt }.ShowDialog(this);
+    }
+
+    /// <summary>Opens the Dashboard's "Also apply to the server?" question as a dialog; each question opens at most once.</summary>
+    private async void ShowSyncQuestion()
+    {
+        if (!IsVisible || _dashboard?.SyncQuestion is not { } question || ReferenceEquals(question, _shownSyncQuestion))
+        {
+            return;
+        }
+        _shownSyncQuestion = question;
+        await new ConfirmWindow { DataContext = question }.ShowDialog(this);
+    }
+
+    /// <summary>Opens the Dashboard's Push configs dialog; each one opens at most once.</summary>
+    private async void ShowConfigsPrompt()
+    {
+        if (!IsVisible || _dashboard?.ConfigsPrompt is not { } prompt || ReferenceEquals(prompt, _shownConfigs))
+        {
+            return;
+        }
+        _shownConfigs = prompt;
+        await new PushConfigsWindow { DataContext = prompt }.ShowDialog(this);
     }
 
     // Opens the updates window over this one; it lists updates as soon as it has checked.

@@ -48,6 +48,29 @@ public sealed class SwitchProfileDialogTests : IDisposable
     public void Dispose() => _dir.Dispose();
 
     [Fact]
+    public async Task Re_applying_the_active_profile_installs_its_saved_versions_without_offering_newer()
+    {
+        Publish("A", "1.0.0", "First release.");
+        Publish("A", "1.1.0", "Fixed a crash.");
+        var current = new ModProfile("Current", [new("A", "1.0.0")]);
+        _store.Save(current);
+        var dialog = Dialog(current);
+        await dialog.PreviewAsync();
+
+        Assert.True(dialog.IsReapply);
+        Assert.Equal("Update", dialog.ApplyText);
+        Assert.StartsWith("Bring ", dialog.Title);
+        Assert.False(dialog.OffersChoice);
+        Assert.Null(dialog.KeepsNote);
+        Assert.Equal(["A 1.0.0"], dialog.Changes!.Install);
+
+        await dialog.SwitchCommand.ExecuteAsync(null);
+
+        Assert.Equal("1.0.0", Installer().Installed["A"].Version);
+        Assert.Equal("Current", _store.ActiveName(_game.Root));
+    }
+
+    [Fact]
     public async Task Defaults_to_the_profiles_versions_and_switches_to_newer_ones_on_request()
     {
         Publish("A", "1.0.0", "First release.");

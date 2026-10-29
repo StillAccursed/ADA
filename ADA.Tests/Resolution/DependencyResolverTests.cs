@@ -13,7 +13,8 @@ public sealed class DependencyResolverTests
 
     /// <summary>Publishes a version. Dependencies are "Ref range" or "Ref range?" for optional.</summary>
     private void Publish(string reference, string version, string game = ">=513885",
-        VersionStability stability = VersionStability.Release, TargetPlatform[]? platforms = null, params string[] deps)
+        VersionStability stability = VersionStability.Release, TargetPlatform[]? platforms = null, bool requiredOnRemote = false,
+        params string[] deps)
     {
         var targets = (platforms ?? [TargetPlatform.Windows])
             .Select(p => new VersionTarget(p, $"/v1/{reference}/{version}/{p}", 1, "h")).ToList();
@@ -28,13 +29,18 @@ public sealed class DependencyResolverTests
             _catalog[reference] = list = [];
         }
 
-        list.Add(new CatalogVersion($"{reference}-{version}", reference, version, game, stability, false,
+        list.Add(new CatalogVersion($"{reference}-{version}", reference, version, game, stability, requiredOnRemote,
             DateTimeOffset.UnixEpoch, targets, dependencies));
     }
 
     private Task<ResolveResult> Resolve(params string[] requested) => Resolve(null, requested);
 
-    private Task<ResolveResult> Resolve(IReadOnlyDictionary<string, string>? preferred, params string[] requested)
+    private Task<ResolveResult> Resolve(IReadOnlyDictionary<string, string>? preferred, params string[] requested) =>
+        ResolveFor(TargetPlatform.Windows, preferred, requested);
+
+    private Task<ResolveResult> ResolveOnServer(params string[] requested) => ResolveFor(TargetPlatform.LinuxServer, null, requested);
+
+    private Task<ResolveResult> ResolveFor(TargetPlatform platform, IReadOnlyDictionary<string, string>? preferred, params string[] requested)
     {
         var resolver = new DependencyResolver(new FakeVersionSource((reference, _) =>
         {
@@ -50,7 +56,7 @@ public sealed class DependencyResolverTests
             var parts = r.Split(' ', 2);
             return new ModRequirement(parts[0], parts.Length > 1 ? parts[1] : null);
         }).ToList();
-        return resolver.ResolveAsync(new ResolveRequest(requirements, GAME, TargetPlatform.Windows, preferred));
+        return resolver.ResolveAsync(new ResolveRequest(requirements, GAME, platform, preferred));
     }
 
     private static string[] Picked(ResolveResult r) => r.Mods.Select(m => $"{m.Reference} {m.Version.Version}").ToArray();
@@ -244,10 +250,11 @@ public sealed class DependencyResolverTests
     [Fact]
     public async Task Explains_missing_mods_and_platform_builds()
     {
-        Publish("ServerOnly", "1.0.0", platforms: [TargetPlatform.WindowsServer]);
+        Publish("ServerOnly", "1.0.0", platforms: [TargetPlatform.WindowsServer], requiredOnRemote: true);
         Publish("A", "1.0.0", deps: "Gone ^1.0.0");
 
-        Assert.Equal("ServerOnly has no Windows build.", Assert.Single((await Resolve("ServerOnly")).Problems));
+        Assert.Equal("ServerOnly has no Windows build. Players need it on the other side too, so it can't be left out.",
+            Assert.Single((await Resolve("ServerOnly")).Problems));
         Assert.Equal("Gone is not on ficsit.app. It is needed by A 1.0.0.", Assert.Single((await Resolve("A")).Problems));
     }
 
@@ -265,8 +272,8 @@ public sealed class DependencyResolverTests
     {
         Publish("SML", "3.12.0");
         Publish("Lib", "1.0.0", deps: "SML ^3.12.0");
-        Publish("A", "1.0.0", ">=513885", VersionStability.Release, null, "Lib ^1.0.0", "SML ^3.12.0");
-        Publish("B", "1.0.0", ">=513885", VersionStability.Release, null, "Lib ^1.0.0", "SML ^3.12.0");
+        Publish("A", "1.0.0", ">=513885", VersionStability.Release, null, false, "Lib ^1.0.0", "SML ^3.12.0");
+        Publish("B", "1.0.0", ">=513885", VersionStability.Release, null, false, "Lib ^1.0.0", "SML ^3.12.0");
 
         await Resolve("A", "B");
 
@@ -291,5 +298,83 @@ public sealed class DependencyResolverTests
             [.. Enumerable.Range(0, 6).Select(i => new ModRequirement($"M{i}")), new ModRequirement("Last")], GAME, TargetPlatform.Windows));
 
         Assert.False(result.Succeeded);
+    }
+
+    [Fact]
+    public async Task On_a_server_a_client_only_mod_is_skipped_without_its_dependencies()
+    {
+        Publish("SML", "3.12.0", platforms: [TargetPlatform.Windows, TargetPlatform.LinuxServer], requiredOnRemote: true);
+        Publish("GrassLib", "1.0.0", deps: "SML ^3.12.0");
+        Publish("BetterGrass", "2.0.0", deps: "GrassLib ^1.0.0");
+        Publish("Storage", "1.0.0", platforms: [TargetPlatform.Windows, TargetPlatform.LinuxServer], requiredOnRemote: true, deps: "SML ^3.12.0");
+
+        var result = await ResolveOnServer("BetterGrass", "Storage");
+
+        Assert.True(result.Succeeded, string.Join(" ", result.Problems));
+        Assert.Equal(["SML 3.12.0", "Storage 1.0.0"], Picked(result));
+        var skipped = Assert.Single(result.Skipped);
+        Assert.Equal("BetterGrass", skipped.Reference);
+        Assert.Equal(["requested"], skipped.RequiredBy);
+        Assert.DoesNotContain("GrassLib", _fetched);
+    }
+
+    [Fact]
+    public async Task A_skipped_mods_dependency_is_still_installed_when_another_mod_needs_it()
+    {
+        Publish("SML", "3.12.0", platforms: [TargetPlatform.Windows, TargetPlatform.LinuxServer], requiredOnRemote: true);
+        Publish("BetterGrass", "2.0.0", deps: "SML ^3.12.0");
+
+        var result = await ResolveOnServer("BetterGrass", "SML");
+
+        Assert.Equal(["SML 3.12.0"], Picked(result));
+        Assert.Equal("BetterGrass", Assert.Single(result.Skipped).Reference);
+    }
+
+    [Fact]
+    public async Task A_skipped_dependency_names_the_mod_that_needs_it()
+    {
+        Publish("ClientUi", "1.0.0");
+        Publish("Storage", "1.0.0", platforms: [TargetPlatform.Windows, TargetPlatform.LinuxServer], requiredOnRemote: true, deps: "ClientUi ^1.0.0");
+
+        var result = await ResolveOnServer("Storage");
+
+        Assert.Equal(["Storage 1.0.0"], Picked(result));
+        var skipped = Assert.Single(result.Skipped);
+        Assert.Equal(["Storage 1.0.0"], skipped.RequiredBy);
+    }
+
+    [Fact]
+    public async Task A_mod_players_need_but_the_server_cant_run_is_refused()
+    {
+        Publish("Vehicles", "1.0.0", requiredOnRemote: true);
+
+        var result = await ResolveOnServer("Vehicles");
+
+        Assert.Equal("Vehicles has no LinuxServer build. Players need it on the other side too, so it can't be left out.",
+            Assert.Single(result.Problems));
+    }
+
+    [Fact]
+    public async Task A_server_build_that_needs_a_newer_game_is_reported_as_that_not_skipped()
+    {
+        Publish("Storage", "1.0.0");
+        Publish("Storage", "2.0.0", game: ">=520000", platforms: [TargetPlatform.Windows, TargetPlatform.LinuxServer]);
+
+        var result = await ResolveOnServer("Storage");
+
+        Assert.Contains("No version of Storage supports game build", Assert.Single(result.Problems));
+        Assert.Empty(result.Skipped);
+    }
+
+    [Fact]
+    public async Task On_the_game_a_server_only_mod_is_skipped()
+    {
+        Publish("ServerAdmin", "1.0.0", platforms: [TargetPlatform.WindowsServer, TargetPlatform.LinuxServer]);
+
+        var result = await Resolve("ServerAdmin");
+
+        Assert.True(result.Succeeded);
+        Assert.Empty(result.Mods);
+        Assert.Equal("ServerAdmin", Assert.Single(result.Skipped).Reference);
     }
 }

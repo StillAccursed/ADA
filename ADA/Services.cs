@@ -73,6 +73,8 @@ public static class Services
             sp.GetRequiredService<ProfileStore>(),
             sp.GetRequiredService<ModInstallService>(),
             sp.GetRequiredService<ILogger<GameProfiles>>()));
+        services.AddSingleton(sp => new ProfileSync(sp.GetRequiredService<ProfileStore>(), sp.GetRequiredService<ModInstallService>(),
+            sp.GetRequiredService<IModVersionSource>()));
         services.AddSingleton(_ => GameDetection.ForCurrentOS());
         services.AddSingleton(_ => SecretStores.ForCurrentOS());
         services.AddSingleton(sp => new ServerSecrets(sp.GetRequiredService<ISecretStore>(),
@@ -85,6 +87,8 @@ public static class Services
         // Any local Satisfactory process blocks every local install: ps can't say which install it runs from.
         services.AddSingleton(sp => new GameRunningChecks(sp.GetRequiredService<ServerConnections>(), GameProcesses.IsAnyRunningAsync));
         services.AddSingleton(sp => new GameFilesFactory(sp.GetRequiredService<ServerConnections>()));
+        services.AddSingleton(sp => new ConfigPush(sp.GetRequiredService<ModInstallService>(), sp.GetRequiredService<GameFilesFactory>(),
+            sp.GetRequiredService<GameRunningChecks>().IsRunningAsync, sp.GetRequiredService<ILogger<ConfigPush>>()));
         services.AddSingleton(sp => new ModLogos(Http(sp, API_CLIENT), sp.GetRequiredService<ILogger<ModLogos>>()));
 
         services.AddSingleton<CatalogStatusViewModel>();
@@ -96,6 +100,7 @@ public static class Services
         services.AddSingleton(sp => new ModChangelogs(sp.GetRequiredService<IModVersionSource>()));
         services.AddSingleton<DashboardViewModel>();
         services.AddSingleton<ModsViewModel>();
+        services.AddSingleton<ServersViewModel>();
         services.AddSingleton<Func<UpdatesViewModel>>(sp => () => ActivatorUtilities.CreateInstance<UpdatesViewModel>(sp));
         services.AddSingleton<MainViewModel>();
 

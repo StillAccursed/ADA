@@ -83,25 +83,33 @@ internal sealed class SftpGameFiles(SftpClient client, string gameRoot, ILogger 
 
     public void RequireFreeSpace(long needed, string purpose)
     {
-        long available;
-        try
-        {
-            var status = client.GetStatus(_factoryGame);
-            available = (long)Math.Min(status.AvailableBlocks * status.BlockSize, long.MaxValue);
-        }
-        catch (Exception e) when (e is SshException or NotSupportedException)
-        {
-            log.LogWarning("The server can't report free space ({Reason}); installing without the check", e.Message);
-            return;
-        }
-        if (available < needed)
+        if (AvailableFreeSpace() is { } available && available < needed)
         {
             throw new InsufficientSpaceException(
                 $"Not enough free space: {purpose} need {DiskSpace.Format(needed)} on the server, which has {DiskSpace.Format(available)} free.");
         }
     }
 
-    public IDisposable AcquireLock(string path) => Run(() => RemoteLock.Acquire(client, Resolve(path), log));
+    /// <summary>
+    /// Bytes free to this user where <c>FactoryGame</c> is, from <c>statvfs@openssh.com</c>: available
+    /// blocks times the fundamental block size (statvfs's <c>f_bavail × f_frsize</c>). Null, with a
+    /// warning logged, when the server can't report it.
+    /// </summary>
+    internal long? AvailableFreeSpace()
+    {
+        try
+        {
+            var status = client.GetStatus(_factoryGame);
+            return (long)Math.Min(status.AvailableBlocks * status.BlockSize, long.MaxValue);
+        }
+        catch (Exception e) when (e is SshException or NotSupportedException)
+        {
+            log.LogWarning("The server can't report free space ({Reason}); installing without the check", e.Message);
+            return null;
+        }
+    }
+
+    public IDisposable AcquireLock(string path) => Run(() => RemoteLock.Acquire(new SftpLockFile(client, Resolve(path)), log));
 
     public void MarkHidden(string path)
     {

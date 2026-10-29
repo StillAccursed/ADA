@@ -73,6 +73,14 @@
                     <!-- Shown by the code-behind only while the selected installation has something to act on. -->
                     <Border x:Name="AttentionCard" Classes="dashboard-card" IsVisible="False" BorderBrush="{DynamicResource WarningBrush}"><StackPanel Spacing="12">
                         <Grid ColumnDefinitions="*,Auto"><TextBlock Classes="card-title" Text="Needs Attention" /><Path Grid.Column="1" Classes="card-icon" Data="M8,1 L15,14 L1,14 Z M8,6 L8,10 M8,12 L8,12.5" /></Grid>
+                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12" IsVisible="{Binding ServerProblem, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+                            <TextBlock Text="{Binding ServerProblem}" TextWrapping="Wrap" VerticalAlignment="Center" Foreground="{DynamicResource WarningBrush}" />
+                            <Button Grid.Column="1" Content="Retry" VerticalAlignment="Top" Command="{Binding RetryServerCommand}" />
+                        </Grid>
+                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12" IsVisible="{Binding IsOutOfSync}">
+                            <TextBlock Text="{Binding SyncText}" TextWrapping="Wrap" VerticalAlignment="Center" Foreground="{DynamicResource WarningBrush}" />
+                            <Button Grid.Column="1" Content="{Binding SyncActionText}" VerticalAlignment="Top" Command="{Binding UpdateSyncTargetCommand}" />
+                        </Grid>
                         <TextBlock Classes="secondary" FontSize="12" Text="{Binding SelectedInstall.Install.DisplayName}" />
                         <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12" IsVisible="{Binding SelectedInstall.Notice, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
                             <TextBlock Text="{Binding SelectedInstall.Notice}" TextWrapping="Wrap" VerticalAlignment="Center" Foreground="{DynamicResource WarningBrush}" />
@@ -96,14 +104,14 @@
                     </StackPanel></Border>
                     <Border Classes="dashboard-card"><StackPanel Spacing="12">
                         <Grid ColumnDefinitions="*,Auto"><TextBlock Classes="card-title" Text="Disk Status" /><Path Grid.Column="1" Classes="card-icon" Data="M2,2 L14,2 L14,14 L2,14 Z M2,10 L14,10 M10,12 L12,12" /></Grid>
-                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12"><TextBlock Classes="secondary" Text="Mods folder size" /><TextBlock Grid.Column="1" Classes="value" Text="{Binding Disk.ModsSize}" /></Grid>
+                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12"><TextBlock Classes="secondary" Text="{Binding DiskModsLabel}" /><TextBlock Grid.Column="1" Classes="value" Text="{Binding Disk.ModsSize}" /></Grid>
                         <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12" ToolTip.Tip="Downloaded archives shared across installations"><TextBlock Classes="secondary" Text="Archive size" /><TextBlock Grid.Column="1" Classes="value" Text="{Binding Disk.ArchiveSize}" /></Grid>
                         <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12"><TextBlock Classes="secondary" Text="Backups size" /><TextBlock Grid.Column="1" Classes="secondary" Text="Coming soon" /></Grid>
                         <TextBlock Classes="secondary" FontSize="12" Text="User backups of Saves, Settings and Mods." />
                         <Border Height="1" Background="{DynamicResource BorderSubtleBrush}" />
                         <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12"><TextBlock Classes="value" Text="Mods + archives" /><TextBlock Grid.Column="1" Classes="value" FontWeight="SemiBold" Text="{Binding Disk.TotalSize}" /></Grid>
                         <Border Height="1" Background="{DynamicResource BorderSubtleBrush}" />
-                        <TextBlock Classes="secondary" FontSize="12" Text="Installation drive" />
+                        <TextBlock Classes="secondary" FontSize="12" Text="{Binding DiskVolumeLabel}" />
                         <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12"><TextBlock Classes="value" Text="Available" /><TextBlock Grid.Column="1" Classes="value" FontWeight="SemiBold" Text="{Binding Disk.AvailableSpace}" /></Grid>
                         <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12"><TextBlock Classes="secondary" Text="Total capacity" /><TextBlock Grid.Column="1" Classes="secondary" Text="{Binding Disk.TotalCapacity}" /></Grid>
                         <TextBlock Classes="secondary" Text="{Binding Disk.ArchiveAvailableSpace, StringFormat='Archive drive: {0} available'}" IsVisible="{Binding Disk.HasSeparateArchiveVolume}" />
@@ -131,6 +139,16 @@
                         <TextBlock Classes="value" Text="{Binding LastCatalogUpdateText}" />
                         <TextBlock Classes="secondary" Text="{Binding Catalog.SummaryText}" />
                         <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12"><TextBlock Classes="secondary" Text="Satisfactory" /><TextBlock Grid.Column="1" Classes="value" Text="{Binding GameStateText}" /></Grid>
+                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12" IsVisible="{Binding ServerStateText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"><TextBlock Classes="secondary" Text="Server" /><TextBlock Grid.Column="1" Classes="value" Text="{Binding ServerStateText}" /></Grid>
+                        <StackPanel Spacing="2" IsVisible="{Binding SyncText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+                            <TextBlock Classes="secondary" Text="Multiplayer" />
+                            <TextBlock Classes="value" Text="{Binding SyncText}" TextWrapping="Wrap" />
+                            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8" Margin="0,4,0,0"
+                                  IsVisible="{Binding ConfigsText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+                                <TextBlock Classes="secondary" Text="{Binding ConfigsText}" TextWrapping="Wrap" VerticalAlignment="Center" />
+                                <Button Grid.Column="1" Content="Push configs…" Command="{Binding PushConfigsCommand}" VerticalAlignment="Top" />
+                            </Grid>
+                        </StackPanel>
                         <Border Height="1" Background="{DynamicResource BorderSubtleBrush}" />
                         <TextBlock Classes="value" Text="Notifications" FontWeight="SemiBold" /><TextBlock Classes="secondary" Text="{Binding Notifications}" />
                     </StackPanel></Border>

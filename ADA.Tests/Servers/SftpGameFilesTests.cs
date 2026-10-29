@@ -75,9 +75,14 @@ public sealed class SftpGameFilesTests : IDisposable
     public void AtomicWriteReplacesAFileAndLeavesNoTemporaryFile() => Contract.AtomicWriteReplacesAFileAndLeavesNoTemporaryFile();
 
     [SftpFact]
-    public void InstallsUpdatesChecksAndUninstallsOverSftp()
+    public void InstallsUpdatesChecksAndUninstallsOverSftp() => InstallUpdateCheckUninstall(readBack: true);
+
+    [SftpFact]
+    public void InstallsOverSftpCheckingSizesOnlyAndAFullCheckStillPasses() => InstallUpdateCheckUninstall(readBack: false);
+
+    private void InstallUpdateCheckUninstall(bool readBack)
     {
-        var installer = new ModInstaller(_files!, () => false, checkpoint: null);
+        var installer = new ModInstaller(_files!, () => false, checkpoint: null, readBack: readBack);
         var v1 = new SmodBuilder("SML", "3.12.0").Typical().WriteTo(_dir.Combine("1"));
         var v2 = new SmodBuilder("SML", "3.12.1").Typical().File("Content/New.pak", "new").WriteTo(_dir.Combine("2"));
 
@@ -120,19 +125,22 @@ public sealed class SftpGameFilesTests : IDisposable
     [SftpFact]
     public async Task SetupCheckFindsTheServerBelowTheFolderEnteredAndReadsItsBuild()
     {
-        var root = $"{_server!.Server.GameRoot}/steamapps/common/SatisfactoryDedicatedServer";
-        foreach (var folder in new[] { "steamapps", "steamapps/common", "steamapps/common/SatisfactoryDedicatedServer",
-                     "steamapps/common/SatisfactoryDedicatedServer/FactoryGame", "steamapps/common/SatisfactoryDedicatedServer/Engine",
-                     "steamapps/common/SatisfactoryDedicatedServer/Engine/Binaries",
-                     "steamapps/common/SatisfactoryDedicatedServer/Engine/Binaries/Linux" })
+        // The fixture puts FactoryGame directly in its folder, so search from a subfolder that has none.
+        var entered = $"{_server!.Server.GameRoot}/search";
+        var root = $"{entered}/steamapps/common/SatisfactoryDedicatedServer";
+        foreach (var folder in new[] { "", "/steamapps", "/steamapps/common", "/steamapps/common/SatisfactoryDedicatedServer",
+                     "/steamapps/common/SatisfactoryDedicatedServer/FactoryGame", "/steamapps/common/SatisfactoryDedicatedServer/Engine",
+                     "/steamapps/common/SatisfactoryDedicatedServer/Engine/Binaries",
+                     "/steamapps/common/SatisfactoryDedicatedServer/Engine/Binaries/Linux" })
         {
-            _server.Client.CreateDirectory($"{_server.Server.GameRoot}/{folder}");
+            _server.Client.CreateDirectory(entered + folder);
         }
         Upload($"{root}/FactoryServer.sh", "#!/bin/sh");
+        Upload($"{root}/Engine/Binaries/Linux/FactoryServer-Linux-Shipping", "ELF server program");
         Upload($"{root}/Engine/Binaries/Linux/FactoryServer-Linux-Shipping.version", """{ "Changelist": 513885, "GameVersion": "1.2.4.1" }""");
 
         using var connections = Connections(out var api);
-        var result = await new ServerSetupCheck(connections, api).RunAsync(_server.Server, SftpTestServer.Password);
+        var result = await new ServerSetupCheck(connections, api).RunAsync(_server.Server with { GameRoot = entered }, SftpTestServer.Password);
 
         Assert.True(result.Passed, string.Join("\n", result.Steps.Select(s => $"{s.Name}: {s.Detail}")));
         Assert.Equal(root, result.GameRoot);
@@ -153,6 +161,57 @@ public sealed class SftpGameFilesTests : IDisposable
         Assert.False(result.Passed);
         Assert.Equal("Find the game", result.Steps[^1].Name);
     }
+
+    [SftpFact]
+    public async Task SetupCheckRefusesAGameInstallEvenWithAServerLauncherAdded()
+    {
+        var root = _server!.Server.GameRoot;
+        Upload($"{root}/FactoryGameSteam.exe", "client");
+        Upload($"{root}/FactoryServer.exe", "");
+
+        using var connections = Connections(out var api);
+        var result = await new ServerSetupCheck(connections, api).RunAsync(_server.Server, SftpTestServer.Password);
+
+        Assert.False(result.Passed);
+        Assert.StartsWith("This is a game install, not a dedicated server.", result.Steps[^1].Detail);
+    }
+
+    [SftpFact]
+    public async Task TheConnectedServersLockCanBeReadAndTakenOver()
+    {
+        var store = new ServerStore(_dir.Combine("lock-servers.json"));
+        var secrets = new FakeSecretStore();
+        store.Save(_server!.Server);
+        secrets.Saved[$"server:{_server.Server.Id:N}"] = SftpTestServer.Password;
+        using var connections = Connections(store, secrets);
+        WriteLockHolder(new LockHolder("OTHER-PC", 1234, DateTimeOffset.UtcNow));
+
+        await connections.ConnectAsync(_server.Server.Id);
+        Assert.Equal("OTHER-PC", (await connections.LockHolderAsync())?.Machine);
+
+        await connections.BreakLockAsync();
+        Assert.Null(await connections.LockHolderAsync());
+        Assert.False(_files!.FileExists(GameModFolders.LOCK));
+    }
+
+    [SftpFact]
+    public void FreeSpaceMatchesThisMachineWhenTheServerIsLocalhost()
+    {
+        if (_server!.Server.Address is not ("localhost" or "127.0.0.1" or "::1"))
+        {
+            return;
+        }
+
+        var sftp = _files!.AvailableFreeSpace();
+        var local = DiskSpace.DriveFor(_server.Server.GameRoot)!.AvailableFreeSpace;
+
+        // Other programs write while the test runs, so allow a little drift.
+        Assert.NotNull(sftp);
+        Assert.InRange(sftp.Value, local * 0.99, local * 1.01);
+    }
+
+    private static ServerConnections Connections(ServerStore store, FakeSecretStore secrets) => new(store, new ServerSecrets(secrets),
+        new SatisfactoryServerApi(new HttpClient(new FakeHttpHandler().Throw(new HttpRequestException("No server API.")))));
 
     private ServerConnections Connections(out SatisfactoryServerApi api)
     {

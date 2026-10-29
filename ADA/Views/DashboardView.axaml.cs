@@ -55,7 +55,11 @@ public partial class DashboardView : UserControl
 
     private void OnDashboardChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName == nameof(DashboardViewModel.SelectedInstall))
+        if (e.PropertyName is nameof(DashboardViewModel.ServerProblem) or nameof(DashboardViewModel.IsOutOfSync))
+        {
+            UpdateAttentionCard();
+        }
+        else if (e.PropertyName == nameof(DashboardViewModel.SelectedInstall))
         {
             WatchInstall(_viewModel?.SelectedInstall);
         }
@@ -79,12 +83,14 @@ public partial class DashboardView : UserControl
     private void OnInstallChanged(object? sender, PropertyChangedEventArgs e) => UpdateAttentionCard();
 
     /// <summary>
-    /// Shows the attention card while the selected installation is working, has a result or problem
-    /// to report, or offers found-mod import, fix or repair actions; hides it otherwise.
+    /// Shows the attention card while the connected server can't be reached or a side sharing its
+    /// profile is behind, or while the selected
+    /// installation is working, has a result or problem to report, or offers found-mod import, fix or
+    /// repair actions; hides it otherwise.
     /// </summary>
     private void UpdateAttentionCard()
     {
-        AttentionCard.IsVisible = _game is { } game
+        AttentionCard.IsVisible = !string.IsNullOrEmpty(_viewModel?.ServerProblem) || _viewModel?.IsOutOfSync == true || _game is { } game
             && ((game.IsBusy && !string.IsNullOrEmpty(game.ProgressText))
                 || !string.IsNullOrEmpty(game.Notice)
                 || game.HasFoundMods || game.HasFix || game.HasFixProblem || game.HasRepairs);

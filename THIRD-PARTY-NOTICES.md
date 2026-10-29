@@ -35,6 +35,12 @@ Source: https://github.com/sshnet/SSH.NET
 
 SSH.NET 2026.0.0. Copyright © Renci 2010-2026.
 
+## FluentFTP
+
+Source: https://github.com/robinrodricks/FluentFTP
+
+FluentFTP 55.1.0. Copyright (c) 2015 Robin Rodricks and FluentFTP Contributors.
+
 ## Bouncy Castle
 
 Source: https://github.com/bcgit/bc-csharp

@@ -12,7 +12,9 @@ namespace ADA.ViewModels;
 /// only when the user chooses Switch. The profile's versions are chosen by default unless they can't
 /// be installed. Applying re-plans under the installation's reservation with the same choice; if the
 /// result differs from what is shown, nothing changes and the new result is shown instead. Never
-/// throws; problems are shown in the dialog.
+/// throws; problems are shown in the dialog. Opened for the installation's own active profile, it
+/// re-applies it at exactly the saved versions, bringing the install back in line with a game or
+/// server that shares the profile; newer versions aren't offered then.
 /// </summary>
 public partial class SwitchProfileViewModel : ViewModelBase
 {
@@ -28,6 +30,15 @@ public partial class SwitchProfileViewModel : ViewModelBase
     public event EventHandler<bool>? Closed;
 
     public string Title { get; }
+
+    /// <summary>The window's title bar: "Switch profile", or "Update" when re-applying the active profile.</summary>
+    public string WindowTitle => IsReapply ? "Update to profile" : "Switch profile";
+
+    /// <summary>The apply button's text.</summary>
+    public string ApplyText => IsReapply ? "Update" : "Switch";
+
+    /// <summary>The profile is already the installation's active one, so applying it only brings the mods back in line.</summary>
+    public bool IsReapply { get; }
 
     public string SavedOptionText { get; }
 
@@ -106,9 +117,12 @@ public partial class SwitchProfileViewModel : ViewModelBase
         _resolution = resolution;
         _changelog = changelog;
         _canSwitch = canSwitch;
-        Title = $"Switch {game.Install.DisplayName} to \"{profile.Name}\"?";
+        IsReapply = string.Equals(activeName, profile.Name, StringComparison.OrdinalIgnoreCase);
+        Title = IsReapply
+            ? $"Bring {game.Install.DisplayName} up to date with \"{profile.Name}\"?"
+            : $"Switch {game.Install.DisplayName} to \"{profile.Name}\"?";
         SavedOptionText = $"Use the profile's versions: installs exactly what \"{profile.Name}\" saved";
-        KeepsNote = activeName is null ? null : $"The current profile, \"{activeName}\", keeps its mods, so you can switch back.";
+        KeepsNote = activeName is null || IsReapply ? null : $"The current profile, \"{activeName}\", keeps its mods, so you can switch back.";
     }
 
     /// <summary>Works out both options; called once when the dialog opens.</summary>
@@ -172,7 +186,8 @@ public partial class SwitchProfileViewModel : ViewModelBase
     private void Show(ProfileSwitchPreview preview)
     {
         _preview = preview;
-        OffersChoice = preview.OffersNewer;
+        // Re-applying is about matching the other side exactly, so newer versions aren't a choice.
+        OffersChoice = preview.OffersNewer && !IsReapply;
         CanUseSavedVersions = preview.Saved.Succeeded;
         SavedVersionsProblem = preview.Saved.Succeeded || !preview.OffersNewer ? null : string.Join("\n", preview.Saved.Problems);
         if (preview.Newest is { } newest)
@@ -184,7 +199,7 @@ public partial class SwitchProfileViewModel : ViewModelBase
         }
 
         // The profile's versions by default; newer only when they're the only option.
-        var useNewer = !preview.Saved.Succeeded && preview.OffersNewer;
+        var useNewer = !preview.Saved.Succeeded && OffersChoice;
         if (UseNewerVersions == useNewer)
         {
             ShowSelectedPlan();
@@ -209,7 +224,7 @@ public partial class SwitchProfileViewModel : ViewModelBase
         }
 
         Problem = null;
-        Changes = PlanText.Switch(plan);
+        Changes = PlanText.Switch(plan, _game.Install.IsRemote);
         var parts = new List<string>();
         if (Changes.HasInstall)
         {
@@ -228,9 +243,12 @@ public partial class SwitchProfileViewModel : ViewModelBase
             parts.Add($"Download up to {ByteSize.Format(plan.DownloadBytes)}");
         }
         Summary = parts.Count == 0 ? null : string.Join(" · ", parts);
-        StatusText = Changes.IsEmpty
-            ? $"No mods change; only the active profile becomes \"{_profile.Name}\"."
-            : "These changes will be made:";
+        StatusText = (Changes.IsEmpty, IsReapply) switch
+        {
+            (true, true) => $"Already matches \"{_profile.Name}\"; nothing to change.",
+            (true, false) => $"No mods change; only the active profile becomes \"{_profile.Name}\".",
+            _ => "These changes will be made:",
+        };
     }
 }
 

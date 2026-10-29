@@ -51,9 +51,16 @@ public partial class UpdatesViewModel : ViewModelBase
     [NotifyCanExecuteChangedFor(nameof(UpdateAllCommand))]
     public partial bool IsBusy { get; set; }
 
+    /// <summary>A game in the list is running: Satisfactory here, or a connected server.</summary>
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(UpdateAllCommand))]
+    [NotifyPropertyChangedFor(nameof(GameRunningText))]
     public partial bool IsGameRunning { get; set; }
+
+    /// <summary>What to stop before updating; names the server when that's what's running.</summary>
+    public string GameRunningText => _dashboard.Installs.FirstOrDefault(g => g.IsGameRunning) is { Install.IsRemote: true } server
+        ? $"Stop {server.Install.Location} to update its mods."
+        : "Close Satisfactory to update mods.";
 
     internal bool CanUpdate => !IsBusy && !IsGameRunning;
 
@@ -68,8 +75,12 @@ public partial class UpdatesViewModel : ViewModelBase
         _store = store;
         _changelogs = new ModChangelogs(versions);
         _log = log;
-        IsGameRunning = dashboard.IsGameRunning;
         dashboard.PropertyChanged += OnDashboardChanged;
+        foreach (var game in dashboard.Installs)
+        {
+            game.PropertyChanged += OnGameChanged;
+        }
+        IsGameRunning = dashboard.Installs.Any(g => g.IsGameRunning);
     }
 
     /// <summary>Makes sure the catalogue knows about new releases, then lists updates for every game. Never throws.</summary>
@@ -218,7 +229,15 @@ public partial class UpdatesViewModel : ViewModelBase
     {
         if (e.PropertyName == nameof(DashboardViewModel.IsGameRunning))
         {
-            IsGameRunning = _dashboard.IsGameRunning;
+            IsGameRunning = _dashboard.Installs.Any(g => g.IsGameRunning);
+        }
+    }
+
+    private void OnGameChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(GameInstallViewModel.IsGameRunning))
+        {
+            IsGameRunning = _dashboard.Installs.Any(g => g.IsGameRunning);
         }
     }
 
@@ -235,7 +254,14 @@ public partial class UpdatesViewModel : ViewModelBase
     }
 
     /// <summary>Stops listening to the Dashboard once the window closes.</summary>
-    public void Close() => _dashboard.PropertyChanged -= OnDashboardChanged;
+    public void Close()
+    {
+        _dashboard.PropertyChanged -= OnDashboardChanged;
+        foreach (var game in _dashboard.Installs)
+        {
+            game.PropertyChanged -= OnGameChanged;
+        }
+    }
 }
 
 /// <summary>One mod with an update, in the updates window.</summary>

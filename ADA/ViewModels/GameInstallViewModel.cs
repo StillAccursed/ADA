@@ -54,7 +54,15 @@ public partial class GameInstallViewModel(GameInstall install, ModInstallService
     [NotifyPropertyChangedFor(nameof(CanRepair))]
     public partial bool IsGameRunning { get; set; }
 
-    public bool CanRepair => HasRepairs && !IsBusy && !IsGameRunning;
+    public bool CanRepair => HasRepairs && !IsBusy && !IsGameRunning && !IsUnavailable;
+
+    /// <summary>A server that can't be used right now, and why; null when it can, and always for a local install.</summary>
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(RepairCommand), nameof(FixCommand))]
+    [NotifyPropertyChangedFor(nameof(CanRepair), nameof(IsUnavailable))]
+    public partial string? UnavailableReason { get; set; }
+
+    public bool IsUnavailable => UnavailableReason is not null;
 
     /// <summary>The game's active profile; null until the user creates or chooses one.</summary>
     [ObservableProperty]
@@ -64,11 +72,14 @@ public partial class GameInstallViewModel(GameInstall install, ModInstallService
 
     // Mods another manager installed: the user chooses what to do with them, in steps.
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(HasFoundMods), nameof(ShowFoundChoice), nameof(ShowNewProfile))]
+    [NotifyPropertyChangedFor(nameof(HasFoundMods), nameof(HasImportableMods), nameof(ShowFoundChoice), nameof(ShowNewProfile))]
     [NotifyCanExecuteChangedFor(nameof(ImportToCurrentCommand), nameof(CreateNewProfileCommand))]
     public partial FoundModsStep FoundStep { get; set; }
 
     public bool HasFoundMods => FoundStep != FoundModsStep.None;
+
+    /// <summary>Some found mods can be imported; false when every one is a build for another platform.</summary>
+    public bool HasImportableMods => FoundStep is FoundModsStep.Choose or FoundModsStep.NewProfile;
 
     public bool ShowFoundChoice => FoundStep == FoundModsStep.Choose;
 
@@ -80,6 +91,13 @@ public partial class GameInstallViewModel(GameInstall install, ModInstallService
 
     [ObservableProperty]
     public partial string FoundNames { get; set; } = "";
+
+    /// <summary>Found mods built for another platform, and what to do about each; empty when there are none.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasWrongBuilds))]
+    public partial string WrongBuildText { get; set; } = "";
+
+    public bool HasWrongBuilds => WrongBuildText.Length > 0;
 
     [ObservableProperty]
     public partial string NewProfileName { get; set; } = "Imported mods";
@@ -120,7 +138,8 @@ public partial class GameInstallViewModel(GameInstall install, ModInstallService
     /// </summary>
     public async Task CheckAsync()
     {
-        if (IsBusy || IsSwitchingProfile || profiles.IsChanging(Install))
+        // An unreachable server can't be checked; the Dashboard says why instead.
+        if (IsBusy || IsSwitchingProfile || IsUnavailable || profiles.IsChanging(Install))
         {
             return;
         }
@@ -239,11 +258,11 @@ public partial class GameInstallViewModel(GameInstall install, ModInstallService
     [RelayCommand]
     private void BackToFoundChoice() => FoundStep = FoundModsStep.Choose;
 
-    private bool CanActOnFound => HasFoundMods && !IsBusy;
+    private bool CanActOnFound => HasImportableMods && !IsBusy;
 
     private bool CanImportToCurrent => CanActOnFound && ProfileName is not null;
 
-    private bool CanFix => HasFix && !IsBusy && !IsGameRunning;
+    private bool CanFix => HasFix && !IsBusy && !IsGameRunning && !IsUnavailable;
 
     [RelayCommand(CanExecute = nameof(CanFix))]
     private async Task FixAsync()
@@ -343,7 +362,7 @@ public partial class GameInstallViewModel(GameInstall install, ModInstallService
             }
 
             _fix = plan;
-            FixLines = PlanText.Lines(plan);
+            FixLines = PlanText.Lines(plan, Install.IsRemote);
             HasFix = true;
         }
         catch (Exception e)
@@ -383,17 +402,23 @@ public partial class GameInstallViewModel(GameInstall install, ModInstallService
     private void ShowFound(FoundMods found)
     {
         _found = found.Mods;
-        if (_found.Count == 0)
+        WrongBuildText = found.WrongBuild.Count == 0
+            ? ""
+            : "Not imported: " + string.Join("; ", found.WrongBuild
+                .OrderBy(w => w.Key, StringComparer.OrdinalIgnoreCase)
+                .Select(w => $"{w.Key[(w.Key.LastIndexOf('/') + 1)..]} ({char.ToLowerInvariant(w.Value[0])}{w.Value[1..]})"));
+        if (_found.Count == 0 && found.WrongBuild.Count == 0)
         {
             FoundStep = FoundModsStep.None;
             return;
         }
 
-        FoundTitle = _found.Count == 1
+        var count = _found.Count + found.WrongBuild.Count;
+        FoundTitle = count == 1
             ? "Found 1 mod installed by another mod manager"
-            : $"Found {_found.Count} mods installed by another mod manager";
+            : $"Found {count} mods installed by another mod manager";
         FoundNames = string.Join(", ", _found.Select(m => m.FriendlyName ?? m.Reference).Order(StringComparer.CurrentCultureIgnoreCase));
-        FoundStep = FoundModsStep.Choose;
+        FoundStep = _found.Count > 0 ? FoundModsStep.Choose : FoundModsStep.WrongBuildOnly;
     }
 
     private static string Imported(FoundModsImport result)
@@ -475,4 +500,6 @@ public enum FoundModsStep
     Choose,
     /// <summary>Naming the new profile.</summary>
     NewProfile,
+    /// <summary>Only builds for another platform were found: nothing to import, just what to do about them.</summary>
+    WrongBuildOnly,
 }

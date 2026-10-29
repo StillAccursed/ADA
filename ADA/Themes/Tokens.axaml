@@ -30,4 +30,8 @@
             <SolidColorBrush x:Key="WarningBrush" Color="#9A6400" />
         </ResourceDictionary>
     </ResourceDictionary.ThemeDictionaries>
+
+    <!-- Filled action buttons: Install and Connect are positive, Uninstall and Disconnect are dangerous. Same in both themes. -->
+    <SolidColorBrush x:Key="PositiveActionBrush" Color="#237548" />
+    <SolidColorBrush x:Key="DangerActionBrush" Color="#B42318" />
 </ResourceDictionary>

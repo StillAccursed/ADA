@@ -446,4 +446,33 @@ public sealed class ModInstallServiceTests : IDisposable
         Assert.Contains("Not enough free space", e.Message);
         Assert.Empty(_http.RequestBodies);
     }
+
+    [Fact]
+    public async Task A_client_only_mod_stays_requested_on_a_server_but_isnt_installed()
+    {
+        var server = KnownBuild with { Kind = GameKind.DedicatedServer, Host = GameHost.Linux };
+        Publish("BetterGrass", "2.0.0");
+
+        var plan = await Resolver().PlanInstallAsync(server, "BetterGrass");
+
+        Assert.True(plan.Succeeded, string.Join(" ", plan.Problems));
+        Assert.Empty(plan.Install);
+        Assert.Equal(["BetterGrass"], plan.Requested);
+        Assert.Equal("BetterGrass", Assert.Single(plan.Skipped).Reference);
+        Assert.Contains("Client-only, not installed on the server: BetterGrass", ADA.ViewModels.PlanText.Lines(plan, remote: true));
+    }
+
+    [Fact]
+    public async Task A_client_only_mod_removed_from_a_server_doesnt_leave_the_profile()
+    {
+        var server = KnownBuild with { Kind = GameKind.DedicatedServer, Host = GameHost.Linux };
+        Publish("BetterGrass", "2.0.0"); // client build only
+        var leftover = new SmodBuilder("BetterGrass", "2.0.0").Typical().WriteTo(_dir.Combine("Leftover"));
+        new ModInstaller(_game.Root, () => false).Apply([new ModChange.Install(leftover, TargetPlatform.LinuxServer)]);
+
+        var plan = await Resolver().PlanInstallAsync(server, "BetterGrass");
+
+        Assert.Equal(["BetterGrass"], plan.Uninstall);
+        Assert.Empty(plan.LeavesProfile);
+    }
 }

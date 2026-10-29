@@ -62,7 +62,8 @@ public sealed class ModInstallService(
     /// <summary>
     /// A new installer for the game, on its local or server files. It re-checks that this game
     /// isn't running just before it changes anything, blocking the calling thread, so only call it
-    /// inside <c>Task.Run</c>: there the wait blocks a pool thread, never the UI.
+    /// inside <c>Task.Run</c>: there the wait blocks a pool thread, never the UI. A server install
+    /// reads each upload back only while "Check every uploaded file" is on, read when it's created.
     /// </summary>
     /// <remarks>
     /// The re-check throws <see cref="GameRunningException.For"/> itself, because the installer
@@ -72,7 +73,8 @@ public sealed class ModInstallService(
     public ModInstaller InstallerFor(GameInstall game) =>
         new(_files.For(game), () => isGameRunning(game, CancellationToken.None).GetAwaiter().GetResult()
             ? throw GameRunningException.For(game)
-            : false, checkpoint: null, log: _log);
+            : false, checkpoint: null, log: _log,
+            readBack: !game.IsRemote || settings.Current.CheckServerUploads);
 
     /// <summary>
     /// Run on launch for each detected game: finish or undo an interrupted transaction, then the
@@ -223,9 +225,9 @@ public sealed class ModInstallService(
         return result;
     }
 
-    /// <summary>Mod folders another manager installed in this game.</summary>
+    /// <summary>Mod folders another manager installed in this game; builds for another platform are listed as unreadable.</summary>
     public Task<FoundMods> FindUnmanagedAsync(GameInstall game, CancellationToken ct = default) =>
-        Task.Run(() => InstallerFor(game).FindUnmanaged(), ct);
+        Task.Run(() => InstallerFor(game).FindUnmanaged(TargetFor(game)), ct);
 
     /// <summary>Takes over mod folders where they are; see <see cref="ModInstaller.Adopt"/>.</summary>
     internal async Task<IReadOnlyList<InstalledMod>> AdoptAsync(GameInstall game, IReadOnlyList<FoundMod> mods, CancellationToken ct = default)

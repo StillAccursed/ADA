@@ -25,9 +25,20 @@ public sealed record ResolvedMod(CatalogVersion Version, IReadOnlyList<string> R
     public string Reference => Version.ModReference;
 }
 
+/// <summary>A mod left out because this platform has no build of it and doesn't need one.</summary>
+/// <param name="RequiredBy">Why it was asked for: "requested" and/or the mod versions that depend on it.</param>
+public sealed record SkippedMod(string Reference, IReadOnlyList<string> RequiredBy);
+
 /// <param name="Mods">Every mod to install, dependencies before the mods that need them (SML first).</param>
 /// <param name="Problems">Why no combination works, in plain language. Empty on success.</param>
-public sealed record ResolveResult(IReadOnlyList<ResolvedMod> Mods, IReadOnlyList<string> Problems)
+/// <param name="Skipped">
+/// Mods asked for (directly or as a dependency) that have no build for this platform and aren't
+/// needed on it, e.g. a graphics mod on a server. Not installed; empty when nothing was left out.
+/// </param>
+public sealed record ResolveResult(IReadOnlyList<ResolvedMod> Mods, IReadOnlyList<string> Problems,
+    IReadOnlyList<SkippedMod>? Skipped = null)
 {
     public bool Succeeded => Problems.Count == 0;
+
+    public IReadOnlyList<SkippedMod> Skipped { get; } = Skipped ?? [];
 }
