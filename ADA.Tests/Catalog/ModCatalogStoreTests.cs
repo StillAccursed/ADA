@@ -1,5 +1,7 @@
+using ADA.Core.Catalog;
 using ADA.Infrastructure.Catalog;
 using ADA.Tests.Fixtures;
+using Microsoft.Data.Sqlite;
 using static ADA.Tests.Fixtures.CatalogFixtures;
 
 namespace ADA.Tests.Catalog;
@@ -15,6 +17,26 @@ public sealed class ModCatalogStoreTests : IDisposable
 
     public void Dispose() => _dir.Dispose();
 
+    // Same Id each time, so the second Upsert updates the existing row.
+    private static CatalogMod FullMod(int seed) => new(
+        Id: "id-full",
+        Reference: $"FullMod{seed}",
+        Name: $"Full Mod {seed}",
+        ShortDescription: $"short {seed}",
+        FullDescription: $"long {seed}",
+        LogoUrl: $"https://cdn/logo{seed}.png",
+        Authors: [$"author{seed}a", $"author{seed}b"],
+        Tags: [$"tag{seed}"],
+        Downloads: 100 + seed,
+        Popularity: 200 + seed,
+        Hotness: 300 + seed,
+        UpdatedAt: T0.AddDays(seed),
+        LastVersionDate: T0.AddHours(seed),
+        CompatibilityRelease: seed == 1 ? CompatibilityState.Works : CompatibilityState.Damaged,
+        CompatibilityExperimental: seed == 1 ? CompatibilityState.Broken : CompatibilityState.Unknown,
+        Views: 400 + seed,
+        Latest: [new LatestVersion(VersionStability.Beta, $"{seed}.2.3", $">={seed}", [TargetPlatform.Windows, TargetPlatform.LinuxServer])]);
+
     private string[] SearchRefs(string query) => _store.Search(query).Select(m => m.Reference).ToArray();
 
     [Fact]
@@ -24,6 +46,24 @@ public sealed class ModCatalogStoreTests : IDisposable
         _store.Upsert([mod], T0);
 
         Assert.Equivalent(mod, _store.Get("weatherextended"), strict: true);
+        Assert.Equal(1, _store.Count());
+    }
+
+    [Fact]
+    public void Every_field_survives_insert_update_and_each_read()
+    {
+        // Every value distinct and non-default, so a column swapped with another of the same type
+        // (downloads/hotness, the two compat states) or left out of the update shows up as a mismatch.
+        var inserted = FullMod(seed: 1);
+        var updated = FullMod(seed: 2);
+
+        _store.Upsert([inserted], T0);
+        Assert.Equivalent(inserted, _store.Get(inserted.Reference), strict: true);
+
+        _store.Upsert([updated], T0);
+        Assert.Equivalent(updated, _store.Get(updated.Reference), strict: true);
+        Assert.Equivalent(updated, Assert.Single(_store.Search(updated.Name)), strict: true);
+        Assert.Equivalent(updated, Assert.Single(_store.GetRecentlyUpdated(10)), strict: true);
         Assert.Equal(1, _store.Count());
     }
 
@@ -131,5 +171,28 @@ public sealed class ModCatalogStoreTests : IDisposable
 
         Assert.Equal(["M"], reopened.Search("m").Select(m => m.Reference));
         Assert.Equal(T0, reopened.GetState("k"));
+    }
+
+    [Fact]
+    public void Rebuilds_a_catalogue_from_an_older_schema()
+    {
+        var path = _dir.Combine("old.db");
+        using (var old = new SqliteConnection($"Data Source={path};Pooling=False"))
+        {
+            old.Open();
+            using var cmd = old.CreateCommand();
+            cmd.CommandText = """
+                CREATE TABLE mods (rowid INTEGER PRIMARY KEY, id TEXT NOT NULL UNIQUE);
+                INSERT INTO mods (id) VALUES ('stale');
+                PRAGMA user_version = 2;
+                """;
+            cmd.ExecuteNonQuery();
+        }
+
+        var store = new ModCatalogStore(path);
+        Assert.Equal(0, store.Count());
+
+        store.Upsert([Mod("M")], T0);
+        Assert.NotNull(store.Get("M"));
     }
 }

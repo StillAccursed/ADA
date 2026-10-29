@@ -3,8 +3,6 @@
   <PropertyGroup>
     <RootNamespace>ADA.Infrastructure</RootNamespace>
     <AssemblyName>ADA.Infrastructure</AssemblyName>
-    <!-- Dapper.AOT generates the SQL mapping at build time instead of with reflection at run time. -->
-    <InterceptorsNamespaces>$(InterceptorsNamespaces);Dapper.AOT</InterceptorsNamespaces>
   </PropertyGroup>
 
   <ItemGroup>
@@ -12,8 +10,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Dapper" />
-    <PackageReference Include="Dapper.AOT" />
+    <PackageReference Include="linq2db" />
     <PackageReference Include="Microsoft.Data.Sqlite" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
     <PackageReference Include="Polly.Core" />

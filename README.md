@@ -96,7 +96,7 @@ ADA also relies on these open-source projects:
 | [Microsoft.Extensions.DependencyInjection, Http, Logging](https://github.com/dotnet/runtime) | Service wiring and HTTP clients | MIT |
 | [Microsoft.Data.Sqlite](https://github.com/dotnet/efcore) | Local mod catalogue | MIT |
 | [SQLite](https://sqlite.org/) (via SQLitePCLRaw) | Database engine and search | Public domain (SQLitePCLRaw: Apache-2.0) |
-| [Dapper](https://github.com/DapperLib/Dapper) and [Dapper.AOT](https://github.com/DapperLib/DapperAOT) | SQL mapping | Apache-2.0 |
+| [linq2db](https://github.com/linq2db/linq2db) | Database queries and table mapping | MIT |
 | [Polly](https://github.com/App-vNext/Polly) | Retries and backoff | BSD-3-Clause |
 | [CliWrap](https://github.com/Tyrrrz/CliWrap) | Running system commands | MIT |
 | [Serilog](https://serilog.net/) | Log files | Apache-2.0 |
