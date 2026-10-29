@@ -172,7 +172,7 @@ public sealed class ServerStoreTests : IDisposable
     }
 
     [Fact]
-    public void An_ftp_server_logs_in_with_a_password_only()
+    public void AnFtpServerLogsInWithAPasswordOnly()
     {
         using var dir = new TempDir();
         var store = new ServerStore(dir.Combine("servers.json"));

@@ -24,7 +24,7 @@ public sealed class ViewModelErrorTests : IDisposable
     public void Dispose() => _dir.Dispose();
 
     [Fact]
-    public async Task Repair_while_offline_shows_a_notice_instead_of_throwing()
+    public async Task RepairWhileOfflineShowsANoticeInsteadOfThrowing()
     {
         var game = new GameFolder(_dir.Combine("Satisfactory"));
         var archive = new SmodBuilder("SML", "3.12.0").Typical().WriteTo(_dir.Combine("Archives"));
@@ -50,7 +50,7 @@ public sealed class ViewModelErrorTests : IDisposable
     }
 
     [Fact]
-    public async Task A_damaged_catalogue_database_shows_an_error_instead_of_throwing()
+    public async Task ADamagedCatalogueDatabaseShowsAnErrorInsteadOfThrowing()
     {
         var path = _dir.Combine("catalog.db");
         var sync = new CatalogSync(new FicsitApiClient(new HttpClient(new FakeHttpHandler())), new ModCatalogStore(path));
@@ -69,7 +69,7 @@ public sealed class ViewModelErrorTests : IDisposable
     }
 
     [Fact]
-    public async Task The_game_watcher_keeps_going_after_a_failed_check()
+    public async Task TheGameWatcherKeepsGoingAfterAFailedCheck()
     {
         var calls = 0;
         var dashboard = DashboardFactory.Create(_dir,
@@ -96,7 +96,7 @@ public sealed class ViewModelErrorTests : IDisposable
     }
 
     [Fact]
-    public async Task Settings_save_once_after_a_burst_of_changes()
+    public async Task SettingsSaveOnceAfterABurstOfChanges()
     {
         var store = new SettingsStore(_dir.Combine("Config", "settings.json"));
         var vm = new SettingsViewModel(store, new ArchiveCache(_dir.Combine("Archives")), NullLogger<SettingsViewModel>.Instance);

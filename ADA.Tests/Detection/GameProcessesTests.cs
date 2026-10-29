@@ -15,7 +15,7 @@ public class GameProcessesTests
     [InlineData("FactoryServer-Linux-Shipping")]
     [InlineData("/opt/SatisfactoryDedicatedServer/FactoryServer.sh")]
     [InlineData("  factorygameegs.exe  ")]
-    public void Recognises_the_game_in_every_form(string name) =>
+    public void RecognisesTheGameInEveryForm(string name) =>
         Assert.True(GameProcesses.IsGameProcessName(name));
 
     [Theory]
@@ -24,11 +24,11 @@ public class GameProcessesTests
     [InlineData("/Applications/Satisfactory Mod Manager.app/Contents/MacOS/FactoryGameHelper-not/ADA")]
     [InlineData("wine64-preloader")]
     [InlineData("")]
-    public void Ignores_other_processes(string name) =>
+    public void IgnoresOtherProcesses(string name) =>
         Assert.False(GameProcesses.IsGameProcessName(name));
 
     [Fact]
-    public void Parses_ps_lines_including_names_with_spaces()
+    public void ParsesPsLinesIncludingNamesWithSpaces()
     {
         Assert.Equal(new GameProcess(12462, @"Y:\Games\Satisfactory\Engine\Binaries\Win64\FactoryGameEGS-Win64-Shipping.exe"),
             GameProcesses.ParsePsLine(@"12462 Y:\Games\Satisfactory\Engine\Binaries\Win64\FactoryGameEGS-Win64-Shipping.exe"));
@@ -40,7 +40,7 @@ public class GameProcessesTests
     }
 
     [UnixFact]
-    public async Task Closes_a_running_process_and_reports_it_gone()
+    public async Task ClosesARunningProcessAndReportsItGone()
     {
         // A stand-in for the game: `sleep` started through a link named like it, so only this
         // process is touched. (A copy of a system binary is killed on launch by macOS.)

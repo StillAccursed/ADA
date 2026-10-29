@@ -18,7 +18,7 @@ public class GameBuildReaderTests
         """;
 
     [Fact]
-    public void Reads_changelist_and_game_version()
+    public void ReadsChangelistAndGameVersion()
     {
         using var dir = new TempDir();
         var game = dir.CreateGame("Satisfactory");
@@ -36,7 +36,7 @@ public class GameBuildReaderTests
     [InlineData("not json")]
     [InlineData("""{ "Changelist": 0 }""")]
     [InlineData("""{ "GameVersion": "1.0" }""")]
-    public void Returns_null_when_build_cannot_be_read(string? content)
+    public void ReturnsNullWhenBuildCannotBeRead(string? content)
     {
         using var dir = new TempDir();
         var game = dir.CreateGame("Satisfactory");

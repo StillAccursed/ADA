@@ -22,7 +22,7 @@ public class WineRegistryFileTests
         """;
 
     [Fact]
-    public void Reads_string_value_and_unescapes_it()
+    public void ReadsStringValueAndUnescapesIt()
     {
         using var dir = new TempDir();
         var reg = dir.WriteFile("system.reg", HIVE);
@@ -36,7 +36,7 @@ public class WineRegistryFileTests
     }
 
     [Fact]
-    public void Ignores_values_under_other_keys_and_non_string_values()
+    public void IgnoresValuesUnderOtherKeysAndNonStringValues()
     {
         using var dir = new TempDir();
         var reg = dir.WriteFile("system.reg", HIVE);

@@ -47,7 +47,7 @@ public sealed class ProfileExporterTests : IDisposable
         Exporter().ExportAsync(profile ?? ATRIA, _dir.Combine("Atria"), formats, 513885, TargetPlatform.Windows);
 
     [Fact]
-    public async Task Exports_olp_only()
+    public async Task ExportsOlpOnly()
     {
         var written = await Export(ProfileFormats.Olp);
 
@@ -57,7 +57,7 @@ public sealed class ProfileExporterTests : IDisposable
     }
 
     [Fact]
-    public async Task Exports_both_formats_side_by_side()
+    public async Task ExportsBothFormatsSideBySide()
     {
         var written = await Export(ProfileFormats.Both);
 
@@ -65,7 +65,7 @@ public sealed class ProfileExporterTests : IDisposable
     }
 
     [Fact]
-    public async Task Smmprofile_is_complete_on_its_own_for_Satisfactory_Mod_Manager()
+    public async Task SmmprofileIsCompleteOnItsOwnForSatisfactoryModManager()
     {
         var written = await Export(ProfileFormats.SmmProfile);
         var doc = SmmProfileFile.Read(written.Single());
@@ -88,7 +88,7 @@ public sealed class ProfileExporterTests : IDisposable
     }
 
     [Fact]
-    public async Task Smmprofile_uses_the_same_field_names_and_nesting_as_the_sample()
+    public async Task SmmprofileUsesTheSameFieldNamesAndNestingAsTheSample()
     {
         var written = await Export(ProfileFormats.SmmProfile);
         using var json = JsonDocument.Parse(File.ReadAllText(written.Single()));
@@ -107,7 +107,7 @@ public sealed class ProfileExporterTests : IDisposable
     }
 
     [Fact]
-    public async Task A_failed_write_of_the_second_file_leaves_the_first_unwritten()
+    public async Task AFailedWriteOfTheSecondFileLeavesTheFirstUnwritten()
     {
         // Something already sits where the .smmprofile's temporary file must go, so writing it fails.
         Directory.CreateDirectory(_dir.Combine("Atria.smmprofile.tmp"));
@@ -119,7 +119,7 @@ public sealed class ProfileExporterTests : IDisposable
     }
 
     [Fact]
-    public async Task A_version_missing_from_the_catalogue_writes_neither_file()
+    public async Task AVersionMissingFromTheCatalogueWritesNeitherFile()
     {
         var profile = ATRIA with { Mods = [.. ATRIA.Mods, new ProfileMod("Gone", "1.0.0")] };
 
@@ -131,7 +131,7 @@ public sealed class ProfileExporterTests : IDisposable
     }
 
     [Fact]
-    public async Task A_mod_without_a_build_for_the_target_is_reported()
+    public async Task AModWithoutABuildForTheTargetIsReported()
     {
         var e = await Assert.ThrowsAsync<InvalidProfileException>(() =>
             Exporter().ExportAsync(ATRIA, _dir.Combine("Server"), ProfileFormats.SmmProfile, 513885, TargetPlatform.LinuxServer));
@@ -140,7 +140,7 @@ public sealed class ProfileExporterTests : IDisposable
     }
 
     [Fact]
-    public void Smmprofile_round_trip_keeps_unknown_fields()
+    public void SmmprofileRoundTripKeepsUnknownFields()
     {
         const string ORIGINAL = """
             {
@@ -164,7 +164,7 @@ public sealed class ProfileExporterTests : IDisposable
     }
 
     [Fact]
-    public void Smmprofile_keys_are_written_in_character_code_order()
+    public void SmmprofileKeysAreWrittenInCharacterCodeOrder()
     {
         // Culture-aware sorting would put AutomatedInhalers first; other tools write AutoLink first.
         const string JSON = """
@@ -186,7 +186,7 @@ public sealed class ProfileExporterTests : IDisposable
     [InlineData("""{ "profile": { "name": "P", "mods": {} }, "lockfile": { "mods": {}, "version": 2 } }""", "not supported")]
     [InlineData("""{ "profile": { "name": "P", "mods": { "bad name": { "version": ">=0.0.0" } } }, "lockfile": { "mods": {}, "version": 1 } }""", "not a valid mod reference")]
     [InlineData("""{ "profile": { "name": "P", "mods": {} }, "lockfile": { "mods": { "M": { "version": ">=1.0.0" } }, "version": 1 } }""", "invalid locked version")]
-    public void Rejects_invalid_smmprofiles(string json, string expected)
+    public void RejectsInvalidSmmprofiles(string json, string expected)
     {
         var e = Assert.Throws<InvalidProfileException>(() => SmmProfileFile.Parse(new MemoryStream(Encoding.UTF8.GetBytes(json))));
         Assert.Contains(expected, e.Message);

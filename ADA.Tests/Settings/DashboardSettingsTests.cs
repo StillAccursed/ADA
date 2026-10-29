@@ -17,7 +17,7 @@ public sealed class DashboardSettingsTests : IDisposable
     [InlineData(0, 1)]
     [InlineData(7, 7)]
     [InlineData(999, 20)]
-    public void Count_is_normalised_and_round_trips(int count, int expected)
+    public void CountIsNormalisedAndRoundTrips(int count, int expected)
     {
         var store = new SettingsStore(_dir.Combine("settings.json"));
         store.Save(new(DashboardLatestModsCount: count));
@@ -25,7 +25,7 @@ public sealed class DashboardSettingsTests : IDisposable
     }
 
     [Fact]
-    public async Task Debounced_dashboard_save_preserves_another_pages_latest_preferences()
+    public async Task DebouncedDashboardSavePreservesAnotherPagesLatestPreferences()
     {
         var store = new SettingsStore(_dir.Combine("settings.json"));
         var vm = new SettingsViewModel(store, new(_dir.Combine("Archives")), NullLogger<SettingsViewModel>.Instance);
@@ -41,7 +41,7 @@ public sealed class DashboardSettingsTests : IDisposable
     }
 
     [Fact]
-    public void Older_settings_use_five_releases()
+    public void OlderSettingsUseFiveReleases()
     {
         var path = _dir.WriteFile("settings.json", "{\"keepDownloadedArchives\":false}");
         var settings = new SettingsStore(path).Current;

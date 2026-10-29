@@ -5,7 +5,7 @@ namespace ADA.Tests.Formats;
 public class VdfNodeTests
 {
     [Fact]
-    public void Parses_current_libraryfolders_format()
+    public void ParsesCurrentLibraryfoldersFormat()
     {
         var vdf = VdfNode.Parse("""
             "libraryfolders"
@@ -26,7 +26,7 @@ public class VdfNodeTests
     }
 
     [Fact]
-    public void Keys_are_case_insensitive_and_comments_are_skipped()
+    public void KeysAreCaseInsensitiveAndCommentsAreSkipped()
     {
         var vdf = VdfNode.Parse("""
             // written by Steam
@@ -42,6 +42,6 @@ public class VdfNodeTests
     [InlineData("\"a\" {")]
     [InlineData("\"a\" \"unterminated")]
     [InlineData("}")]
-    public void Malformed_input_throws_FormatException(string text) =>
+    public void MalformedInputThrowsFormatException(string text) =>
         Assert.Throws<FormatException>(() => VdfNode.Parse(text));
 }

@@ -6,7 +6,7 @@ namespace ADA.Tests.Storage;
 public class AppPathsTests
 {
     [Fact]
-    public void Folders_sit_directly_under_the_root()
+    public void FoldersSitDirectlyUnderTheRoot()
     {
         using var dir = new TempDir();
         var paths = new AppPaths(dir.Path).EnsureCreated();
@@ -19,7 +19,7 @@ public class AppPathsTests
     }
 
     [Fact]
-    public void EnsureCreated_is_safe_to_repeat()
+    public void EnsureCreatedIsSafeToRepeat()
     {
         using var dir = new TempDir();
         var paths = new AppPaths(dir.Path).EnsureCreated();
@@ -31,7 +31,7 @@ public class AppPathsTests
     }
 
     [Fact]
-    public void Default_root_matches_the_OS_convention()
+    public void DefaultRootMatchesTheOSConvention()
     {
         var root = AppPaths.ForCurrentOS().Root;
         var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);

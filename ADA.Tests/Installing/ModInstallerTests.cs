@@ -36,7 +36,7 @@ public sealed class ModInstallerTests : IDisposable
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
-    public void Reads_each_file_back_only_when_asked_and_records_the_hash_written_either_way(bool readBack)
+    public void ReadsEachFileBackOnlyWhenAskedAndRecordsTheHashWrittenEitherWay(bool readBack)
     {
         var (installer, files) = Watched(readBack);
 
@@ -51,7 +51,7 @@ public sealed class ModInstallerTests : IDisposable
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
-    public void A_file_shorter_on_disk_than_written_fails_the_install(bool readBack)
+    public void AFileShorterOnDiskThanWrittenFailsTheInstall(bool readBack)
     {
         var (installer, files) = Watched(readBack);
         files.ShortenEnding = ".pak";
@@ -63,7 +63,7 @@ public sealed class ModInstallerTests : IDisposable
     }
 
     [Fact]
-    public void Installs_into_Mods_or_GameFeatures_by_the_uplugin_flag()
+    public void InstallsIntoModsOrGameFeaturesByTheUpluginFlag()
     {
         var plain = Smod("SML", "3.12.0");
         var feature = Smod("WeatherExtended", "1.1.0", gameFeature: true);
@@ -77,7 +77,7 @@ public sealed class ModInstallerTests : IDisposable
     }
 
     [Fact]
-    public void Leaves_only_the_record_and_lock_in_the_work_folder()
+    public void LeavesOnlyTheRecordAndLockInTheWorkFolder()
     {
         Installer().Apply([Install(Smod("A", "1.0.0"))]);
 
@@ -85,7 +85,7 @@ public sealed class ModInstallerTests : IDisposable
     }
 
     [Fact]
-    public void Records_every_file_with_size_and_hash()
+    public void RecordsEveryFileWithSizeAndHash()
     {
         Installer().Apply([Install(Smod("A", "1.0.0"))]);
 
@@ -96,7 +96,7 @@ public sealed class ModInstallerTests : IDisposable
     }
 
     [Fact]
-    public void Update_replaces_the_whole_folder()
+    public void UpdateReplacesTheWholeFolder()
     {
         var v1 = new SmodBuilder("A", "1.0.0").Typical().File("Content/Removed-in-v2.pak", "old").WriteTo(Path.Combine(_archives, "1"));
         var v2 = Smod("A", "2.0.0");
@@ -109,7 +109,7 @@ public sealed class ModInstallerTests : IDisposable
     }
 
     [Fact]
-    public void Update_that_changes_GameFeature_moves_the_mod()
+    public void UpdateThatChangesGameFeatureMovesTheMod()
     {
         Installer().Apply([Install(Smod("A", "1.0.0"))]);
 
@@ -120,7 +120,7 @@ public sealed class ModInstallerTests : IDisposable
     }
 
     [Fact]
-    public void Uninstall_removes_the_folder_and_the_record()
+    public void UninstallRemovesTheFolderAndTheRecord()
     {
         Installer().Apply([Install(Smod("A", "1.0.0", gameFeature: true))]);
 
@@ -132,7 +132,7 @@ public sealed class ModInstallerTests : IDisposable
     }
 
     [Fact]
-    public void Refuses_while_the_game_is_running()
+    public void RefusesWhileTheGameIsRunning()
     {
         _gameRunning = true;
 
@@ -141,7 +141,7 @@ public sealed class ModInstallerTests : IDisposable
     }
 
     [Fact]
-    public void Never_overwrites_or_removes_a_mod_it_did_not_install()
+    public void NeverOverwritesOrRemovesAModItDidNotInstall()
     {
         _dir.WriteFile("Satisfactory/FactoryGame/Mods/A/A.uplugin", "manual install");
 
@@ -151,7 +151,7 @@ public sealed class ModInstallerTests : IDisposable
     }
 
     [Fact]
-    public void A_bad_archive_anywhere_in_the_list_changes_nothing()
+    public void ABadArchiveAnywhereInTheListChangesNothing()
     {
         var good = Smod("A", "1.0.0");
         var bad = _dir.WriteFile("Archives/bad.smod", "not a zip");
@@ -163,7 +163,7 @@ public sealed class ModInstallerTests : IDisposable
     }
 
     [Fact]
-    public void A_failure_part_way_undoes_every_change_in_the_transaction()
+    public void AFailurePartWayUndoesEveryChangeInTheTransaction()
     {
         var a1 = Smod("A", "1.0.0");
         var b1 = Smod("B", "1.0.0");
@@ -189,7 +189,7 @@ public sealed class ModInstallerTests : IDisposable
     }
 
     [Fact]
-    public void Cancelling_undoes_everything()
+    public void CancellingUndoesEverything()
     {
         using var cts = new CancellationTokenSource();
         var installer = Installer(cp =>
@@ -209,7 +209,7 @@ public sealed class ModInstallerTests : IDisposable
     }
 
     [Fact]
-    public void Reports_progress_per_file()
+    public void ReportsProgressPerFile()
     {
         var reports = new List<InstallProgress>();
         Installer().Apply([Install(Smod("A", "1.0.0"))], new SyncProgress<InstallProgress>(reports.Add));
@@ -219,7 +219,7 @@ public sealed class ModInstallerTests : IDisposable
     }
 
     [Fact]
-    public void Another_window_holding_the_lock_blocks_changes()
+    public void AnotherWindowHoldingTheLockBlocksChanges()
     {
         Directory.CreateDirectory(_game.Work);
         using var held = new FileStream(Path.Combine(_game.Work, "lock"), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
@@ -229,7 +229,7 @@ public sealed class ModInstallerTests : IDisposable
     }
 
     [Fact]
-    public void Check_finds_damage_missing_mods_and_unmanaged_folders()
+    public void CheckFindsDamageMissingModsAndUnmanagedFolders()
     {
         Installer().Apply([Install(Smod("A", "1.0.0")), Install(Smod("B", "1.0.0")), Install(Smod("C", "1.0.0", gameFeature: true))]);
         File.WriteAllText(Path.Combine(_game.Mods, "A", "Resources", "Icon128.png"), "replaced by hand");
@@ -247,7 +247,7 @@ public sealed class ModInstallerTests : IDisposable
     }
 
     [Fact]
-    public void Fast_check_trusts_unchanged_timestamps_and_full_check_hashes_everything()
+    public void FastCheckTrustsUnchangedTimestampsAndFullCheckHashesEverything()
     {
         Installer().Apply([Install(Smod("A", "1.0.0"))]);
         var icon = Path.Combine(_game.Mods, "A", "Resources", "Icon128.png");
@@ -260,7 +260,7 @@ public sealed class ModInstallerTests : IDisposable
     }
 
     [Fact]
-    public void Repair_is_reinstalling_the_same_archive()
+    public void RepairIsReinstallingTheSameArchive()
     {
         var a = Smod("A", "1.0.0");
         Installer().Apply([Install(a)]);

@@ -15,7 +15,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 namespace ADA.Tests.ViewModels;
 
 /// <summary>The Switch profile dialog: a preview first, the profile's versions by default, newer ones on request.</summary>
-public sealed class SwitchProfileDialogTests : IDisposable
+public sealed class SwitchProfileViewModelTests : IDisposable
 {
     private readonly TempDir _dir = new();
     private readonly GameFolder _game;
@@ -29,7 +29,7 @@ public sealed class SwitchProfileDialogTests : IDisposable
     private readonly GameInstallViewModel _card;
     private bool _running;
 
-    public SwitchProfileDialogTests()
+    public SwitchProfileViewModelTests()
     {
         _game = new(_dir.Combine("Game"));
         _store = new(_dir.Combine("Profiles"), _dir.Combine("profiles.json"));
@@ -48,7 +48,7 @@ public sealed class SwitchProfileDialogTests : IDisposable
     public void Dispose() => _dir.Dispose();
 
     [Fact]
-    public async Task Re_applying_the_active_profile_installs_its_saved_versions_without_offering_newer()
+    public async Task ReApplyingTheActiveProfileInstallsItsSavedVersionsWithoutOfferingNewer()
     {
         Publish("A", "1.0.0", "First release.");
         Publish("A", "1.1.0", "Fixed a crash.");
@@ -71,7 +71,7 @@ public sealed class SwitchProfileDialogTests : IDisposable
     }
 
     [Fact]
-    public async Task Defaults_to_the_profiles_versions_and_switches_to_newer_ones_on_request()
+    public async Task DefaultsToTheProfilesVersionsAndSwitchesToNewerOnesOnRequest()
     {
         Publish("A", "1.0.0", "First release.");
         Publish("A", "1.1.0", "Fixed a crash.");
@@ -103,7 +103,7 @@ public sealed class SwitchProfileDialogTests : IDisposable
     }
 
     [Fact]
-    public async Task No_choice_when_the_saved_versions_are_the_newest()
+    public async Task NoChoiceWhenTheSavedVersionsAreTheNewest()
     {
         Publish("A", "1.0.0");
         var dialog = Dialog(new("Target", [new("A", "1.0.0")]));
@@ -116,7 +116,7 @@ public sealed class SwitchProfileDialogTests : IDisposable
     }
 
     [Fact]
-    public async Task A_gone_saved_version_disables_that_option_and_selects_newer()
+    public async Task AGoneSavedVersionDisablesThatOptionAndSelectsNewer()
     {
         Publish("A", "3.0.0");
         var dialog = Dialog(new("Target", [new("A", "2.0.0")]));
@@ -130,7 +130,7 @@ public sealed class SwitchProfileDialogTests : IDisposable
     }
 
     [Fact]
-    public async Task Problems_hide_switch_and_the_game_running_disables_it()
+    public async Task ProblemsHideSwitchAndTheGameRunningDisablesIt()
     {
         var gone = Dialog(new("Target", [new("Missing", "1.0.0")]));
         await gone.PreviewAsync();
@@ -147,7 +147,7 @@ public sealed class SwitchProfileDialogTests : IDisposable
     }
 
     [Fact]
-    public async Task A_changed_installation_shows_the_new_changes_instead_of_switching()
+    public async Task AChangedInstallationShowsTheNewChangesInsteadOfSwitching()
     {
         Publish("A", "1.0.0");
         var dialog = Dialog(new("Target", [new("A", "1.0.0")]));
@@ -163,7 +163,7 @@ public sealed class SwitchProfileDialogTests : IDisposable
     }
 
     [Fact]
-    public async Task Choosing_a_profile_on_the_dashboard_opens_the_preview_and_cancel_restores_the_selection()
+    public async Task ChoosingAProfileOnTheDashboardOpensThePreviewAndCancelRestoresTheSelection()
     {
         Publish("A", "1.0.0");
         _store.Save(new("Target", [new("A", "1.0.0")]));

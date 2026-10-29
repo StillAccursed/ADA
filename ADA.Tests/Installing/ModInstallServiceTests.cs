@@ -80,7 +80,7 @@ public sealed class ModInstallServiceTests : IDisposable
         Service());
 
     [Fact]
-    public async Task Resolves_dependencies_keeping_installed_versions_then_installs_them()
+    public async Task ResolvesDependenciesKeepingInstalledVersionsThenInstallsThem()
     {
         var game = _install with { Build = new GameBuild(513885, "1.2.4.1") };
         var sml = Publish("SML", "3.12.0");
@@ -102,7 +102,7 @@ public sealed class ModInstallServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task Resolving_without_a_known_game_build_explains_why()
+    public async Task ResolvingWithoutAKnownGameBuildExplainsWhy()
     {
         var result = await Resolver().ResolveAsync(_install with { Build = null }, [new ModRequirement("SML")]);
 
@@ -116,7 +116,7 @@ public sealed class ModInstallServiceTests : IDisposable
     private string[] InstalledNow() => new ModInstaller(_game.Root, () => false).Installed.Keys.Order().ToArray();
 
     [Fact]
-    public async Task Installing_a_mod_pulls_in_its_dependencies_and_records_only_what_was_asked_for()
+    public async Task InstallingAModPullsInItsDependenciesAndRecordsOnlyWhatWasAskedFor()
     {
         var sml = Publish("SML", "3.12.0");
         var weather = Publish("WeatherExtended", "1.1.0", gameFeature: true, deps: [Needs("SML")]);
@@ -136,7 +136,7 @@ public sealed class ModInstallServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task Uninstalling_removes_dependencies_nothing_else_needs()
+    public async Task UninstallingRemovesDependenciesNothingElseNeeds()
     {
         Serve(Publish("SML", "3.12.0"), Publish("A", "1.0.0", deps: [Needs("SML")]), Publish("B", "1.0.0", deps: [Needs("SML")]));
         await Resolver().ApplyAsync(KnownBuild, await Resolver().PlanInstallAsync(KnownBuild, "A"));
@@ -155,7 +155,7 @@ public sealed class ModInstallServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task Refuses_to_uninstall_a_mod_another_one_needs()
+    public async Task RefusesToUninstallAModAnotherOneNeeds()
     {
         Serve(Publish("SML", "3.12.0"), Publish("A", "1.0.0", deps: [Needs("SML")]));
         await Resolver().ApplyAsync(KnownBuild, await Resolver().PlanInstallAsync(KnownBuild, "A"));
@@ -166,7 +166,7 @@ public sealed class ModInstallServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task Mods_installed_before_requests_were_recorded_are_never_removed_as_unneeded()
+    public async Task ModsInstalledBeforeRequestsWereRecordedAreNeverRemovedAsUnneeded()
     {
         var sml = Publish("SML", "3.12.0");
         Serve(sml, Publish("A", "1.0.0", deps: [Needs("SML")]));
@@ -180,7 +180,7 @@ public sealed class ModInstallServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task Asking_for_a_dependency_keeps_it_once_nothing_needs_it()
+    public async Task AskingForADependencyKeepsItOnceNothingNeedsIt()
     {
         Serve(Publish("SML", "3.12.0"), Publish("A", "1.0.0", deps: [Needs("SML")]));
         await Resolver().ApplyAsync(KnownBuild, await Resolver().PlanInstallAsync(KnownBuild, "A"));
@@ -194,7 +194,7 @@ public sealed class ModInstallServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task Plans_refuse_to_overwrite_mods_another_manager_installed()
+    public async Task PlansRefuseToOverwriteModsAnotherManagerInstalled()
     {
         Publish("SML", "3.12.0");
         Publish("A", "1.0.0", deps: [Needs("SML")]);
@@ -206,7 +206,7 @@ public sealed class ModInstallServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task Update_plans_move_installed_mods_to_the_newest_versions_that_fit()
+    public async Task UpdatePlansMoveInstalledModsToTheNewestVersionsThatFit()
     {
         Serve(Publish("SML", "3.12.0"), Publish("A", "1.0.0", deps: [Needs("SML")]));
         await Resolver().ApplyAsync(KnownBuild, await Resolver().PlanInstallAsync(KnownBuild, "A"));
@@ -222,7 +222,7 @@ public sealed class ModInstallServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task Updating_one_mod_leaves_the_others_as_they_are()
+    public async Task UpdatingOneModLeavesTheOthersAsTheyAre()
     {
         Serve(Publish("SML", "3.12.0"), Publish("A", "1.0.0", deps: [Needs("SML")]));
         await Resolver().ApplyAsync(KnownBuild, await Resolver().PlanInstallAsync(KnownBuild, "A"));
@@ -235,7 +235,7 @@ public sealed class ModInstallServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task Update_plans_never_go_back_from_an_installed_beta_to_an_older_release()
+    public async Task UpdatePlansNeverGoBackFromAnInstalledBetaToAnOlderRelease()
     {
         Serve(Publish("SML", "3.12.0"));
         var beta = Publish("SML", "3.13.0-beta.1") with { Stability = VersionStability.Beta };
@@ -247,7 +247,7 @@ public sealed class ModInstallServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task Installing_what_is_already_installed_changes_nothing()
+    public async Task InstallingWhatIsAlreadyInstalledChangesNothing()
     {
         Serve(Publish("SML", "3.12.0"));
         await Resolver().ApplyAsync(KnownBuild, await Resolver().PlanInstallAsync(KnownBuild, "SML"));
@@ -256,7 +256,7 @@ public sealed class ModInstallServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task Downloads_then_installs_and_keeps_archives_by_default()
+    public async Task DownloadsThenInstallsAndKeepsArchivesByDefault()
     {
         var sml = Publish("SML", "3.12.0");
         var weather = Publish("WeatherExtended", "1.1.0", gameFeature: true);
@@ -271,7 +271,7 @@ public sealed class ModInstallServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task Deletes_archives_after_install_when_the_setting_is_off()
+    public async Task DeletesArchivesAfterInstallWhenTheSettingIsOff()
     {
         _settings.Save(new AppSettings(KeepDownloadedArchives: false));
         var sml = Publish("SML", "3.12.0");
@@ -285,7 +285,7 @@ public sealed class ModInstallServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task Uses_the_retry_setting_for_downloads()
+    public async Task UsesTheRetrySettingForDownloads()
     {
         _settings.Save(new AppSettings(DownloadRetries: 2));
         var sml = Publish("SML", "3.12.0");
@@ -301,7 +301,7 @@ public sealed class ModInstallServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task A_failed_download_installs_nothing()
+    public async Task AFailedDownloadInstallsNothing()
     {
         var sml = Publish("SML", "3.12.0");
         var weather = Publish("WeatherExtended", "1.1.0");
@@ -316,7 +316,7 @@ public sealed class ModInstallServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task Refuses_before_downloading_when_the_game_is_running()
+    public async Task RefusesBeforeDownloadingWhenTheGameIsRunning()
     {
         _gameRunning = true;
         var sml = Publish("SML", "3.12.0");
@@ -326,7 +326,7 @@ public sealed class ModInstallServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task Asks_whether_the_install_being_changed_is_running()
+    public async Task AsksWhetherTheInstallBeingChangedIsRunning()
     {
         var other = _install with { GamePath = _dir.Combine("Other") };
         var sml = Publish("SML", "3.12.0");
@@ -343,7 +343,7 @@ public sealed class ModInstallServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task Repairs_from_the_kept_archive_without_downloading()
+    public async Task RepairsFromTheKeptArchiveWithoutDownloading()
     {
         var sml = Publish("SML", "3.12.0");
         Serve(sml);
@@ -361,7 +361,7 @@ public sealed class ModInstallServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task Repair_downloads_again_when_archives_are_not_kept()
+    public async Task RepairDownloadsAgainWhenArchivesAreNotKept()
     {
         _settings.Save(new AppSettings(KeepDownloadedArchives: false));
         var sml = Publish("SML", "3.12.0");
@@ -377,7 +377,7 @@ public sealed class ModInstallServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task Repair_reports_versions_that_ficsit_app_no_longer_lists()
+    public async Task RepairReportsVersionsThatFicsitAppNoLongerLists()
     {
         var sml = Publish("SML", "3.12.0");
         Serve(sml);
@@ -392,7 +392,7 @@ public sealed class ModInstallServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task Launch_check_on_an_untouched_game_creates_nothing()
+    public async Task LaunchCheckOnAnUntouchedGameCreatesNothing()
     {
         var status = await Service().RecoverAndCheckAsync(_install);
 
@@ -402,7 +402,7 @@ public sealed class ModInstallServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task Launch_recovery_waits_while_the_game_is_running()
+    public async Task LaunchRecoveryWaitsWhileTheGameIsRunning()
     {
         // Leave an interrupted transaction behind.
         var archive = new SmodBuilder("A", "1.0.0").Typical().WriteTo(_dir.Combine("Local"));
@@ -432,11 +432,11 @@ public sealed class ModInstallServiceTests : IDisposable
     [InlineData(GameKind.Client, GameHost.LinuxCompat, TargetPlatform.Windows)]
     [InlineData(GameKind.DedicatedServer, GameHost.Windows, TargetPlatform.WindowsServer)]
     [InlineData(GameKind.DedicatedServer, GameHost.Linux, TargetPlatform.LinuxServer)]
-    public void Picks_the_build_for_the_game(GameKind kind, GameHost host, TargetPlatform expected) =>
+    public void PicksTheBuildForTheGame(GameKind kind, GameHost host, TargetPlatform expected) =>
         Assert.Equal(expected, ModInstallService.TargetFor(_install with { Kind = kind, Host = host }));
 
     [Fact]
-    public async Task Refuses_before_downloading_when_the_archives_drive_is_too_full()
+    public async Task RefusesBeforeDownloadingWhenTheArchivesDriveIsTooFull()
     {
         var huge = Publish("Huge", "1.0.0");
         huge = huge with { Targets = [huge.Targets[0] with { Size = long.MaxValue / 4 }] };
@@ -448,7 +448,7 @@ public sealed class ModInstallServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task A_client_only_mod_stays_requested_on_a_server_but_isnt_installed()
+    public async Task AClientOnlyModStaysRequestedOnAServerButIsntInstalled()
     {
         var server = KnownBuild with { Kind = GameKind.DedicatedServer, Host = GameHost.Linux };
         Publish("BetterGrass", "2.0.0");
@@ -463,7 +463,7 @@ public sealed class ModInstallServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task A_client_only_mod_removed_from_a_server_doesnt_leave_the_profile()
+    public async Task AClientOnlyModRemovedFromAServerDoesntLeaveTheProfile()
     {
         var server = KnownBuild with { Kind = GameKind.DedicatedServer, Host = GameHost.Linux };
         Publish("BetterGrass", "2.0.0"); // client build only

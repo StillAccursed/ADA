@@ -17,7 +17,7 @@ public class GameVersionRangeTests
     [InlineData("<400000 || >=513885", 513885, true)]
     [InlineData("*", 1, true)]
     [InlineData("", 1, true)]
-    public void Matches_game_builds(string text, int changelist, bool expected)
+    public void MatchesGameBuilds(string text, int changelist, bool expected)
     {
         Assert.True(GameVersionRange.TryParse(text, out var range));
         Assert.Equal(expected, range.Contains(changelist));
@@ -27,6 +27,6 @@ public class GameVersionRangeTests
     [InlineData(">=abc")]
     [InlineData("^1.2.0")]
     [InlineData(">=1.2")]
-    public void Rejects_ranges_that_are_not_over_build_numbers(string text) =>
+    public void RejectsRangesThatAreNotOverBuildNumbers(string text) =>
         Assert.False(GameVersionRange.TryParse(text, out _));
 }

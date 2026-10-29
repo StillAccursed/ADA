@@ -19,7 +19,7 @@ public sealed class AppearanceSettingsTests : IDisposable
     [InlineData(133, 100)]
     [InlineData(0, 100)]
     [InlineData(400, 100)]
-    public void Scale_is_normalised_and_round_trips(int scale, int expected)
+    public void ScaleIsNormalisedAndRoundTrips(int scale, int expected)
     {
         var store = new SettingsStore(_dir.Combine("settings.json"));
         store.Save(new(InterfaceScale: scale));
@@ -33,7 +33,7 @@ public sealed class AppearanceSettingsTests : IDisposable
     [InlineData("Purple", "System")]
     [InlineData("", "System")]
     [InlineData("dark", "System")]
-    public void Theme_is_normalised_and_round_trips(string theme, string expected)
+    public void ThemeIsNormalisedAndRoundTrips(string theme, string expected)
     {
         var store = new SettingsStore(_dir.Combine("settings.json"));
         store.Save(new(Theme: theme));
@@ -41,7 +41,7 @@ public sealed class AppearanceSettingsTests : IDisposable
     }
 
     [Fact]
-    public void Unknown_theme_in_file_keeps_the_other_settings()
+    public void UnknownThemeInFileKeepsTheOtherSettings()
     {
         var path = _dir.WriteFile("settings.json", "{\"theme\":\"Purple\",\"interfaceScale\":125,\"keepDownloadedArchives\":false}");
         var settings = new SettingsStore(path).Current;
@@ -51,7 +51,7 @@ public sealed class AppearanceSettingsTests : IDisposable
     }
 
     [Fact]
-    public void Older_settings_use_full_size_and_the_system_theme()
+    public void OlderSettingsUseFullSizeAndTheSystemTheme()
     {
         var path = _dir.WriteFile("settings.json", "{\"keepDownloadedArchives\":false}");
         var settings = new SettingsStore(path).Current;
@@ -60,7 +60,7 @@ public sealed class AppearanceSettingsTests : IDisposable
     }
 
     [Fact]
-    public async Task Debounced_appearance_save_preserves_another_pages_latest_preferences()
+    public async Task DebouncedAppearanceSavePreservesAnotherPagesLatestPreferences()
     {
         var store = new SettingsStore(_dir.Combine("settings.json"));
         var vm = new SettingsViewModel(store, new(_dir.Combine("Archives")), NullLogger<SettingsViewModel>.Instance);
@@ -74,7 +74,7 @@ public sealed class AppearanceSettingsTests : IDisposable
     }
 
     [Fact]
-    public async Task Unsupported_choices_from_the_page_are_not_saved()
+    public async Task UnsupportedChoicesFromThePageAreNotSaved()
     {
         var store = new SettingsStore(_dir.Combine("settings.json"));
         var vm = new SettingsViewModel(store, new(_dir.Combine("Archives")), NullLogger<SettingsViewModel>.Instance);

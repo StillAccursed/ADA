@@ -62,7 +62,7 @@ public sealed class FolderServerTests : IDisposable
     private static string Steps(SetupResult result) => string.Join("\n", result.Steps.Select(s => $"{s.Name}: {s.Detail}"));
 
     [Fact]
-    public async Task Setup_finds_the_server_below_the_folder_and_warns_it_cant_tell_if_its_running()
+    public async Task SetupFindsTheServerBelowTheFolderAndWarnsItCantTellIfItsRunning()
     {
         var root = PlaceServer("share/steamapps/common/SatisfactoryDedicatedServer");
 
@@ -77,7 +77,7 @@ public sealed class FolderServerTests : IDisposable
     }
 
     [Fact]
-    public async Task A_game_install_is_refused_even_with_a_server_launcher_added()
+    public async Task AGameInstallIsRefusedEvenWithAServerLauncherAdded()
     {
         var client = PlaceClient("Satisfactory");
         Directory.CreateDirectory(Path.Combine(client, "Engine", "Binaries", "Linux"));
@@ -92,7 +92,7 @@ public sealed class FolderServerTests : IDisposable
     }
 
     [Fact]
-    public async Task An_epic_game_install_is_refused()
+    public async Task AnEpicGameInstallIsRefused()
     {
         var root = _dir.Combine("Epic");
         Directory.CreateDirectory(Path.Combine(root, "FactoryGame"));
@@ -104,7 +104,7 @@ public sealed class FolderServerTests : IDisposable
     }
 
     [Fact]
-    public async Task Searching_skips_a_game_install_beside_a_real_server()
+    public async Task SearchingSkipsAGameInstallBesideARealServer()
     {
         PlaceClient("games/Satisfactory");
         var server = PlaceServer("games/SatisfactoryDedicatedServer");
@@ -116,7 +116,7 @@ public sealed class FolderServerTests : IDisposable
     }
 
     [Fact]
-    public async Task A_launcher_without_the_servers_program_isnt_a_server()
+    public async Task ALauncherWithoutTheServersProgramIsntAServer()
     {
         var root = PlaceServer("Server", program: "");
 
@@ -128,7 +128,7 @@ public sealed class FolderServerTests : IDisposable
     }
 
     [Fact]
-    public async Task A_server_already_detected_gets_a_warning_and_a_missing_folder_says_to_mount_it()
+    public async Task AServerAlreadyDetectedGetsAWarningAndAMissingFolderSaysToMountIt()
     {
         var root = PlaceServer("Steam/SatisfactoryDedicatedServer");
 
@@ -142,7 +142,7 @@ public sealed class FolderServerTests : IDisposable
     }
 
     [Fact]
-    public async Task Connecting_reads_the_build_and_a_folder_that_goes_away_becomes_unavailable()
+    public async Task ConnectingReadsTheBuildAndAFolderThatGoesAwayBecomesUnavailable()
     {
         var root = PlaceServer("Server");
         var server = Folder(root);
@@ -162,7 +162,7 @@ public sealed class FolderServerTests : IDisposable
     }
 
     [Fact]
-    public async Task A_missing_folder_is_refused_on_connect_and_unavailable_on_launch()
+    public async Task AMissingFolderIsRefusedOnConnectAndUnavailableOnLaunch()
     {
         var gone = Folder(_dir.Combine("Unmounted"));
         _store.Save(gone);
@@ -175,7 +175,7 @@ public sealed class FolderServerTests : IDisposable
     }
 
     [Fact]
-    public async Task The_lock_is_a_file_that_names_its_holder_and_can_be_taken_over()
+    public async Task TheLockIsAFileThatNamesItsHolderAndCanBeTakenOver()
     {
         var root = PlaceServer("Server");
         var server = Folder(root);
@@ -204,7 +204,7 @@ public sealed class FolderServerTests : IDisposable
     }
 
     [Fact]
-    public async Task Mods_install_and_uninstall_through_the_folder_with_server_builds()
+    public async Task ModsInstallAndUninstallThroughTheFolderWithServerBuilds()
     {
         var root = PlaceServer("Server");
         var server = Folder(root);
@@ -235,7 +235,7 @@ public sealed class FolderServerTests : IDisposable
     [InlineData(GameHost.Windows, ServerTransport.Folder, TargetPlatform.WindowsServer)]
     [InlineData(GameHost.CrossOver, ServerTransport.Folder, TargetPlatform.WindowsServer)]
     [InlineData(GameHost.LinuxCompat, ServerTransport.Sftp, TargetPlatform.WindowsServer)]
-    public void A_saved_server_is_always_a_dedicated_server_with_server_builds(GameHost host, ServerTransport transport, TargetPlatform expected)
+    public void ASavedServerIsAlwaysADedicatedServerWithServerBuilds(GameHost host, ServerTransport transport, TargetPlatform expected)
     {
         var install = ServerConnections.ToInstall(Folder("/srv") with { Host = host, Transport = transport }, null);
 
@@ -246,7 +246,7 @@ public sealed class FolderServerTests : IDisposable
     }
 
     [Fact]
-    public void An_older_saved_server_loads_as_sftp_and_a_folder_server_round_trips()
+    public void AnOlderSavedServerLoadsAsSftpAndAFolderServerRoundTrips()
     {
         var path = _dir.WriteFile("old/servers.json", $$"""
             [{ "id": "{{Guid.NewGuid()}}", "name": "Old", "address": "1.2.3.4", "port": 22, "user": "steam", "auth": "Password",
@@ -263,7 +263,7 @@ public sealed class FolderServerTests : IDisposable
     }
 
     [Fact]
-    public async Task An_empty_lock_file_is_held_by_an_unknown_ada_and_can_be_taken_over()
+    public async Task AnEmptyLockFileIsHeldByAnUnknownAdaAndCanBeTakenOver()
     {
         var root = PlaceServer("Server");
         var server = Folder(root);
@@ -284,7 +284,7 @@ public sealed class FolderServerTests : IDisposable
     }
 
     [Fact]
-    public async Task A_folder_that_goes_away_is_noticed_by_the_connections_own_timer()
+    public async Task AFolderThatGoesAwayIsNoticedByTheConnectionsOwnTimer()
     {
         using var connections = new ServerConnections(_store, new ServerSecrets(new FakeSecretStore()),
             new SatisfactoryServerApi(new HttpClient(new FakeHttpHandler()))) { ReachabilityInterval = TimeSpan.FromMilliseconds(20) };
@@ -300,7 +300,7 @@ public sealed class FolderServerTests : IDisposable
     }
 
     [Fact]
-    public async Task A_cancelled_connect_leaves_nothing_connected()
+    public async Task ACancelledConnectLeavesNothingConnected()
     {
         var root = PlaceServer("Server");
         var server = Folder(root);

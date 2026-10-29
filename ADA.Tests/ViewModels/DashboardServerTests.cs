@@ -177,7 +177,7 @@ public sealed class DashboardServerTests : IDisposable
     }
 
     [Fact]
-    public async Task A_server_on_another_profile_is_named_with_both_profiles()
+    public async Task AServerOnAnotherProfileIsNamedWithBothProfiles()
     {
         var server = LeftConnected();
         _profileStore.SetActive(ServerConnections.InstallKey(server.Id), "Dedicated");
@@ -193,7 +193,7 @@ public sealed class DashboardServerTests : IDisposable
     }
 
     [Fact]
-    public async Task A_shared_profile_with_an_unreachable_server_cant_be_checked()
+    public async Task ASharedProfileWithAnUnreachableServerCantBeChecked()
     {
         var server = LeftConnected();
         _profileStore.SetActive(ServerConnections.InstallKey(server.Id), "Playthrough");
@@ -212,7 +212,7 @@ public sealed class DashboardServerTests : IDisposable
     }
 
     [SftpFact]
-    public async Task A_connected_server_missing_a_mod_players_need_is_offered_an_update()
+    public async Task AConnectedServerMissingAModPlayersNeedIsOfferedAnUpdate()
     {
         using var test = new SftpTestServer();
         _store.Save(test.Server);

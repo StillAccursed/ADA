@@ -6,7 +6,7 @@ namespace ADA.Tests.Paths;
 public class WinePrefixTests
 {
     [UnixFact]
-    public void Resolves_mapped_drive_through_dosdevices_symlink()
+    public void ResolvesMappedDriveThroughDosdevicesSymlink()
     {
         using var dir = new TempDir();
         var home = Directory.CreateDirectory(dir.Combine("home", "Games", "Satisfactory")).Parent!.Parent!.FullName;
@@ -19,7 +19,7 @@ public class WinePrefixTests
     }
 
     [Fact]
-    public void Falls_back_to_drive_c_and_matches_case_insensitively()
+    public void FallsBackToDriveCAndMatchesCaseInsensitively()
     {
         using var dir = new TempDir();
         var bottle = dir.Combine("bottle");
@@ -33,7 +33,7 @@ public class WinePrefixTests
     [InlineData(@"C:\Missing\Folder")]
     [InlineData(@"\\server\share")]
     [InlineData("relative")]
-    public void Returns_null_for_unmapped_or_missing_paths(string windowsPath)
+    public void ReturnsNullForUnmappedOrMissingPaths(string windowsPath)
     {
         using var dir = new TempDir();
         Directory.CreateDirectory(dir.Combine("bottle", "drive_c"));

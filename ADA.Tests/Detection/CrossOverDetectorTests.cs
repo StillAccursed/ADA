@@ -41,7 +41,7 @@ public class CrossOverDetectorTests
     }
 
     [UnixFact]
-    public void Finds_epic_install_on_mapped_drive()
+    public void FindsEpicInstallOnMappedDrive()
     {
         var (dir, game) = EpicBottleWithGameOnMappedDrive(EpicItem(@"Y:\Games\Satisfactory"));
         using var _ = dir;
@@ -60,7 +60,7 @@ public class CrossOverDetectorTests
     }
 
     [UnixFact]
-    public void Skips_incomplete_installs()
+    public void SkipsIncompleteInstalls()
     {
         var (dir, _) = EpicBottleWithGameOnMappedDrive(EpicItem(@"Y:\Games\Satisfactory", incomplete: true));
         using var _d = dir;
@@ -69,7 +69,7 @@ public class CrossOverDetectorTests
     }
 
     [UnixFact]
-    public void Skips_other_games()
+    public void SkipsOtherGames()
     {
         var (dir, _) = EpicBottleWithGameOnMappedDrive(EpicItem(@"Y:\Games\Satisfactory", ns: "fortnite"));
         using var _d = dir;
@@ -78,7 +78,7 @@ public class CrossOverDetectorTests
     }
 
     [UnixFact]
-    public void Skips_manifest_whose_folder_is_not_a_game()
+    public void SkipsManifestWhoseFolderIsNotAGame()
     {
         var (dir, game) = EpicBottleWithGameOnMappedDrive(EpicItem(@"Y:\Games\Satisfactory"));
         using var _d = dir;
@@ -88,7 +88,7 @@ public class CrossOverDetectorTests
     }
 
     [Fact]
-    public void Finds_steam_install_in_second_library_and_ignores_partial_download()
+    public void FindsSteamInstallInSecondLibraryAndIgnoresPartialDownload()
     {
         using var dir = new TempDir();
         dir.WriteFile("Bottles/Steam/system.reg", """
@@ -116,7 +116,7 @@ public class CrossOverDetectorTests
     }
 
     [Fact]
-    public void Missing_bottles_folder_finds_nothing()
+    public void MissingBottlesFolderFindsNothing()
     {
         using var dir = new TempDir();
         Assert.Empty(new CrossOverDetector(dir.Combine("nope")).Detect());

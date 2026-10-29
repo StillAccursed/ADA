@@ -7,7 +7,7 @@ using ADA.Tests.Fixtures;
 
 namespace ADA.Tests.Servers;
 
-public sealed class ServerHelpersTests
+public sealed class SatisfactoryServerApiTests
 {
     [Theory]
     [InlineData("/home/steam/SatisfactoryDedicatedServer/", "/home/steam/SatisfactoryDedicatedServer")]

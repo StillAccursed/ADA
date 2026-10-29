@@ -3,7 +3,7 @@ using ADA.Tests.Fixtures;
 
 namespace ADA.Tests.Servers;
 
-public sealed class SecretStoreTests
+public sealed class SecretStoresTests
 {
     [SecretStoreFact]
     public async Task RoundTripsThroughThisMachinesSecretStore()

@@ -46,7 +46,7 @@ public sealed class ProfileSyncTests : IDisposable
     }));
 
     [Fact]
-    public async Task A_client_only_mod_missing_here_doesnt_count()
+    public async Task AClientOnlyModMissingHereDoesntCount()
     {
         await _service.InstallAsync(_install, [Publish("Storage", "1.0.0", required: true)]);
         Publish("BetterGrass", "2.0.0", required: false);
@@ -59,7 +59,7 @@ public sealed class ProfileSyncTests : IDisposable
     }
 
     [Fact]
-    public async Task Missing_extra_and_different_needed_mods_are_listed()
+    public async Task MissingExtraAndDifferentNeededModsAreListed()
     {
         await _service.InstallAsync(_install, [Publish("Storage", "1.0.0", required: true), Publish("Vehicles", "1.0.0", required: true)]);
         Publish("Storage", "1.1.0", required: true);
@@ -74,7 +74,7 @@ public sealed class ProfileSyncTests : IDisposable
     }
 
     [Fact]
-    public async Task A_version_difference_counts_when_only_the_installed_version_is_needed()
+    public async Task AVersionDifferenceCountsWhenOnlyTheInstalledVersionIsNeeded()
     {
         await _service.InstallAsync(_install, [Publish("Storage", "1.0.0", required: true)]);
         Publish("Storage", "0.9.0", required: false);
@@ -84,7 +84,7 @@ public sealed class ProfileSyncTests : IDisposable
     }
 
     [Fact]
-    public async Task A_failed_lookup_counts_and_a_matching_profile_needs_no_lookups()
+    public async Task AFailedLookupCountsAndAMatchingProfileNeedsNoLookups()
     {
         await _service.InstallAsync(_install, [Publish("Storage", "1.0.0", required: false)]);
         _store.Save(new("Playthrough", [new("Storage", "1.0.0")]));
@@ -98,7 +98,7 @@ public sealed class ProfileSyncTests : IDisposable
     }
 
     [Fact]
-    public async Task No_profile_is_reported_as_none()
+    public async Task NoProfileIsReportedAsNone()
     {
         _store.ClearActive(_game.Root);
 

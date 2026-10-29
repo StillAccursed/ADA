@@ -5,7 +5,7 @@ namespace ADA.Tests.Catalog;
 public class ModDescriptionTests
 {
     [Fact]
-    public void Formatted_keeps_markdown_and_structural_html_without_author_css()
+    public void FormattedKeepsMarkdownAndStructuralHtmlWithoutAuthorCss()
     {
         const string MARKDOWN = """
             # Features
@@ -34,7 +34,7 @@ public class ModDescriptionTests
     }
 
     [Fact]
-    public void Formatted_removes_hidden_content_but_keeps_https_images_in_place()
+    public void FormattedRemovesHiddenContentButKeepsHttpsImagesInPlace()
     {
         const string MARKDOWN = """
             <div><STYLE>.rp-title { display: inline-block; }</STYLE></div>
@@ -65,7 +65,7 @@ public class ModDescriptionTests
     [InlineData("~~~html\n<script>example()</script>\n~~~")]
     [InlineData("Use `<style>display: grid;</style>` in your example.")]
     [InlineData("Use ``<img src=\"image.png\">`` in your example.")]
-    public void Formatted_preserves_markup_inside_code_examples(string markdown)
+    public void FormattedPreservesMarkupInsideCodeExamples(string markdown)
     {
         Assert.Equal(markdown, ModDescription.Formatted(markdown));
     }
@@ -74,20 +74,20 @@ public class ModDescriptionTests
     [InlineData("<style>display: grid;")]
     [InlineData("<!-- unfinished comment")]
     [InlineData("<script>unfinished script")]
-    public void Formatted_removes_unclosed_non_content_blocks(string markup)
+    public void FormattedRemovesUnclosedNonContentBlocks(string markup)
     {
         Assert.Equal("Visible", ModDescription.Formatted("Visible\n" + markup));
     }
 
     [Fact]
-    public void Readable_does_not_leak_css_or_comments_into_changelogs()
+    public void ReadableDoesNotLeakCssOrCommentsIntoChangelogs()
     {
         Assert.Equal("Weather\n\nMore rain.", ModDescription.Readable(
             "<style>.weather { display: flex; }</style><!-- hidden --># Weather\n\nMore **rain**."));
     }
 
     [Fact]
-    public void Backticks_inside_scripts_and_styles_do_not_leak_hidden_content()
+    public void BackticksInsideScriptsAndStylesDoNotLeakHiddenContent()
     {
         Assert.Equal("Visible", ModDescription.Formatted(
             "<style>.code::before { content: '`example`'; }</style>Visible<script>const text = `hidden`;</script>"));
@@ -97,7 +97,7 @@ public class ModDescriptionTests
     [InlineData(null)]
     [InlineData("   ")]
     [InlineData("<div><style>display: grid;</style><img src=\"image.png\"></div>")]
-    public void Descriptions_without_visible_content_fall_back_to_the_short_description(string? markdown)
+    public void DescriptionsWithoutVisibleContentFallBackToTheShortDescription(string? markdown)
     {
         var mod = new ADA.ViewModels.ModItemViewModel(
             ADA.Tests.Fixtures.CatalogFixtures.Mod("Example", shortDescription: "Short description", fullDescription: markdown));
@@ -106,7 +106,7 @@ public class ModDescriptionTests
     }
 
     [Fact]
-    public void Keeps_paragraphs_and_lists_but_drops_markup_images_and_urls()
+    public void KeepsParagraphsAndListsButDropsMarkupImagesAndUrls()
     {
         const string MARKDOWN = """
             # Weather Extended
@@ -126,10 +126,10 @@ public class ModDescriptionTests
     [Theory]
     [InlineData(null)]
     [InlineData("   ")]
-    public void Empty_descriptions_are_empty(string? markdown) => Assert.Equal("", ModDescription.Readable(markdown));
+    public void EmptyDescriptionsAreEmpty(string? markdown) => Assert.Equal("", ModDescription.Readable(markdown));
 
     [Fact]
-    public void Gallery_takes_https_images_in_order_without_repeats()
+    public void GalleryTakesHttpsImagesInOrderWithoutRepeats()
     {
         const string MARKDOWN = """
             ![one](https://example.com/1.png "title")
@@ -143,7 +143,7 @@ public class ModDescriptionTests
     }
 
     [Fact]
-    public void Mixed_images_keep_their_positions_between_paragraphs()
+    public void MixedImagesKeepTheirPositionsBetweenParagraphs()
     {
         const string MARKDOWN = "Before\n\n![Banner](https://example.com/banner.png)\n\nBetween\n\n<img src='https://example.com/photo.png'>\n\nAfter";
 
@@ -154,7 +154,7 @@ public class ModDescriptionTests
     [Theory]
     [InlineData("![Banner](https://example.com/banner.png)")]
     [InlineData("<div><img src='https://example.com/banner.png'></div>")]
-    public void Image_only_descriptions_do_not_fall_back_to_short_text(string markdown)
+    public void ImageOnlyDescriptionsDoNotFallBackToShortText(string markdown)
     {
         var mod = new ADA.ViewModels.ModItemViewModel(
             ADA.Tests.Fixtures.CatalogFixtures.Mod("Example", shortDescription: "Fallback", fullDescription: markdown));
@@ -171,7 +171,7 @@ public class ModDescriptionTests
     [InlineData("data:image/png;base64,AAAA")]
     [InlineData("javascript:alert(1)")]
     [InlineData("../image.png")]
-    public void Unsupported_image_locations_are_removed(string url)
+    public void UnsupportedImageLocationsAreRemoved(string url)
     {
         Assert.Equal("Before\n\nAfter", ModDescription.Formatted($"Before\n![Image]({url})\nAfter"));
         Assert.Equal("", ModDescription.Formatted($"<img src='{url}'>"));
@@ -179,7 +179,7 @@ public class ModDescriptionTests
     }
 
     [Fact]
-    public void Html_images_keep_only_encoded_source_and_alt_attributes()
+    public void HtmlImagesKeepOnlyEncodedSourceAndAltAttributes()
     {
         const string MARKDOWN = "<IMG data-src='https://wrong.example/image.png' SRC='https://example.com/image.png?a=1&amp;b=2' alt='A &quot;photo&quot; &amp; more' width='9000' height='10' style='display:none' onerror='alert(1)' />";
 
@@ -192,13 +192,13 @@ public class ModDescriptionTests
     [InlineData("![Image](https://example.com/image_(1).png \"Title\")", "https://example.com/image_(1).png")]
     [InlineData("![Image](<https://example.com/image.png> 'Title')", "https://example.com/image.png")]
     [InlineData("![Image](https://example.com/image.png?x=1&y=2)", "https://example.com/image.png?x=1&amp;y=2")]
-    public void Markdown_image_destinations_are_preserved_and_encoded(string markdown, string expected)
+    public void MarkdownImageDestinationsArePreservedAndEncoded(string markdown, string expected)
     {
         Assert.Equal($"<img src=\"{expected}\" alt=\"Image\">", ModDescription.Formatted(markdown));
     }
 
     [Fact]
-    public void Reference_images_resolve_case_and_whitespace_and_stay_in_gallery_order()
+    public void ReferenceImagesResolveCaseAndWhitespaceAndStayInGalleryOrder()
     {
         const string MARKDOWN = """
             ![First][ Banner  Image ]
@@ -224,7 +224,7 @@ public class ModDescriptionTests
     }
 
     [Fact]
-    public void Code_and_hidden_images_do_not_enter_the_gallery_or_define_visible_references()
+    public void CodeAndHiddenImagesDoNotEnterTheGalleryOrDefineVisibleReferences()
     {
         const string MARKDOWN = """
             <!-- <img src="https://example.com/hidden.png"> -->

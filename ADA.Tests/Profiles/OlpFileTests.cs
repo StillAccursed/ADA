@@ -14,7 +14,7 @@ public sealed class OlpFileTests : IDisposable
     private static ModProfile Parse(string json) => OlpFile.Parse(new MemoryStream(Encoding.UTF8.GetBytes(json)));
 
     [Fact]
-    public void Reads_the_documented_example()
+    public void ReadsTheDocumentedExample()
     {
         var profile = Parse("""
             {
@@ -31,7 +31,7 @@ public sealed class OlpFileTests : IDisposable
     }
 
     [Fact]
-    public void Writes_sorted_indented_and_identical_every_time()
+    public void WritesSortedIndentedAndIdenticalEveryTime()
     {
         var profile = new ModProfile("Atria", [new ProfileMod("WeatherExtended", "1.1.0"), new ProfileMod("SML", "3.12.0")]);
         var first = _dir.Combine("a.olp");
@@ -60,7 +60,7 @@ public sealed class OlpFileTests : IDisposable
     }
 
     [Fact]
-    public void Writes_names_as_typed_without_html_escaping()
+    public void WritesNamesAsTypedWithoutHtmlEscaping()
     {
         var path = _dir.Combine("p.olp");
         OlpFile.Write(path, new ModProfile("Ryan's <Mega> & Co", []));
@@ -70,7 +70,7 @@ public sealed class OlpFileTests : IDisposable
     }
 
     [Fact]
-    public void Empty_mod_list_is_allowed_and_unknown_fields_are_ignored()
+    public void EmptyModListIsAllowedAndUnknownFieldsAreIgnored()
     {
         var profile = Parse("""{ "name": " Empty ", "mods": [], "notes": "from a newer ADA" }""");
 
@@ -83,7 +83,7 @@ public sealed class OlpFileTests : IDisposable
     [InlineData("0.0.1")]
     [InlineData("1.2.0-beta.1")]
     [InlineData("10.20.30+build.5")]
-    public void Accepts_exact_versions(string version) =>
+    public void AcceptsExactVersions(string version) =>
         Assert.Equal(version, Parse($$"""{ "name": "P", "mods": [ { "name": "M", "version": "{{version}}" } ] }""").Mods[0].Version);
 
     [Theory]
@@ -101,14 +101,14 @@ public sealed class OlpFileTests : IDisposable
     [InlineData("""{ "name": "P", "mods": [ { "name": "M", "version": "1.0" } ] }""", "invalid version")]
     [InlineData("""{ "name": "P", "mods": [ { "name": "M", "version": "01.0.0" } ] }""", "invalid version")]
     [InlineData("""{ "name": "P", "mods": [ { "name": "SML", "version": "1.0.0" }, { "name": "sml", "version": "2.0.0" } ] }""", "more than once")]
-    public void Rejects_files_that_break_the_rules(string json, string expectedMessage)
+    public void RejectsFilesThatBreakTheRules(string json, string expectedMessage)
     {
         var e = Assert.Throws<InvalidProfileException>(() => Parse(json));
         Assert.Contains(expectedMessage, e.Message);
     }
 
     [Fact]
-    public void Rejects_oversized_profiles()
+    public void RejectsOversizedProfiles()
     {
         var tooLong = new string('x', OlpFile.MAX_NAME_LENGTH + 1);
         Assert.Throws<InvalidProfileException>(() => Parse($$"""{ "name": "{{tooLong}}", "mods": [] }"""));
@@ -121,7 +121,7 @@ public sealed class OlpFileTests : IDisposable
     }
 
     [Fact]
-    public void Will_not_write_an_invalid_profile()
+    public void WillNotWriteAnInvalidProfile()
     {
         var path = _dir.Combine("bad.olp");
 

@@ -43,7 +43,7 @@ public sealed class ProfileSwitchTests : IDisposable
     public void Dispose() => _dir.Dispose();
 
     [Fact]
-    public async Task Applies_exact_versions_and_preserves_the_outgoing_saved_profile()
+    public async Task AppliesExactVersionsAndPreservesTheOutgoingSavedProfile()
     {
         var old = Publish("A", "1.0.0");
         Publish("A", "2.0.0");
@@ -62,7 +62,7 @@ public sealed class ProfileSwitchTests : IDisposable
     }
 
     [Fact]
-    public async Task Recording_keeps_profile_mods_this_install_doesnt_have()
+    public async Task RecordingKeepsProfileModsThisInstallDoesntHave()
     {
         // A profile shared with a server: the server skips BetterGrass and its library.
         _store.Save(new("Current", [new("A", "1.0.0"), new("BetterGrass", "2.0.0"), new("GrassLib", "1.0.0")]));
@@ -75,7 +75,7 @@ public sealed class ProfileSwitchTests : IDisposable
     }
 
     [Fact]
-    public async Task Switching_a_server_to_a_shared_profile_keeps_its_client_only_mods()
+    public async Task SwitchingAServerToASharedProfileKeepsItsClientOnlyMods()
     {
         var server = _install with { Kind = GameKind.DedicatedServer, Host = GameHost.Linux };
         Publish("BetterGrass", "2.0.0"); // Windows build only
@@ -90,7 +90,7 @@ public sealed class ProfileSwitchTests : IDisposable
     }
 
     [Fact]
-    public async Task Recording_drops_what_the_change_removed()
+    public async Task RecordingDropsWhatTheChangeRemoved()
     {
         _store.Save(new("Current", [new("A", "1.0.0"), new("B", "1.0.0")]));
         await _service.InstallAsync(_install, [Publish("A", "1.0.0")]);
@@ -101,7 +101,7 @@ public sealed class ProfileSwitchTests : IDisposable
     }
 
     [Fact]
-    public async Task An_empty_profile_removes_managed_mods_and_leaves_foreign_files_alone()
+    public async Task AnEmptyProfileRemovesManagedModsAndLeavesForeignFilesAlone()
     {
         await _service.InstallAsync(_install, [Publish("A", "1.0.0")]);
         await _profiles.RecordInstalledAsync(_install);
@@ -117,7 +117,7 @@ public sealed class ProfileSwitchTests : IDisposable
     }
 
     [Fact]
-    public async Task Switching_without_a_profile_refuses_to_discard_the_installed_mods()
+    public async Task SwitchingWithoutAProfileRefusesToDiscardTheInstalledMods()
     {
         var store = new ProfileStore(_dir.Combine("Fresh"), _dir.Combine("fresh.json"));
         var profiles = new GameProfiles(store, _service);
@@ -131,7 +131,7 @@ public sealed class ProfileSwitchTests : IDisposable
     }
 
     [Fact]
-    public async Task Creating_a_profile_saves_the_installed_mods_and_activates_it()
+    public async Task CreatingAProfileSavesTheInstalledModsAndActivatesIt()
     {
         var store = new ProfileStore(_dir.Combine("Fresh"), _dir.Combine("fresh.json"));
         var profiles = new GameProfiles(store, _service);
@@ -145,7 +145,7 @@ public sealed class ProfileSwitchTests : IDisposable
     }
 
     [Fact]
-    public async Task Missing_exact_version_does_not_choose_a_newer_version_or_change_the_active_profile()
+    public async Task MissingExactVersionDoesNotChooseANewerVersionOrChangeTheActiveProfile()
     {
         await _service.InstallAsync(_install, [Publish("A", "1.0.0")]);
         Publish("A", "3.0.0");
@@ -158,7 +158,7 @@ public sealed class ProfileSwitchTests : IDisposable
     }
 
     [Fact]
-    public async Task Failed_download_keeps_old_files_and_profile()
+    public async Task FailedDownloadKeepsOldFilesAndProfile()
     {
         await _service.InstallAsync(_install, [Publish("A", "1.0.0")]);
         var version = CatalogFixtures.Version("A", "2.0.0");
@@ -172,7 +172,7 @@ public sealed class ProfileSwitchTests : IDisposable
     }
 
     [Fact]
-    public async Task Running_game_and_concurrent_operations_block_switching()
+    public async Task RunningGameAndConcurrentOperationsBlockSwitching()
     {
         _running = true;
         await Assert.ThrowsAsync<GameRunningException>(() => _profiles.SwitchAsync(_install, new("Empty", []), _resolution));
@@ -183,7 +183,7 @@ public sealed class ProfileSwitchTests : IDisposable
     }
 
     [Fact]
-    public async Task Foreign_collision_is_refused_before_downloading()
+    public async Task ForeignCollisionIsRefusedBeforeDownloading()
     {
         Publish("A", "1.0.0");
         Directory.CreateDirectory(_game.ModFolder("Mods/A"));
@@ -196,7 +196,7 @@ public sealed class ProfileSwitchTests : IDisposable
     }
 
     [Fact]
-    public async Task Incompatible_saved_versions_do_not_replace_working_installed_versions()
+    public async Task IncompatibleSavedVersionsDoNotReplaceWorkingInstalledVersions()
     {
         await _service.InstallAsync(_install, [Publish("A", "1.0.0")]);
         var incompatible = Publish("A", "2.0.0") with { GameVersionRange = ">=999999" };
@@ -211,7 +211,7 @@ public sealed class ProfileSwitchTests : IDisposable
     }
 
     [Fact]
-    public void Crash_after_removing_one_mod_rolls_back_the_whole_profile_switch()
+    public void CrashAfterRemovingOneModRollsBackTheWholeProfileSwitch()
     {
         var old = Archive("1.0.0");
         var next = Archive("2.0.0");
@@ -235,7 +235,7 @@ public sealed class ProfileSwitchTests : IDisposable
     }
 
     [Fact]
-    public async Task A_committed_journal_without_an_activation_marker_cannot_overwrite_the_old_profile()
+    public async Task ACommittedJournalWithoutAnActivationMarkerCannotOverwriteTheOldProfile()
     {
         Installer().Apply([new ModChange.Install(Archive("1.0.0"), TargetPlatform.Windows)]);
         _store.Save(new("Current", [new("A", "1.0.0")]));
@@ -264,7 +264,7 @@ public sealed class ProfileSwitchTests : IDisposable
     [InlineData("profile-activation-pending", true)]
     [InlineData("work-cleaned", true)]
     [InlineData("journal-removed", true)]
-    public async Task Crash_recovery_keeps_profile_and_files_in_step(string checkpoint, bool committed)
+    public async Task CrashRecoveryKeepsProfileAndFilesInStep(string checkpoint, bool committed)
     {
         var old = Archive("1.0.0");
         var next = Archive("2.0.0");
@@ -289,7 +289,7 @@ public sealed class ProfileSwitchTests : IDisposable
     }
 
     [Fact]
-    public void Activation_failure_retains_marker_and_blocks_another_transaction_until_retry()
+    public void ActivationFailureRetainsMarkerAndBlocksAnotherTransactionUntilRetry()
     {
         Installer().ApplyProfile([], new("Target", []));
         Assert.Throws<IOException>(() => Installer().CompleteProfileActivation(_ => throw new IOException("State unavailable")));
@@ -303,7 +303,7 @@ public sealed class ProfileSwitchTests : IDisposable
     }
 
     [Fact]
-    public void Crash_after_metadata_write_retries_activation_idempotently()
+    public void CrashAfterMetadataWriteRetriesActivationIdempotently()
     {
         Installer().ApplyProfile([], new("Target", []));
         Assert.Throws<SimulatedCrashException>(() => Installer(point =>
@@ -320,7 +320,7 @@ public sealed class ProfileSwitchTests : IDisposable
     }
 
     [Fact]
-    public async Task Previewing_writes_and_downloads_nothing_and_offers_newer_versions_only_when_they_exist()
+    public async Task PreviewingWritesAndDownloadsNothingAndOffersNewerVersionsOnlyWhenTheyExist()
     {
         await _service.InstallAsync(_install, [Publish("A", "1.0.0")]);
         await _profiles.RecordInstalledAsync(_install);
@@ -345,7 +345,7 @@ public sealed class ProfileSwitchTests : IDisposable
     }
 
     [Fact]
-    public async Task Newer_versions_are_never_older_than_saved_and_must_support_the_game()
+    public async Task NewerVersionsAreNeverOlderThanSavedAndMustSupportTheGame()
     {
         Publish("A", "1.5.0");
         Publish("A", "2.0.0");
@@ -361,7 +361,7 @@ public sealed class ProfileSwitchTests : IDisposable
     }
 
     [Fact]
-    public async Task Switching_with_newer_versions_saves_them_so_switching_back_keeps_them()
+    public async Task SwitchingWithNewerVersionsSavesThemSoSwitchingBackKeepsThem()
     {
         Publish("A", "1.0.0");
         Publish("A", "2.0.0");
@@ -381,7 +381,7 @@ public sealed class ProfileSwitchTests : IDisposable
     }
 
     [Fact]
-    public async Task Switching_with_the_saved_versions_leaves_the_profile_file_unchanged()
+    public async Task SwitchingWithTheSavedVersionsLeavesTheProfileFileUnchanged()
     {
         Publish("A", "1.0.0");
         Publish("A", "2.0.0");
@@ -397,7 +397,7 @@ public sealed class ProfileSwitchTests : IDisposable
     }
 
     [Fact]
-    public async Task A_saved_version_that_is_gone_still_allows_newer_versions()
+    public async Task ASavedVersionThatIsGoneStillAllowsNewerVersions()
     {
         Publish("A", "3.0.0");
         var target = new ModProfile("Target", [new("A", "2.0.0")]);
@@ -410,7 +410,7 @@ public sealed class ProfileSwitchTests : IDisposable
     }
 
     [Fact]
-    public async Task A_change_after_the_preview_stops_the_switch_before_anything_downloads()
+    public async Task AChangeAfterThePreviewStopsTheSwitchBeforeAnythingDownloads()
     {
         Publish("A", "1.0.0");
         _store.Save(new("Target", [new("A", "1.0.0")]));
@@ -428,7 +428,7 @@ public sealed class ProfileSwitchTests : IDisposable
     }
 
     [Fact]
-    public async Task Activation_after_a_crash_saves_the_switched_profile_as_installed()
+    public async Task ActivationAfterACrashSavesTheSwitchedProfileAsInstalled()
     {
         Installer().Apply([new ModChange.Install(Archive("1.0.0"), TargetPlatform.Windows)]);
         _store.Save(new("Current", [new("A", "1.0.0")]));
@@ -450,7 +450,7 @@ public sealed class ProfileSwitchTests : IDisposable
     }
 
     [Fact]
-    public void Plans_compare_by_their_changes_not_order_case_or_download_size()
+    public void PlansCompareByTheirChangesNotOrderCaseOrDownloadSize()
     {
         static PlannedInstall Install(string reference, string version) =>
             new(new(CatalogFixtures.Version(reference, version), ["requested"]), null);

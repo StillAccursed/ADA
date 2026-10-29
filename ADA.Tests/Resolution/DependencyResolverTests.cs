@@ -62,7 +62,7 @@ public sealed class DependencyResolverTests
     private static string[] Picked(ResolveResult r) => r.Mods.Select(m => $"{m.Reference} {m.Version.Version}").ToArray();
 
     [Fact]
-    public async Task Picks_the_newest_compatible_versions_with_dependencies_first()
+    public async Task PicksTheNewestCompatibleVersionsWithDependenciesFirst()
     {
         Publish("SML", "3.11.0");
         Publish("SML", "3.12.0");
@@ -78,7 +78,7 @@ public sealed class DependencyResolverTests
     }
 
     [Fact]
-    public async Task Skips_versions_for_other_game_builds_or_platforms()
+    public async Task SkipsVersionsForOtherGameBuildsOrPlatforms()
     {
         Publish("SML", "3.12.0");
         Publish("SML", "3.13.0", game: ">=520000");
@@ -92,7 +92,7 @@ public sealed class DependencyResolverTests
     }
 
     [Fact]
-    public async Task Prefers_release_over_newer_betas()
+    public async Task PrefersReleaseOverNewerBetas()
     {
         Publish("A", "1.0.0");
         Publish("A", "1.1.0", stability: VersionStability.Beta);
@@ -101,7 +101,7 @@ public sealed class DependencyResolverTests
     }
 
     [Fact]
-    public async Task Pre_release_versions_can_be_chosen_when_nothing_else_fits_or_they_are_kept()
+    public async Task PreReleaseVersionsCanBeChosenWhenNothingElseFitsOrTheyAreKept()
     {
         Publish("SML", "3.12.0");
         Publish("SML", "3.13.0-beta.1", stability: VersionStability.Beta);
@@ -113,7 +113,7 @@ public sealed class DependencyResolverTests
     }
 
     [Fact]
-    public async Task Keeps_a_preferred_version_while_it_still_fits()
+    public async Task KeepsAPreferredVersionWhileItStillFits()
     {
         Publish("SML", "3.12.0");
         Publish("SML", "3.12.5");
@@ -125,7 +125,7 @@ public sealed class DependencyResolverTests
     }
 
     [Fact]
-    public async Task Ignores_a_preferred_version_that_no_longer_fits()
+    public async Task IgnoresAPreferredVersionThatNoLongerFits()
     {
         Publish("SML", "3.11.0");
         Publish("SML", "3.12.0");
@@ -137,7 +137,7 @@ public sealed class DependencyResolverTests
     }
 
     [Fact]
-    public async Task Backtracks_to_an_older_version_when_the_newest_cannot_work()
+    public async Task BacktracksToAnOlderVersionWhenTheNewestCannotWork()
     {
         Publish("SML", "3.12.0");
         Publish("SML", "3.13.0", game: ">=520000"); // not for this game build
@@ -150,7 +150,7 @@ public sealed class DependencyResolverTests
     }
 
     [Fact]
-    public async Task Finds_versions_that_satisfy_two_mods_sharing_a_library()
+    public async Task FindsVersionsThatSatisfyTwoModsSharingALibrary()
     {
         Publish("Lib", "1.0.0");
         Publish("Lib", "1.5.0");
@@ -162,7 +162,7 @@ public sealed class DependencyResolverTests
     }
 
     [Fact]
-    public async Task Bare_versions_mean_exactly_that_version()
+    public async Task BareVersionsMeanExactlyThatVersion()
     {
         // Seen on ficsit.app between mods released together (e.g. KLib and KAPI).
         Publish("KLib", "1.0.0");
@@ -173,7 +173,7 @@ public sealed class DependencyResolverTests
     }
 
     [Fact]
-    public async Task Respects_a_requested_range()
+    public async Task RespectsARequestedRange()
     {
         Publish("A", "1.0.0");
         Publish("A", "2.0.0");
@@ -182,7 +182,7 @@ public sealed class DependencyResolverTests
     }
 
     [Fact]
-    public async Task Optional_dependencies_are_not_pulled_in_but_must_fit_when_present()
+    public async Task OptionalDependenciesAreNotPulledInButMustFitWhenPresent()
     {
         Publish("Extra", "1.0.0");
         Publish("Extra", "2.0.0");
@@ -193,7 +193,7 @@ public sealed class DependencyResolverTests
     }
 
     [Fact]
-    public async Task Handles_dependency_cycles()
+    public async Task HandlesDependencyCycles()
     {
         Publish("A", "1.0.0", deps: "B ^1.0.0");
         Publish("B", "1.0.0", deps: "A ^1.0.0");
@@ -205,7 +205,7 @@ public sealed class DependencyResolverTests
     }
 
     [Fact]
-    public async Task Explains_when_the_mod_loader_does_not_support_the_game_yet()
+    public async Task ExplainsWhenTheModLoaderDoesNotSupportTheGameYet()
     {
         Publish("SML", "3.13.0", game: ">=520000");
         Publish("A", "1.0.0", deps: "SML ^3.13.0");
@@ -218,7 +218,7 @@ public sealed class DependencyResolverTests
     }
 
     [Fact]
-    public async Task Explains_a_requirement_no_version_meets()
+    public async Task ExplainsARequirementNoVersionMeets()
     {
         Publish("SML", "3.12.0");
         Publish("SML", "3.13.0", game: ">=520000");
@@ -231,7 +231,7 @@ public sealed class DependencyResolverTests
     }
 
     [Fact]
-    public async Task Explains_two_mods_that_need_incompatible_versions()
+    public async Task ExplainsTwoModsThatNeedIncompatibleVersions()
     {
         Publish("Lib", "1.0.0");
         Publish("Lib", "2.0.0");
@@ -248,7 +248,7 @@ public sealed class DependencyResolverTests
     }
 
     [Fact]
-    public async Task Explains_missing_mods_and_platform_builds()
+    public async Task ExplainsMissingModsAndPlatformBuilds()
     {
         Publish("ServerOnly", "1.0.0", platforms: [TargetPlatform.WindowsServer], requiredOnRemote: true);
         Publish("A", "1.0.0", deps: "Gone ^1.0.0");
@@ -259,7 +259,7 @@ public sealed class DependencyResolverTests
     }
 
     [Fact]
-    public async Task Rejects_invalid_requests_before_fetching_anything()
+    public async Task RejectsInvalidRequestsBeforeFetchingAnything()
     {
         var result = await Resolve("bad name", "A not-a-range");
 
@@ -268,7 +268,7 @@ public sealed class DependencyResolverTests
     }
 
     [Fact]
-    public async Task Fetches_each_mod_once()
+    public async Task FetchesEachModOnce()
     {
         Publish("SML", "3.12.0");
         Publish("Lib", "1.0.0", deps: "SML ^3.12.0");
@@ -281,7 +281,7 @@ public sealed class DependencyResolverTests
     }
 
     [Fact]
-    public async Task Gives_up_cleanly_past_the_step_limit()
+    public async Task GivesUpCleanlyPastTheStepLimit()
     {
         for (var i = 0; i < 6; i++)
         {
@@ -301,7 +301,7 @@ public sealed class DependencyResolverTests
     }
 
     [Fact]
-    public async Task On_a_server_a_client_only_mod_is_skipped_without_its_dependencies()
+    public async Task OnAServerAClientOnlyModIsSkippedWithoutItsDependencies()
     {
         Publish("SML", "3.12.0", platforms: [TargetPlatform.Windows, TargetPlatform.LinuxServer], requiredOnRemote: true);
         Publish("GrassLib", "1.0.0", deps: "SML ^3.12.0");
@@ -319,7 +319,7 @@ public sealed class DependencyResolverTests
     }
 
     [Fact]
-    public async Task A_skipped_mods_dependency_is_still_installed_when_another_mod_needs_it()
+    public async Task ASkippedModsDependencyIsStillInstalledWhenAnotherModNeedsIt()
     {
         Publish("SML", "3.12.0", platforms: [TargetPlatform.Windows, TargetPlatform.LinuxServer], requiredOnRemote: true);
         Publish("BetterGrass", "2.0.0", deps: "SML ^3.12.0");
@@ -331,7 +331,7 @@ public sealed class DependencyResolverTests
     }
 
     [Fact]
-    public async Task A_skipped_dependency_names_the_mod_that_needs_it()
+    public async Task ASkippedDependencyNamesTheModThatNeedsIt()
     {
         Publish("ClientUi", "1.0.0");
         Publish("Storage", "1.0.0", platforms: [TargetPlatform.Windows, TargetPlatform.LinuxServer], requiredOnRemote: true, deps: "ClientUi ^1.0.0");
@@ -344,7 +344,7 @@ public sealed class DependencyResolverTests
     }
 
     [Fact]
-    public async Task A_mod_players_need_but_the_server_cant_run_is_refused()
+    public async Task AModPlayersNeedButTheServerCantRunIsRefused()
     {
         Publish("Vehicles", "1.0.0", requiredOnRemote: true);
 
@@ -355,7 +355,7 @@ public sealed class DependencyResolverTests
     }
 
     [Fact]
-    public async Task A_server_build_that_needs_a_newer_game_is_reported_as_that_not_skipped()
+    public async Task AServerBuildThatNeedsANewerGameIsReportedAsThatNotSkipped()
     {
         Publish("Storage", "1.0.0");
         Publish("Storage", "2.0.0", game: ">=520000", platforms: [TargetPlatform.Windows, TargetPlatform.LinuxServer]);
@@ -367,7 +367,7 @@ public sealed class DependencyResolverTests
     }
 
     [Fact]
-    public async Task On_the_game_a_server_only_mod_is_skipped()
+    public async Task OnTheGameAServerOnlyModIsSkipped()
     {
         Publish("ServerAdmin", "1.0.0", platforms: [TargetPlatform.WindowsServer, TargetPlatform.LinuxServer]);
 

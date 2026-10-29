@@ -59,7 +59,7 @@ public sealed class CatalogSyncTests : IDisposable
     }
 
     [Fact]
-    public async Task First_sync_pages_through_everything_in_creation_order()
+    public async Task FirstSyncPagesThroughEverythingInCreationOrder()
     {
         AddMods(250, T0.AddDays(-30));
 
@@ -72,7 +72,7 @@ public sealed class CatalogSyncTests : IDisposable
     }
 
     [Fact]
-    public async Task Later_syncs_only_fetch_new_releases()
+    public async Task LaterSyncsOnlyFetchNewReleases()
     {
         AddMods(250, T0.AddDays(-30));
         await _sync.SyncAsync();
@@ -90,7 +90,7 @@ public sealed class CatalogSyncTests : IDisposable
     }
 
     [Fact]
-    public async Task Daily_full_sync_removes_deleted_mods()
+    public async Task DailyFullSyncRemovesDeletedMods()
     {
         AddMods(3, T0.AddDays(-30));
         await _sync.SyncAsync();
@@ -107,7 +107,7 @@ public sealed class CatalogSyncTests : IDisposable
     }
 
     [Fact]
-    public async Task Full_sync_that_missed_mods_does_not_prune()
+    public async Task FullSyncThatMissedModsDoesNotPrune()
     {
         AddMods(5, T0.AddDays(-30));
         await _sync.SyncAsync();
@@ -122,7 +122,7 @@ public sealed class CatalogSyncTests : IDisposable
     }
 
     [Fact]
-    public async Task Failed_full_sync_does_not_prune()
+    public async Task FailedFullSyncDoesNotPrune()
     {
         AddMods(3, T0.AddDays(-30));
         await _sync.SyncAsync();
@@ -135,7 +135,7 @@ public sealed class CatalogSyncTests : IDisposable
     }
 
     [Fact]
-    public async Task Records_last_checked_only_on_success()
+    public async Task RecordsLastCheckedOnlyOnSuccess()
     {
         Assert.Null(_sync.LastChecked);
         AddMods(2, T0.AddDays(-1));
@@ -159,7 +159,7 @@ public sealed class CatalogSyncTests : IDisposable
     }
 
     [Fact]
-    public async Task Versions_are_cached_until_stale()
+    public async Task VersionsAreCachedUntilStale()
     {
         await _sync.GetVersionsAsync("M");
         await _sync.GetVersionsAsync("M");
@@ -171,7 +171,7 @@ public sealed class CatalogSyncTests : IDisposable
     }
 
     [Fact]
-    public async Task Version_cache_survives_resyncs_until_a_new_release()
+    public async Task VersionCacheSurvivesResyncsUntilANewRelease()
     {
         AddMods(3, T0.AddDays(-1));
         await _sync.SyncAsync();

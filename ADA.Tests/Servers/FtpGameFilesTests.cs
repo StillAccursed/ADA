@@ -73,7 +73,7 @@ public sealed class FtpGameFilesTests : IDisposable
     public void AtomicWriteReplacesAFileAndLeavesNoTemporaryFile() => _contract.AtomicWriteReplacesAFileAndLeavesNoTemporaryFile();
 
     [Fact]
-    public void The_lock_is_a_folder_that_names_its_holder_and_can_be_taken_over()
+    public void TheLockIsAFolderThatNamesItsHolderAndCanBeTakenOver()
     {
         _files.CreateDirectory(GameModFolders.WORK);
         using (_files.AcquireLock(GameModFolders.LOCK))
@@ -97,7 +97,7 @@ public sealed class FtpGameFilesTests : IDisposable
     }
 
     [Fact]
-    public void A_lock_left_by_an_exited_process_on_this_pc_is_taken_over()
+    public void ALockLeftByAnExitedProcessOnThisPcIsTakenOver()
     {
         _session.CreateDirectories($"{ROOT}/FactoryGame/.ada/lock.d");
         _session.Put($"{ROOT}/FactoryGame/.ada/lock.d/holder.json",
@@ -109,7 +109,7 @@ public sealed class FtpGameFilesTests : IDisposable
     }
 
     [Fact]
-    public void A_lock_whose_holder_cant_be_written_leaves_no_folder_behind()
+    public void ALockWhoseHolderCantBeWrittenLeavesNoFolderBehind()
     {
         _files.CreateDirectory(GameModFolders.WORK);
         _session.FailUploadsEnding = "holder.json";
@@ -120,7 +120,7 @@ public sealed class FtpGameFilesTests : IDisposable
     }
 
     [Fact]
-    public void Mods_install_check_and_uninstall_over_ftp()
+    public void ModsInstallCheckAndUninstallOverFtp()
     {
         var installer = new ModInstaller(_files, () => false, checkpoint: null);
         var smod = new SmodBuilder("SML", "3.12.0").Typical().WriteTo(_dir.Combine("Published"));
@@ -145,7 +145,7 @@ public sealed class FtpGameFilesTests : IDisposable
     }
 
     [Fact]
-    public void The_setup_check_accepts_a_server_that_replaces_in_one_step()
+    public void TheSetupCheckAcceptsAServerThatReplacesInOneStep()
     {
         PlaceServer();
         var steps = new List<SetupStep>();
@@ -160,7 +160,7 @@ public sealed class FtpGameFilesTests : IDisposable
     }
 
     [Fact]
-    public void The_setup_check_refuses_a_server_that_cant_replace_a_file_or_is_a_game_install()
+    public void TheSetupCheckRefusesAServerThatCantReplaceAFileOrIsAGameInstall()
     {
         PlaceServer();
         _session.RenameReplaces = false;
@@ -178,7 +178,7 @@ public sealed class FtpGameFilesTests : IDisposable
     }
 
     [Fact]
-    public void Connection_problems_name_the_cause()
+    public void ConnectionProblemsNameTheCause()
     {
         var server = new ServerConnection(Guid.NewGuid(), "Home", "ftp.example", 21, "steam", ServerAuth.Password, ROOT, GameHost.Linux, "abc",
             Transport: ServerTransport.Ftp);
@@ -192,7 +192,7 @@ public sealed class FtpGameFilesTests : IDisposable
     }
 
     [Fact]
-    public void A_certificates_fingerprint_is_stable_and_differs_between_certificates()
+    public void ACertificatesFingerprintIsStableAndDiffersBetweenCertificates()
     {
         using var first = SelfSigned("CN=first");
         using var second = SelfSigned("CN=second");
@@ -212,7 +212,7 @@ public sealed class FtpGameFilesTests : IDisposable
     }
 
     [FtpFact]
-    public async Task A_real_ftps_server_passes_the_file_contract_and_the_engine()
+    public async Task ARealFtpsServerPassesTheFileContractAndTheEngine()
     {
         using var connections = new ServerConnections(new ServerStore(_dir.Combine("ftp-servers.json")),
             new ServerSecrets(new FakeSecretStore()), new SatisfactoryServerApi(new HttpClient(new FakeHttpHandler())));
@@ -234,7 +234,7 @@ public sealed class FtpGameFilesTests : IDisposable
     }
 
     [Fact]
-    public void A_lock_folder_without_a_holder_is_held_by_an_unknown_ada_and_can_be_taken_over()
+    public void ALockFolderWithoutAHolderIsHeldByAnUnknownAdaAndCanBeTakenOver()
     {
         _session.CreateDirectories($"{ROOT}/FactoryGame/.ada/lock.d");
         var lockFile = new FtpLockFile(_session, $"{ROOT}/FactoryGame/{GameModFolders.LOCK}");
@@ -248,7 +248,7 @@ public sealed class FtpGameFilesTests : IDisposable
     }
 
     [Fact]
-    public void Mods_taken_over_on_ftp_pass_the_quick_check_without_downloading()
+    public void ModsTakenOverOnFtpPassTheQuickCheckWithoutDownloading()
     {
         _session.Put($"{ROOT}/FactoryGame/Mods/Storage/Storage.uplugin", """{ "SemVersion": "1.0.0", "FriendlyName": "Storage" }""");
         _session.Put($"{ROOT}/FactoryGame/Mods/Storage/Binaries/Linux/libFactoryServer-Storage-Linux-Shipping.so", "library");

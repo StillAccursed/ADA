@@ -3,12 +3,12 @@ using ADA.Tests.Fixtures;
 
 namespace ADA.Tests.Profiles;
 
-public sealed class ProfileStoreClearActiveTests : IDisposable
+public sealed class ProfileStoreTests : IDisposable
 {
     private readonly TempDir _dir = new();
     private readonly ProfileStore _store;
 
-    public ProfileStoreClearActiveTests() => _store = new ProfileStore(_dir.Combine("Profiles"), _dir.Combine("profiles.json"));
+    public ProfileStoreTests() => _store = new ProfileStore(_dir.Combine("Profiles"), _dir.Combine("profiles.json"));
 
     public void Dispose() => _dir.Dispose();
 

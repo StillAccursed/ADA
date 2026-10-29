@@ -46,7 +46,7 @@ public class FicsitApiClientTests
     }
 
     [Fact]
-    public async Task Maps_mods_page()
+    public async Task MapsModsPage()
     {
         var (client, handler, _) = Create();
         handler.Respond(MODS_PAGE);
@@ -71,7 +71,7 @@ public class FicsitApiClientTests
     }
 
     [Fact]
-    public async Task Maps_versions_targets_and_dependencies()
+    public async Task MapsVersionsTargetsAndDependencies()
     {
         var (client, handler, _) = Create();
         handler.Respond(SML_VERSIONS);
@@ -92,7 +92,7 @@ public class FicsitApiClientTests
     }
 
     [Fact]
-    public async Task Pages_through_versions_until_a_short_page()
+    public async Task PagesThroughVersionsUntilAShortPage()
     {
         var (client, handler, _) = Create();
         var version = """{ "id": "v", "version": "1.0.0", "game_version": ">=1", "stability": "release", "required_on_remote": false, "created_at": "2026-01-01T00:00:00Z", "targets": [], "dependencies": [] }""";
@@ -106,7 +106,7 @@ public class FicsitApiClientTests
     }
 
     [Fact]
-    public async Task Retries_rate_limits_and_server_errors_with_backoff()
+    public async Task RetriesRateLimitsAndServerErrorsWithBackoff()
     {
         var (client, handler, time) = Create();
         handler.Fail(HttpStatusCode.TooManyRequests).Fail(HttpStatusCode.BadGateway).Respond(MODS_PAGE);
@@ -118,7 +118,7 @@ public class FicsitApiClientTests
     }
 
     [Fact]
-    public async Task Gives_up_after_repeated_failures()
+    public async Task GivesUpAfterRepeatedFailures()
     {
         var (client, handler, _) = Create();
         for (var i = 0; i < 4; i++)
@@ -131,7 +131,7 @@ public class FicsitApiClientTests
     }
 
     [Fact]
-    public async Task GraphQL_errors_without_data_throw()
+    public async Task GraphQLErrorsWithoutDataThrow()
     {
         var (client, handler, _) = Create();
         handler.Respond("""{ "errors": [ { "message": "could not find SML version" } ], "data": null }""");
@@ -141,7 +141,7 @@ public class FicsitApiClientTests
     }
 
     [Fact]
-    public async Task Unknown_mod_has_no_versions()
+    public async Task UnknownModHasNoVersions()
     {
         var (client, handler, _) = Create();
         handler.Respond("""{ "data": { "getModByReference": null } }""");
@@ -153,7 +153,7 @@ public class FicsitApiClientTests
     [InlineData("Weather\") { evil }")]
     [InlineData("")]
     [InlineData("has space")]
-    public async Task Rejects_references_that_are_not_identifiers(string reference)
+    public async Task RejectsReferencesThatAreNotIdentifiers(string reference)
     {
         var (client, _, _) = Create();
         await Assert.ThrowsAsync<ArgumentException>(() => client.GetVersionsAsync(reference));

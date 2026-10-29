@@ -119,7 +119,7 @@ public sealed class CrashSafetyTests : IDisposable
             : actual.Count == expected.Count && actual.All(kv => expected.TryGetValue(kv.Key, out var v) && v == kv.Value);
 
     [Fact]
-    public void Crash_at_any_step_then_recovery_leaves_every_mod_whole()
+    public void CrashAtAnyStepThenRecoveryLeavesEveryModWhole()
     {
         var points = CleanRunCheckpoints((s, installer) => () => installer.Apply(s.Transaction));
         // Every kind of step is covered, for an update, an uninstall and a fresh install.
@@ -144,7 +144,7 @@ public sealed class CrashSafetyTests : IDisposable
     }
 
     [Fact]
-    public void Crash_during_recovery_is_recovered_on_the_next_launch()
+    public void CrashDuringRecoveryIsRecoveredOnTheNextLaunch()
     {
         var applyPoints = CleanRunCheckpoints((s, installer) => () => installer.Apply(s.Transaction));
 
@@ -173,7 +173,7 @@ public sealed class CrashSafetyTests : IDisposable
     }
 
     [Fact]
-    public void Crash_during_a_rollback_finishes_the_rollback()
+    public void CrashDuringARollbackFinishesTheRollback()
     {
         // C fails to go live, so the transaction rolls back; crash at every step of that rollback.
         Action<string> FailAtC(Action<string>? then = null) => point =>
@@ -206,7 +206,7 @@ public sealed class CrashSafetyTests : IDisposable
     }
 
     [Fact]
-    public void Recovery_rolls_verified_mods_forward_and_drops_unverified_ones()
+    public void RecoveryRollsVerifiedModsForwardAndDropsUnverifiedOnes()
     {
         var points = CleanRunCheckpoints((s, installer) => () => installer.Apply(s.Transaction));
         var n = points.IndexOf("extracted:C:2") + 1; // A and B done, C half extracted
@@ -224,7 +224,7 @@ public sealed class CrashSafetyTests : IDisposable
     }
 
     [Fact]
-    public void Next_transaction_recovers_first_automatically()
+    public void NextTransactionRecoversFirstAutomatically()
     {
         var points = CleanRunCheckpoints((s, installer) => () => installer.Apply(s.Transaction));
         var s = NewScenario();

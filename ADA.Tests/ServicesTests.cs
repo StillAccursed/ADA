@@ -6,7 +6,7 @@ namespace ADA.Tests;
 public sealed class ServicesTests
 {
     [Fact]
-    public void Container_builds_with_every_registration_satisfied()
+    public void ContainerBuildsWithEveryRegistrationSatisfied()
     {
         using var dir = new TempDir();
         // ValidateOnBuild checks every singleton's constructor can be satisfied, without creating them.

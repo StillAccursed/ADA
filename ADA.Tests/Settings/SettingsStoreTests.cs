@@ -9,7 +9,7 @@ namespace ADA.Tests.Settings;
 public class SettingsStoreTests
 {
     [Fact]
-    public void Missing_file_gives_defaults_with_archives_kept()
+    public void MissingFileGivesDefaultsWithArchivesKept()
     {
         using var dir = new TempDir();
         var settings = new SettingsStore(dir.Combine("Config", "settings.json")).Load();
@@ -19,7 +19,7 @@ public class SettingsStoreTests
     }
 
     [Fact]
-    public void Saves_and_loads()
+    public void SavesAndLoads()
     {
         using var dir = new TempDir();
         var store = new SettingsStore(dir.Combine("Config", "settings.json"));
@@ -35,7 +35,7 @@ public class SettingsStoreTests
     [InlineData("not json")]
     [InlineData("")]
     [InlineData("null")]
-    public void Damaged_file_gives_defaults(string content)
+    public void DamagedFileGivesDefaults(string content)
     {
         using var dir = new TempDir();
         var path = dir.WriteFile("Config/settings.json", content);
@@ -44,7 +44,7 @@ public class SettingsStoreTests
     }
 
     [Fact]
-    public void Unknown_and_missing_fields_are_tolerated()
+    public void UnknownAndMissingFieldsAreTolerated()
     {
         using var dir = new TempDir();
         var path = dir.WriteFile("Config/settings.json", """{ "someFutureSetting": 3 }""");
@@ -53,7 +53,7 @@ public class SettingsStoreTests
     }
 
     [Fact]
-    public async Task Older_settings_check_server_uploads_and_the_page_saves_the_choice()
+    public async Task OlderSettingsCheckServerUploadsAndThePageSavesTheChoice()
     {
         using var dir = new TempDir();
         var path = dir.WriteFile("Config/settings.json", """{ "keepDownloadedArchives": false }""");
@@ -73,7 +73,7 @@ public class SettingsStoreTests
     [InlineData(-4, 0)]
     [InlineData(3, 3)]
     [InlineData(99, 8)]
-    public void Download_retries_are_kept_within_0_to_8(int saved, int expected)
+    public void DownloadRetriesAreKeptWithin0To8(int saved, int expected)
     {
         using var dir = new TempDir();
         var path = dir.WriteFile("Config/settings.json", $$"""{ "downloadRetries": {{saved}} }""");
@@ -86,14 +86,14 @@ public class SettingsStoreTests
     }
 
     [Fact]
-    public void Download_retries_default_to_5()
+    public void DownloadRetriesDefaultTo5()
     {
         using var dir = new TempDir();
         Assert.Equal(5, new SettingsStore(dir.Combine("settings.json")).Load().DownloadRetries);
     }
 
     [Fact]
-    public void Older_settings_files_enable_endless_scroll_and_default_to_50_per_page()
+    public void OlderSettingsFilesEnableEndlessScrollAndDefaultTo50PerPage()
     {
         using var dir = new TempDir();
         var path = dir.WriteFile("settings.json", """{ "downloadRetries": 3, "modsView": "Grid" }""");
@@ -115,7 +115,7 @@ public class SettingsStoreTests
     [InlineData(-1, 50)]
     [InlineData(75, 50)]
     [InlineData(501, 50)]
-    public void Browsing_preferences_round_trip_and_unsupported_page_sizes_use_50(int size, int expected)
+    public void BrowsingPreferencesRoundTripAndUnsupportedPageSizesUse50(int size, int expected)
     {
         using var dir = new TempDir();
         var path = dir.WriteFile("settings.json", $$"""{ "endlessScroll": false, "modsPageSize": {{size}} }""");
@@ -130,7 +130,7 @@ public class SettingsStoreTests
     }
 
     [Fact]
-    public void Change_notifications_see_successfully_written_normalised_settings()
+    public void ChangeNotificationsSeeSuccessfullyWrittenNormalisedSettings()
     {
         using var dir = new TempDir();
         var store = new SettingsStore(dir.Combine("settings.json"));
@@ -151,7 +151,7 @@ public class SettingsStoreTests
     }
 
     [Fact]
-    public void A_failed_write_keeps_current_settings_and_does_not_notify()
+    public void AFailedWriteKeepsCurrentSettingsAndDoesNotNotify()
     {
         using var dir = new TempDir();
         var blocked = dir.WriteFile("blocked", "file instead of a folder");
@@ -167,7 +167,7 @@ public class SettingsStoreTests
     }
 
     [Fact]
-    public void Archive_cache_measures_and_deletes_only_its_own_folder()
+    public void ArchiveCacheMeasuresAndDeletesOnlyItsOwnFolder()
     {
         using var dir = new TempDir();
         dir.WriteFile("Staging/Archives/WeatherExtended/1.1.0-Windows.smod", new string('x', 1000));

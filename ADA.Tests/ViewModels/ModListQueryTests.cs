@@ -32,11 +32,11 @@ public class ModListQueryTests
         ModListQuery.Apply(MODS, filter, tags ?? [], all, sort, context ?? Context()).Select(m => m.Reference).ToArray();
 
     [Fact]
-    public void Compatible_means_the_newest_version_supports_this_build_and_platform() =>
+    public void CompatibleMeansTheNewestVersionSupportsThisBuildAndPlatform() =>
         Assert.Equal(["Alpha"], Run(ModFilter.Compatible));
 
     [Fact]
-    public void Compatible_leaves_out_mods_players_report_broken()
+    public void CompatibleLeavesOutModsPlayersReportBroken()
     {
         var broken = CatalogFixtures.Mod("Old") with { CompatibilityRelease = CompatibilityState.Broken };
 
@@ -44,7 +44,7 @@ public class ModListQueryTests
     }
 
     [Fact]
-    public void Installed_dependencies_and_not_installed_split_the_catalogue()
+    public void InstalledDependenciesAndNotInstalledSplitTheCatalogue()
     {
         var context = Context(installed: ["Alpha", "Gamma"], requested: ["Alpha"]);
 
@@ -54,7 +54,7 @@ public class ModListQueryTests
     }
 
     [Fact]
-    public void Favourite_and_queued_use_their_own_lists()
+    public void FavouriteAndQueuedUseTheirOwnLists()
     {
         var context = Context(favourites: ["gamma"], queued: ["BETA"]);
 
@@ -63,7 +63,7 @@ public class ModListQueryTests
     }
 
     [Fact]
-    public void Tags_match_any_or_all()
+    public void TagsMatchAnyOrAll()
     {
         Assert.Equal(["Alpha", "beta", "Gamma"], Run(tags: ["Logistics", "QoL"]));
         Assert.Equal(["Alpha"], Run(tags: ["logistics", "qol"], all: true));

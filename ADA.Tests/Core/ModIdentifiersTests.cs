@@ -12,11 +12,11 @@ public class ModIdentifiersTests
     [InlineData("has space", false)]
     [InlineData("Weather\") { evil }", false)]
     [InlineData(null, false)]
-    public void References_are_plain_identifiers(string? reference, bool valid) =>
+    public void ReferencesArePlainIdentifiers(string? reference, bool valid) =>
         Assert.Equal(valid, ModIdentifiers.IsValidReference(reference));
 
     [Fact]
-    public void References_are_at_most_100_characters()
+    public void ReferencesAreAtMost100Characters()
     {
         Assert.True(ModIdentifiers.IsValidReference(new string('a', ModIdentifiers.MAX_REFERENCE_LENGTH)));
         Assert.False(ModIdentifiers.IsValidReference(new string('a', ModIdentifiers.MAX_REFERENCE_LENGTH + 1)));
@@ -32,6 +32,6 @@ public class ModIdentifiersTests
     [InlineData(">=1.0.0", false)]
     [InlineData("^3.12.0", false)]
     [InlineData(null, false)]
-    public void Exact_versions_are_strict_semver(string? version, bool valid) =>
+    public void ExactVersionsAreStrictSemver(string? version, bool valid) =>
         Assert.Equal(valid, ModIdentifiers.IsExactVersion(version));
 }

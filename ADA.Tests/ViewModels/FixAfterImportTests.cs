@@ -84,7 +84,7 @@ public sealed class FixAfterImportTests : IDisposable
     }
 
     [Fact]
-    public async Task After_importing_offers_to_install_the_missing_mod_loader_and_installs_it()
+    public async Task AfterImportingOffersToInstallTheMissingModLoaderAndInstallsIt()
     {
         Publish("SML", "3.12.0", serve: true);
         Publish("MapZoom", "2.1.0", serve: false, "SML"); // already in the game; never downloaded
@@ -105,7 +105,7 @@ public sealed class FixAfterImportTests : IDisposable
     }
 
     [Fact]
-    public async Task Explains_when_a_missing_mod_cannot_be_installed()
+    public async Task ExplainsWhenAMissingModCannotBeInstalled()
     {
         PlaceForeign("PrivateMod", "1.0.0", "SML"); // not on ficsit.app
         Publish("SML", "3.12.0", serve: false);
@@ -118,7 +118,7 @@ public sealed class FixAfterImportTests : IDisposable
     }
 
     [Fact]
-    public async Task Nothing_is_offered_when_nothing_is_missing()
+    public async Task NothingIsOfferedWhenNothingIsMissing()
     {
         Publish("SML", "3.12.0", serve: false);
         PlaceForeign("SML", "3.12.0");
@@ -131,7 +131,7 @@ public sealed class FixAfterImportTests : IDisposable
     }
 
     [Fact]
-    public async Task The_launch_check_finds_missing_mods_too()
+    public async Task TheLaunchCheckFindsMissingModsToo()
     {
         Publish("SML", "3.12.0", serve: true);
         Publish("MapZoom", "2.1.0", serve: false, "SML");
@@ -144,7 +144,7 @@ public sealed class FixAfterImportTests : IDisposable
     }
 
     [Fact]
-    public async Task Updates_are_found_never_installed_until_chosen_in_the_updates_window()
+    public async Task UpdatesAreFoundNeverInstalledUntilChosenInTheUpdatesWindow()
     {
         Publish("SML", "3.12.0", serve: false);
         PlaceForeign("SML", "3.12.0");

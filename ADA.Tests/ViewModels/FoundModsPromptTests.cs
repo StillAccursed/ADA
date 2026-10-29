@@ -49,7 +49,7 @@ public sealed class FoundModsPromptTests : IDisposable
     }
 
     [Fact]
-    public async Task Asks_about_found_mods_after_the_launch_check()
+    public async Task AsksAboutFoundModsAfterTheLaunchCheck()
     {
         var card = await CardAsync();
 
@@ -60,7 +60,7 @@ public sealed class FoundModsPromptTests : IDisposable
     }
 
     [Fact]
-    public async Task Without_a_profile_found_mods_can_only_go_into_a_new_one()
+    public async Task WithoutAProfileFoundModsCanOnlyGoIntoANewOne()
     {
         var card = await CardAsync(withProfile: false);
 
@@ -70,7 +70,7 @@ public sealed class FoundModsPromptTests : IDisposable
     }
 
     [Fact]
-    public async Task Adding_to_the_current_profile_closes_the_prompt()
+    public async Task AddingToTheCurrentProfileClosesThePrompt()
     {
         var card = await CardAsync();
 
@@ -82,7 +82,7 @@ public sealed class FoundModsPromptTests : IDisposable
     }
 
     [Fact]
-    public async Task A_new_profile_needs_a_free_name_then_can_be_switched_to()
+    public async Task ANewProfileNeedsAFreeNameThenCanBeSwitchedTo()
     {
         _store.Save(new("Atria", []));
         var card = await CardAsync();

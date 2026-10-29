@@ -12,7 +12,7 @@ public sealed class ModArchiveTests : IDisposable
     public void Dispose() => _dir.Dispose();
 
     [Fact]
-    public void Reads_a_flat_archive()
+    public void ReadsAFlatArchive()
     {
         var path = new SmodBuilder("WeatherExtended", "1.1.0").GameFeature().Typical().WriteTo(_dir.Path);
 
@@ -28,7 +28,7 @@ public sealed class ModArchiveTests : IDisposable
     }
 
     [Fact]
-    public void Reads_the_target_folder_of_a_multi_target_archive()
+    public void ReadsTheTargetFolderOfAMultiTargetArchive()
     {
         var path = new SmodBuilder("Mod", "1.0.0").InFolder("Windows").Typical().WriteTo(_dir.Path);
 
@@ -40,7 +40,7 @@ public sealed class ModArchiveTests : IDisposable
     }
 
     [Fact]
-    public void Multi_target_archive_without_the_requested_platform_is_rejected()
+    public void MultiTargetArchiveWithoutTheRequestedPlatformIsRejected()
     {
         var path = new SmodBuilder("Mod", "1.0.0").InFolder("Windows").Typical().WriteTo(_dir.Path);
 
@@ -49,7 +49,7 @@ public sealed class ModArchiveTests : IDisposable
     }
 
     [Fact]
-    public void Can_leave_out_debug_symbols()
+    public void CanLeaveOutDebugSymbols()
     {
         var path = new SmodBuilder("Mod", "1.0.0").Typical().WriteTo(_dir.Path);
 
@@ -65,7 +65,7 @@ public sealed class ModArchiveTests : IDisposable
     [InlineData("/etc/evil")]
     [InlineData("C:/evil.dll")]
     [InlineData("Binaries\\..\\..\\evil.dll")]
-    public void Rejects_paths_that_escape_the_mod_folder(string entryName)
+    public void RejectsPathsThatEscapeTheModFolder(string entryName)
     {
         var path = new SmodBuilder("Mod", "1.0.0").File(entryName, "x").WriteTo(_dir.Path);
 
@@ -73,7 +73,7 @@ public sealed class ModArchiveTests : IDisposable
     }
 
     [Fact]
-    public void Rejects_two_uplugins_at_the_root()
+    public void RejectsTwoUpluginsAtTheRoot()
     {
         var path = new SmodBuilder("Mod", "1.0.0").File("Other.uplugin", """{ "SemVersion": "1.0.0" }""").WriteTo(_dir.Path);
 
@@ -81,7 +81,7 @@ public sealed class ModArchiveTests : IDisposable
     }
 
     [Fact]
-    public void Rejects_names_that_differ_only_by_case()
+    public void RejectsNamesThatDifferOnlyByCase()
     {
         var path = new SmodBuilder("Mod", "1.0.0").File("Content/a.pak", "1").File("content/A.pak", "2").WriteTo(_dir.Path);
 
@@ -91,7 +91,7 @@ public sealed class ModArchiveTests : IDisposable
     [Theory]
     [InlineData("not json")]
     [InlineData("""{ "FriendlyName": "no version" }""")]
-    public void Rejects_a_bad_uplugin(string uplugin)
+    public void RejectsABadUplugin(string uplugin)
     {
         var path = new SmodBuilder("Mod", "1.0.0").RawUPlugin(uplugin).WriteTo(_dir.Path);
 
@@ -99,7 +99,7 @@ public sealed class ModArchiveTests : IDisposable
     }
 
     [Fact]
-    public void Accepts_comments_and_trailing_commas_in_the_uplugin()
+    public void AcceptsCommentsAndTrailingCommasInTheUplugin()
     {
         var path = new SmodBuilder("Mod", "1.0.0")
             .RawUPlugin("""{ /* hand edited */ "SemVersion": "2.0.0", "GameFeature": true, }""")
@@ -111,7 +111,7 @@ public sealed class ModArchiveTests : IDisposable
     }
 
     [Fact]
-    public void Rejects_a_file_that_is_not_a_zip()
+    public void RejectsAFileThatIsNotAZip()
     {
         var path = _dir.WriteFile("broken.smod", "this is not a zip");
 
@@ -119,7 +119,7 @@ public sealed class ModArchiveTests : IDisposable
     }
 
     [Fact]
-    public void Rejects_an_archive_with_no_uplugin()
+    public void RejectsAnArchiveWithNoUplugin()
     {
         var path = _dir.Combine("empty.smod");
         using (var zip = ZipFile.Open(path, ZipArchiveMode.Create))
@@ -131,7 +131,7 @@ public sealed class ModArchiveTests : IDisposable
     }
 
     [Fact]
-    public void Refuses_an_entry_compressed_like_a_zip_bomb()
+    public void RefusesAnEntryCompressedLikeAZipBomb()
     {
         // 32 MB of one repeated byte deflates about 1000:1; no real mod file comes close.
         var path = new SmodBuilder("Bomb", "1.0.0").File("Content/Paks/Bomb.pak", new string('0', 32 * 1024 * 1024))
@@ -142,7 +142,7 @@ public sealed class ModArchiveTests : IDisposable
     }
 
     [Fact]
-    public void The_size_ceiling_allows_large_mods()
+    public void TheSizeCeilingAllowsLargeMods()
     {
         // Whole profiles reach tens of GB; one mod must not be capped anywhere near a few GB.
         Assert.True(ModArchive.MAX_UNCOMPRESSED_BYTES >= 32L * 1024 * 1024 * 1024);

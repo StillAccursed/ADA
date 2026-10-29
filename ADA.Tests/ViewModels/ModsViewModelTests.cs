@@ -112,7 +112,7 @@ public sealed class ModsViewModelTests : IDisposable
         page.Results.Single(r => r.Reference == reference);
 
     [Fact]
-    public async Task Search_then_install_installs_dependencies_without_confirmation()
+    public async Task SearchThenInstallInstallsDependenciesWithoutConfirmation()
     {
         Publish("SML", "3.12.0", "Mod loader");
         Publish("WeatherExtended", "1.1.0", "Rain and snow", new VersionDependency("SML", "^3.12.0", false));
@@ -136,7 +136,7 @@ public sealed class ModsViewModelTests : IDisposable
     }
 
     [Fact]
-    public async Task Uninstall_removes_the_mod_and_its_unneeded_dependencies()
+    public async Task UninstallRemovesTheModAndItsUnneededDependencies()
     {
         Publish("SML", "3.12.0");
         Publish("A", "1.0.0", deps: new VersionDependency("SML", "^3.12.0", false));
@@ -153,7 +153,7 @@ public sealed class ModsViewModelTests : IDisposable
     }
 
     [Fact]
-    public async Task Quick_install_uses_the_clicked_mod_and_latest_version_without_opening_its_page()
+    public async Task QuickInstallUsesTheClickedModAndLatestVersionWithoutOpeningItsPage()
     {
         Publish("SML", "3.12.0");
         Publish("A", "1.1.0", "Rain", new VersionDependency("SML", "^3.12.0", false));
@@ -179,7 +179,7 @@ public sealed class ModsViewModelTests : IDisposable
     }
 
     [Fact]
-    public async Task Quick_uninstall_removes_unneeded_dependencies_and_refreshes_the_button_label()
+    public async Task QuickUninstallRemovesUnneededDependenciesAndRefreshesTheButtonLabel()
     {
         Publish("SML", "3.12.0");
         Publish("A", "1.0.0", deps: new VersionDependency("SML", "^3.12.0", false));
@@ -196,7 +196,7 @@ public sealed class ModsViewModelTests : IDisposable
     }
 
     [Fact]
-    public async Task Quick_uninstall_cannot_remove_a_dependency_needed_by_an_installed_mod()
+    public async Task QuickUninstallCannotRemoveADependencyNeededByAnInstalledMod()
     {
         Publish("SML", "3.12.0");
         Publish("A", "1.0.0", deps: new VersionDependency("SML", "^3.12.0", false));
@@ -215,7 +215,7 @@ public sealed class ModsViewModelTests : IDisposable
     [Theory]
     [InlineData("running")]
     [InlineData("no game")]
-    public async Task Quick_changes_are_disabled_and_notify_buttons_when_the_page_cannot_apply_changes(string state)
+    public async Task QuickChangesAreDisabledAndNotifyButtonsWhenThePageCannotApplyChanges(string state)
     {
         Publish("SML", "3.12.0");
         var page = await OpenPageAsync();
@@ -244,7 +244,7 @@ public sealed class ModsViewModelTests : IDisposable
     }
 
     [Fact]
-    public async Task Resolution_problems_prevent_installation_and_show_a_notice()
+    public async Task ResolutionProblemsPreventInstallationAndShowANotice()
     {
         Publish("SML", "3.12.0");
         Publish("A", "1.0.0", deps: new VersionDependency("SML", "^3.13.0", false));
@@ -259,7 +259,7 @@ public sealed class ModsViewModelTests : IDisposable
     }
 
     [Fact]
-    public async Task Installed_only_lists_just_the_mods_in_the_selected_game()
+    public async Task InstalledOnlyListsJustTheModsInTheSelectedGame()
     {
         Publish("SML", "3.12.0");
         Publish("Other", "1.0.0");
@@ -274,7 +274,7 @@ public sealed class ModsViewModelTests : IDisposable
     }
 
     [Fact]
-    public async Task Queued_mods_install_together_without_confirmation()
+    public async Task QueuedModsInstallTogetherWithoutConfirmation()
     {
         Publish("SML", "3.12.0");
         Publish("A", "1.0.0", deps: new VersionDependency("SML", "^3.12.0", false));
@@ -298,7 +298,7 @@ public sealed class ModsViewModelTests : IDisposable
     }
 
     [Fact]
-    public async Task Layout_sort_and_filter_are_remembered_between_launches()
+    public async Task LayoutSortAndFilterAreRememberedBetweenLaunches()
     {
         Publish("SML", "3.12.0");
         var page = await OpenPageAsync();
@@ -316,7 +316,7 @@ public sealed class ModsViewModelTests : IDisposable
     }
 
     [Fact]
-    public async Task A_remembered_queue_filter_opens_on_all_since_the_queue_is_for_one_session()
+    public async Task ARememberedQueueFilterOpensOnAllSinceTheQueueIsForOneSession()
     {
         Settings.Save(new AppSettings(ModsFilter: nameof(ModFilter.Queued), ModsView: "Nonsense"));
 
@@ -327,7 +327,7 @@ public sealed class ModsViewModelTests : IDisposable
     }
 
     [Fact]
-    public async Task The_settings_page_keeps_the_mods_page_choices()
+    public async Task TheSettingsPageKeepsTheModsPageChoices()
     {
         Publish("SML", "3.12.0");
         var page = await OpenPageAsync();
@@ -344,7 +344,7 @@ public sealed class ModsViewModelTests : IDisposable
     }
 
     [Fact]
-    public async Task Favourites_are_saved_and_have_their_own_filter()
+    public async Task FavouritesAreSavedAndHaveTheirOwnFilter()
     {
         Publish("SML", "3.12.0");
         Publish("A", "1.0.0");
@@ -360,7 +360,7 @@ public sealed class ModsViewModelTests : IDisposable
     }
 
     [Fact]
-    public async Task Choosing_a_mod_opens_its_page_and_Back_returns_to_the_list()
+    public async Task ChoosingAModOpensItsPageAndBackReturnsToTheList()
     {
         Publish("SML", "3.12.0");
         Publish("SML", "3.12.5");
@@ -386,7 +386,7 @@ public sealed class ModsViewModelTests : IDisposable
     }
 
     [Fact]
-    public async Task A_picked_version_is_installed_and_can_be_switched()
+    public async Task APickedVersionIsInstalledAndCanBeSwitched()
     {
         Publish("SML", "3.12.0");
         Publish("SML", "3.12.5");
@@ -408,7 +408,7 @@ public sealed class ModsViewModelTests : IDisposable
     }
 
     [Fact]
-    public async Task The_open_page_stays_when_its_mod_leaves_the_filtered_list()
+    public async Task TheOpenPageStaysWhenItsModLeavesTheFilteredList()
     {
         Publish("SML", "3.12.0");
         var page = await OpenPageAsync();
@@ -425,7 +425,7 @@ public sealed class ModsViewModelTests : IDisposable
     }
 
     [Fact]
-    public async Task Each_install_has_its_own_running_state_and_a_server_is_named()
+    public async Task EachInstallHasItsOwnRunningStateAndAServerIsNamed()
     {
         Publish("SML", "3.12.0");
         var other = new GameFolder(_dir.Combine("Other"));
@@ -459,7 +459,7 @@ public sealed class ModsViewModelTests : IDisposable
     }
 
     [Fact]
-    public async Task A_mod_without_a_build_for_the_selected_server_isnt_offered_for_install()
+    public async Task AModWithoutABuildForTheSelectedServerIsntOfferedForInstall()
     {
         Publish("BetterGrass", "2.0.0");
         _store.Upsert([CatalogFixtures.Mod("BetterGrass",
@@ -495,7 +495,7 @@ public sealed class ModsViewModelTests : IDisposable
     }
 
     [Fact]
-    public async Task The_quick_action_is_refused_for_an_unavailable_server()
+    public async Task TheQuickActionIsRefusedForAnUnavailableServer()
     {
         Publish("SML", "3.12.0");
         var page = await OpenPageAsync();
@@ -506,7 +506,7 @@ public sealed class ModsViewModelTests : IDisposable
     }
 
     [Fact]
-    public async Task Changes_are_blocked_while_the_game_runs_including_a_late_start()
+    public async Task ChangesAreBlockedWhileTheGameRunsIncludingALateStart()
     {
         Publish("SML", "3.12.0");
         DashboardViewModel? dashboard = null;
@@ -547,7 +547,7 @@ public sealed class ModsViewModelTests : IDisposable
     }
 
     [Fact]
-    public async Task Changing_game_during_planning_keeps_the_original_target_and_each_games_queue()
+    public async Task ChangingGameDuringPlanningKeepsTheOriginalTargetAndEachGamesQueue()
     {
         Publish("SML", "3.12.0");
         var otherGame = new GameFolder(_dir.Combine("OtherSatisfactory"));
@@ -597,7 +597,7 @@ public sealed class ModsViewModelTests : IDisposable
     }
 
     [Fact]
-    public async Task Busy_buttons_enqueue_mixed_operations_in_click_order_and_ignore_duplicate_requests()
+    public async Task BusyButtonsEnqueueMixedOperationsInClickOrderAndIgnoreDuplicateRequests()
     {
         Publish("A", "1.0.0");
         Publish("B", "1.0.0");
@@ -670,7 +670,7 @@ public sealed class ModsViewModelTests : IDisposable
     }
 
     [Fact]
-    public async Task A_captured_install_does_not_become_an_uninstall_when_an_earlier_operation_installs_its_dependency()
+    public async Task ACapturedInstallDoesNotBecomeAnUninstallWhenAnEarlierOperationInstallsItsDependency()
     {
         Publish("SML", "3.12.0");
         Publish("A", "1.0.0", deps: new VersionDependency("SML", "^3.12.0", false));
@@ -708,7 +708,7 @@ public sealed class ModsViewModelTests : IDisposable
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
-    public async Task A_failed_operation_keeps_its_notice_and_allows_later_work_to_run(bool throws)
+    public async Task AFailedOperationKeepsItsNoticeAndAllowsLaterWorkToRun(bool throws)
     {
         Publish("A", "1.0.0", deps: new VersionDependency("Missing", "^1.0.0", false));
         Publish("B", "1.0.0");
@@ -751,7 +751,7 @@ public sealed class ModsViewModelTests : IDisposable
     }
 
     [Fact]
-    public async Task Queued_details_capture_the_picked_version_and_game_even_after_both_selections_change()
+    public async Task QueuedDetailsCaptureThePickedVersionAndGameEvenAfterBothSelectionsChange()
     {
         Publish("A", "1.0.0");
         Publish("B", "1.0.0");
@@ -808,7 +808,7 @@ public sealed class ModsViewModelTests : IDisposable
     }
 
     [Fact]
-    public async Task An_existing_install_batch_joins_the_execution_queue_as_one_captured_operation()
+    public async Task AnExistingInstallBatchJoinsTheExecutionQueueAsOneCapturedOperation()
     {
         Publish("A", "1.0.0");
         Publish("B", "1.0.0");
@@ -858,7 +858,7 @@ public sealed class ModsViewModelTests : IDisposable
     }
 
     [Fact]
-    public async Task Starting_the_game_during_planning_pauses_requests_in_order_and_closing_it_resumes_them()
+    public async Task StartingTheGameDuringPlanningPausesRequestsInOrderAndClosingItResumesThem()
     {
         Publish("A", "1.0.0");
         Publish("B", "1.0.0");
@@ -908,7 +908,7 @@ public sealed class ModsViewModelTests : IDisposable
     }
 
     [Fact]
-    public async Task A_captured_removal_does_not_become_an_install_after_earlier_dependency_cleanup()
+    public async Task ACapturedRemovalDoesNotBecomeAnInstallAfterEarlierDependencyCleanup()
     {
         Publish("SML", "3.12.0");
         Publish("A", "1.0.0", deps: new VersionDependency("SML", "^3.12.0", false));
@@ -953,7 +953,7 @@ public sealed class ModsViewModelTests : IDisposable
     }
 
     [Fact]
-    public async Task Endless_scroll_reaches_every_match_once_and_keeps_existing_items()
+    public async Task EndlessScrollReachesEveryMatchOnceAndKeepsExistingItems()
     {
         AddBrowsingMods(233);
         var page = await OpenPageAsync();
@@ -981,7 +981,7 @@ public sealed class ModsViewModelTests : IDisposable
     }
 
     [Fact]
-    public async Task Extending_results_uses_the_snapshot_until_a_refresh()
+    public async Task ExtendingResultsUsesTheSnapshotUntilARefresh()
     {
         AddBrowsingMods(120);
         var page = await OpenPageAsync();
@@ -1002,7 +1002,7 @@ public sealed class ModsViewModelTests : IDisposable
     [InlineData(100)]
     [InlineData(200)]
     [InlineData(500)]
-    public async Task Pagination_visits_every_match_in_order_at_each_supported_size(int size)
+    public async Task PaginationVisitsEveryMatchInOrderAtEachSupportedSize(int size)
     {
         AddBrowsingMods(size * 2 + 7);
         Settings.Save(new AppSettings(EndlessScroll: false, ModsPageSize: size));
@@ -1041,7 +1041,7 @@ public sealed class ModsViewModelTests : IDisposable
     [InlineData(1, 1)]
     [InlineData(50, 1)]
     [InlineData(100, 2)]
-    public async Task Pagination_handles_empty_and_exact_pages(int count, int pages)
+    public async Task PaginationHandlesEmptyAndExactPages(int count, int pages)
     {
         AddBrowsingMods(count);
         Settings.Save(new AppSettings(EndlessScroll: false));
@@ -1059,7 +1059,7 @@ public sealed class ModsViewModelTests : IDisposable
     }
 
     [Fact]
-    public async Task New_searches_disable_old_navigation_immediately_and_reset_the_window()
+    public async Task NewSearchesDisableOldNavigationImmediatelyAndResetTheWindow()
     {
         AddBrowsingMods(231);
         var page = await OpenPageAsync();
@@ -1092,7 +1092,7 @@ public sealed class ModsViewModelTests : IDisposable
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
-    public async Task Details_and_refresh_preserve_the_browsing_window_and_offset(bool endless)
+    public async Task DetailsAndRefreshPreserveTheBrowsingWindowAndOffset(bool endless)
     {
         AddBrowsingMods(233);
         Settings.Save(new AppSettings(EndlessScroll: endless));
@@ -1119,7 +1119,7 @@ public sealed class ModsViewModelTests : IDisposable
     }
 
     [Fact]
-    public async Task Delayed_browsing_saves_apply_after_returning_to_mods_and_preserve_other_choices()
+    public async Task DelayedBrowsingSavesApplyAfterReturningToModsAndPreserveOtherChoices()
     {
         AddBrowsingMods(233);
         var store = Settings;
@@ -1160,7 +1160,7 @@ public sealed class ModsViewModelTests : IDisposable
     }
 
     [Fact]
-    public async Task Refresh_clamps_the_last_page_after_the_catalogue_shrinks()
+    public async Task RefreshClampsTheLastPageAfterTheCatalogueShrinks()
     {
         AddBrowsingMods(120);
         Settings.Save(new AppSettings(EndlessScroll: false));
@@ -1183,7 +1183,7 @@ public sealed class ModsViewModelTests : IDisposable
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
-    public async Task Changing_game_resets_the_result_window_and_scroll_offset(bool endless)
+    public async Task ChangingGameResetsTheResultWindowAndScrollOffset(bool endless)
     {
         AddBrowsingMods(231);
         Settings.Save(new AppSettings(EndlessScroll: endless, ModsPageSize: 25));

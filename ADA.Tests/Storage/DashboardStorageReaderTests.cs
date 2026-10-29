@@ -4,14 +4,14 @@ using ADA.ViewModels;
 
 namespace ADA.Tests.Storage;
 
-public sealed class DashboardStorageTests : IDisposable
+public sealed class DashboardStorageReaderTests : IDisposable
 {
     private readonly TempDir _dir = new();
 
     public void Dispose() => _dir.Dispose();
 
     [Fact]
-    public async Task Measures_mods_and_nested_game_features_once_and_counts_only_kept_archives()
+    public async Task MeasuresModsAndNestedGameFeaturesOnceAndCountsOnlyKeptArchives()
     {
         var mods = _dir.Combine("Mods");
         var archives = _dir.Combine("Archives");
@@ -31,7 +31,7 @@ public sealed class DashboardStorageTests : IDisposable
     }
 
     [Fact]
-    public void Missing_folder_is_zero_but_a_file_in_place_of_folder_is_unknown()
+    public void MissingFolderIsZeroButAFileInPlaceOfFolderIsUnknown()
     {
         Assert.Equal(new FolderMeasurement(0, true), DashboardStorageReader.MeasureFolder(_dir.Combine("Missing"), false));
         var path = _dir.Combine("NotDirectory");
@@ -40,7 +40,7 @@ public sealed class DashboardStorageTests : IDisposable
     }
 
     [Fact]
-    public void Incomplete_measurements_do_not_contribute_a_false_zero_to_the_total()
+    public void IncompleteMeasurementsDoNotContributeAFalseZeroToTheTotal()
     {
         var vm = new DashboardDiskStatusViewModel(new(new(10, false, "Denied"), new(20, true),
             new("Game", 100, 1000), new("Archives", 200, 2000)));
@@ -51,7 +51,7 @@ public sealed class DashboardStorageTests : IDisposable
     }
 
     [Fact]
-    public void Cancelled_traversal_is_discarded()
+    public void CancelledTraversalIsDiscarded()
     {
         using var cts = new CancellationTokenSource();
         cts.Cancel();
@@ -59,7 +59,7 @@ public sealed class DashboardStorageTests : IDisposable
     }
 
     [UnixFact]
-    public void Directory_links_cannot_cycle_or_double_count_files()
+    public void DirectoryLinksCannotCycleOrDoubleCountFiles()
     {
         var mods = _dir.Combine("Mods");
         Directory.CreateDirectory(mods);

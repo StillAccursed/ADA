@@ -33,7 +33,7 @@ public sealed class ArchiveDownloaderTests : IDisposable
             .ToArray();
 
     [Fact]
-    public async Task Downloads_and_verifies_into_the_archive_path()
+    public async Task DownloadsAndVerifiesIntoTheArchivePath()
     {
         _handler.RespondBytes(GOOD);
 
@@ -45,7 +45,7 @@ public sealed class ArchiveDownloaderTests : IDisposable
     }
 
     [Fact]
-    public async Task Hash_mismatch_is_downloaded_again()
+    public async Task HashMismatchIsDownloadedAgain()
     {
         _handler.RespondBytes(CORRUPT).RespondBytes(GOOD);
 
@@ -56,7 +56,7 @@ public sealed class ArchiveDownloaderTests : IDisposable
     }
 
     [Fact]
-    public async Task Size_mismatch_is_downloaded_again()
+    public async Task SizeMismatchIsDownloadedAgain()
     {
         _handler.RespondBytes(SHORT).RespondBytes(GOOD.Concat(GOOD).ToArray()).RespondBytes(GOOD);
 
@@ -67,7 +67,7 @@ public sealed class ArchiveDownloaderTests : IDisposable
     }
 
     [Fact]
-    public async Task Network_errors_timeouts_and_server_errors_are_retried_with_backoff()
+    public async Task NetworkErrorsTimeoutsAndServerErrorsAreRetriedWithBackoff()
     {
         _handler.Throw(new HttpRequestException("connection reset"))
             .Throw(new TaskCanceledException("timeout"))
@@ -80,7 +80,7 @@ public sealed class ArchiveDownloaderTests : IDisposable
     }
 
     [Fact]
-    public async Task Gives_up_after_the_configured_retries_and_leaves_nothing_behind()
+    public async Task GivesUpAfterTheConfiguredRetriesAndLeavesNothingBehind()
     {
         for (var i = 0; i < 3; i++)
         {
@@ -100,7 +100,7 @@ public sealed class ArchiveDownloaderTests : IDisposable
     [InlineData(8, 9)]
     [InlineData(50, 9)] // capped at the maximum of 8 retries
     [InlineData(-3, 1)]
-    public async Task Attempts_are_one_plus_retries_within_limits(int retries, int expectedAttempts)
+    public async Task AttemptsAreOnePlusRetriesWithinLimits(int retries, int expectedAttempts)
     {
         for (var i = 0; i < 10; i++)
         {
@@ -114,7 +114,7 @@ public sealed class ArchiveDownloaderTests : IDisposable
     }
 
     [Fact]
-    public async Task Not_found_is_not_retried()
+    public async Task NotFoundIsNotRetried()
     {
         _handler.Fail(HttpStatusCode.NotFound);
 
@@ -125,7 +125,7 @@ public sealed class ArchiveDownloaderTests : IDisposable
     }
 
     [Fact]
-    public async Task A_kept_archive_that_still_matches_is_reused_without_downloading()
+    public async Task AKeptArchiveThatStillMatchesIsReusedWithoutDownloading()
     {
         _handler.RespondBytes(GOOD);
         await Get();
@@ -138,7 +138,7 @@ public sealed class ArchiveDownloaderTests : IDisposable
     }
 
     [Fact]
-    public async Task A_kept_archive_that_no_longer_matches_is_downloaded_again()
+    public async Task AKeptArchiveThatNoLongerMatchesIsDownloadedAgain()
     {
         var path = _downloader.PathFor("WeatherExtended", "1.1.0", TargetPlatform.Windows);
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
@@ -154,13 +154,13 @@ public sealed class ArchiveDownloaderTests : IDisposable
     [InlineData("../Escape", "1.0.0")]
     [InlineData("Mod", "../../1.0.0")]
     [InlineData("Mod", "1.0/0")]
-    public async Task Rejects_names_that_could_escape_the_archive_folder(string reference, string version)
+    public async Task RejectsNamesThatCouldEscapeTheArchiveFolder(string reference, string version)
     {
         await Assert.ThrowsAsync<ArgumentException>(() => _downloader.GetAsync(reference, version, TARGET, 0));
     }
 
     [Fact]
-    public async Task Progress_is_throttled_but_always_ends_with_the_full_size()
+    public async Task ProgressIsThrottledButAlwaysEndsWithTheFullSize()
     {
         var big = new byte[4 * 1024 * 1024];
         Random.Shared.NextBytes(big);
@@ -181,7 +181,7 @@ public sealed class ArchiveDownloaderTests : IDisposable
     }
 
     [Fact]
-    public async Task A_download_that_stops_sending_data_is_retried()
+    public async Task ADownloadThatStopsSendingDataIsRetried()
     {
         var handler = new StallingThenGoodHandler(GOOD);
         var downloader = new ArchiveDownloader(new HttpClient(handler), _dir.Combine("Archives"), time: _time)

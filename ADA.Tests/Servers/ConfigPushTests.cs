@@ -89,7 +89,7 @@ public sealed class ConfigPushTests : IDisposable
     }
 
     [Fact]
-    public async Task Lists_configs_that_differ_or_are_missing_for_mods_on_both_sides_ignoring_line_endings()
+    public async Task ListsConfigsThatDifferOrAreMissingForModsOnBothSidesIgnoringLineEndings()
     {
         var server = await ConnectWith(["SML", "Storage", "Trains", "BetterGrass"], ["SML", "Storage", "Trains", "ServerOnly"]);
         Write(GameConfig("SML"), "{\r\n  \"a\": 1\r\n}");
@@ -106,7 +106,7 @@ public sealed class ConfigPushTests : IDisposable
     }
 
     [Fact]
-    public async Task Pushing_writes_only_the_chosen_files_and_restoring_puts_back_what_they_replaced()
+    public async Task PushingWritesOnlyTheChosenFilesAndRestoringPutsBackWhatTheyReplaced()
     {
         var server = await ConnectWith(["Storage", "Trains", "Vehicles"], ["Storage", "Trains", "Vehicles"]);
         Write(GameConfig("Storage"), "game storage");
@@ -133,7 +133,7 @@ public sealed class ConfigPushTests : IDisposable
     }
 
     [Fact]
-    public async Task A_second_push_replaces_the_backup()
+    public async Task ASecondPushReplacesTheBackup()
     {
         var server = await ConnectWith(["Storage", "Trains"], ["Storage", "Trains"]);
         Write(GameConfig("Storage"), "game storage");
@@ -151,7 +151,7 @@ public sealed class ConfigPushTests : IDisposable
     }
 
     [Fact]
-    public async Task Pushing_is_refused_while_the_server_runs_or_another_pc_is_changing_it()
+    public async Task PushingIsRefusedWhileTheServerRunsOrAnotherPcIsChangingIt()
     {
         var server = await ConnectWith(["Storage"], ["Storage"]);
         Write(GameConfig("Storage"), "game storage");
@@ -169,7 +169,7 @@ public sealed class ConfigPushTests : IDisposable
     }
 
     [Fact]
-    public async Task The_dialog_pushes_the_ticked_configs_and_waits_for_the_server_to_stop()
+    public async Task TheDialogPushesTheTickedConfigsAndWaitsForTheServerToStop()
     {
         var server = await ConnectWith(["Storage", "Trains"], ["Storage", "Trains"]);
         Write(GameConfig("Storage"), "game storage");
@@ -202,7 +202,7 @@ public sealed class ConfigPushTests : IDisposable
     }
 
     [Fact]
-    public async Task The_dashboard_says_how_many_configs_differ_and_opens_the_dialog()
+    public async Task TheDashboardSaysHowManyConfigsDifferAndOpensTheDialog()
     {
         // The Dashboard learns of the server from the connection's changes, so it exists first, as in the app.
         var dashboard = DashboardFactory.Create(_dir, new OneGame(_game), Card, installs: _installs, profiles: _profiles,

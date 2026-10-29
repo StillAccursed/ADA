@@ -50,7 +50,7 @@ public sealed class GameProfilesTests : IDisposable
     private ModInstaller Installer() => new(_game.Root, () => false);
 
     [Fact]
-    public async Task Finds_mods_by_their_uplugin_and_skips_folders_that_are_not_mods()
+    public async Task FindsModsByTheirUpluginAndSkipsFoldersThatAreNotMods()
     {
         PlaceForeign("Mods/SML", "3.12.0");
         PlaceForeign("Mods/GameFeatures/MapZoom", "2.1.0", "SML");
@@ -72,7 +72,7 @@ public sealed class GameProfilesTests : IDisposable
     }
 
     [Fact]
-    public async Task A_client_build_on_a_server_is_refused_and_says_why()
+    public async Task AClientBuildOnAServerIsRefusedAndSaysWhy()
     {
         var server = _install with { Kind = GameKind.DedicatedServer, Host = GameHost.Linux };
         PlaceForeign("Mods/BetterGrass");
@@ -88,7 +88,7 @@ public sealed class GameProfilesTests : IDisposable
     }
 
     [Fact]
-    public async Task A_server_build_in_the_game_is_refused()
+    public async Task AServerBuildInTheGameIsRefused()
     {
         PlaceForeign("Mods/Storage");
         PlaceLibrary("Mods/Storage", "Win64/FactoryServer-Storage-Win64-Shipping.dll");
@@ -111,11 +111,11 @@ public sealed class GameProfilesTests : IDisposable
     [InlineData("libFactoryServer-SML-Linux-Shipping.so", TargetPlatform.LinuxServer, true)]
     [InlineData("libFactoryServer-SML-Linux-Shipping.so", TargetPlatform.WindowsServer, false)]
     [InlineData("FactoryServer-SML-Win64-Shipping.dll", TargetPlatform.LinuxServer, false)]
-    public void Libraries_are_matched_to_their_platform_by_name(string fileName, TargetPlatform platform, bool expected) =>
+    public void LibrariesAreMatchedToTheirPlatformByName(string fileName, TargetPlatform platform, bool expected) =>
         Assert.Equal(expected, ModBinaries.IsFor(fileName, platform));
 
     [Fact]
-    public async Task Importing_into_the_current_profile_takes_mods_over_without_touching_their_files()
+    public async Task ImportingIntoTheCurrentProfileTakesModsOverWithoutTouchingTheirFiles()
     {
         PlaceForeign("Mods/SML", "3.12.0");
         PlaceForeign("Mods/GameFeatures/MapZoom", "2.1.0", "SML");
@@ -139,7 +139,7 @@ public sealed class GameProfilesTests : IDisposable
     }
 
     [Fact]
-    public async Task Importing_into_a_new_profile_and_switching_makes_it_the_games_profile()
+    public async Task ImportingIntoANewProfileAndSwitchingMakesItTheGamesProfile()
     {
         PlaceForeign("Mods/SML", "3.12.0");
 
@@ -151,7 +151,7 @@ public sealed class GameProfilesTests : IDisposable
     }
 
     [Fact]
-    public async Task Importing_into_a_new_profile_without_switching_leaves_the_mods_alone_and_stops_asking()
+    public async Task ImportingIntoANewProfileWithoutSwitchingLeavesTheModsAloneAndStopsAsking()
     {
         PlaceForeign("Mods/SML", "3.12.0");
 
@@ -166,7 +166,7 @@ public sealed class GameProfilesTests : IDisposable
     }
 
     [Fact]
-    public async Task New_profile_names_must_be_unused()
+    public async Task NewProfileNamesMustBeUnused()
     {
         _store.Save(new("Atria", []));
         PlaceForeign("Mods/SML", "3.12.0");
@@ -180,7 +180,7 @@ public sealed class GameProfilesTests : IDisposable
     [InlineData("a/b:c", "a_b_c.olp")]
     [InlineData("CON", "_CON.olp")]
     [InlineData("..hidden", "_hidden.olp")]
-    public void Profile_file_names_are_safe_on_every_OS(string name, string file)
+    public void ProfileFileNamesAreSafeOnEveryOS(string name, string file)
     {
         _store.Save(new(name, []));
 

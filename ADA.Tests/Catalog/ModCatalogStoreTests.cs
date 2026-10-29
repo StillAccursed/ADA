@@ -40,7 +40,7 @@ public sealed class ModCatalogStoreTests : IDisposable
     private string[] SearchRefs(string query) => _store.Search(query).Select(m => m.Reference).ToArray();
 
     [Fact]
-    public void Round_trips_a_mod()
+    public void RoundTripsAMod()
     {
         var mod = Mod("WeatherExtended", "Weather Extended", "Darker nights", authors: ["59thCasper"], tags: ["Visual"]);
         _store.Upsert([mod], T0);
@@ -50,7 +50,7 @@ public sealed class ModCatalogStoreTests : IDisposable
     }
 
     [Fact]
-    public void Every_field_survives_insert_update_and_each_read()
+    public void EveryFieldSurvivesInsertUpdateAndEachRead()
     {
         // Every value distinct and non-default, so a column swapped with another of the same type
         // (downloads/hotness, the two compat states) or left out of the update shows up as a mismatch.
@@ -68,7 +68,7 @@ public sealed class ModCatalogStoreTests : IDisposable
     }
 
     [Fact]
-    public void Prefix_search_across_words_and_fields()
+    public void PrefixSearchAcrossWordsAndFields()
     {
         _store.Upsert(
         [
@@ -84,7 +84,7 @@ public sealed class ModCatalogStoreTests : IDisposable
     }
 
     [Fact]
-    public void Finds_mods_by_split_reference_and_image_text()
+    public void FindsModsBySplitReferenceAndImageText()
     {
         _store.Upsert(
         [
@@ -99,7 +99,7 @@ public sealed class ModCatalogStoreTests : IDisposable
     }
 
     [Fact]
-    public void Exact_name_ranks_first_then_relevance_then_popularity()
+    public void ExactNameRanksFirstThenRelevanceThenPopularity()
     {
         _store.Upsert(
         [
@@ -112,7 +112,7 @@ public sealed class ModCatalogStoreTests : IDisposable
     }
 
     [Fact]
-    public void Empty_query_lists_most_popular()
+    public void EmptyQueryListsMostPopular()
     {
         _store.Upsert([Mod("Low", popularity: 1), Mod("High", popularity: 9)], T0);
 
@@ -120,7 +120,7 @@ public sealed class ModCatalogStoreTests : IDisposable
     }
 
     [Fact]
-    public void Updating_a_mod_replaces_its_search_entry()
+    public void UpdatingAModReplacesItsSearchEntry()
     {
         _store.Upsert([Mod("M", "Old Name")], T0);
         _store.Upsert([Mod("M", "New Name")], T0);
@@ -131,7 +131,7 @@ public sealed class ModCatalogStoreTests : IDisposable
     }
 
     [Fact]
-    public void Deletes_mods_not_seen_since()
+    public void DeletesModsNotSeenSince()
     {
         _store.Upsert([Mod("Gone")], T0);
         _store.Upsert([Mod("Kept")], T0.AddDays(7));
@@ -143,7 +143,22 @@ public sealed class ModCatalogStoreTests : IDisposable
     }
 
     [Fact]
-    public void Version_cache_expires_and_is_cleared_by_a_new_release()
+    public void RecentlyUpdatedSortsReleasesNotMetadataEditsAndAppliesTheLimitAfterSorting()
+    {
+        var now = DateTimeOffset.UtcNow;
+        _store.Upsert([
+            Mod("Edited", updatedAt: now, lastVersion: now.AddDays(-7)),
+            Mod("Newest", updatedAt: now.AddDays(-2), lastVersion: now),
+            Mod("Undated", updatedAt: now),
+            Mod("TieB", "Beta", lastVersion: now.AddDays(-1)),
+            Mod("TieA", "Alpha", lastVersion: now.AddDays(-1)),
+        ], now);
+        Assert.Equal(["Newest", "TieA", "TieB"], _store.GetRecentlyUpdated(3).Select(m => m.Reference));
+        Assert.Equal(["Newest", "TieA", "TieB", "Edited"], _store.GetRecentlyUpdated(20).Select(m => m.Reference));
+    }
+
+    [Fact]
+    public void VersionCacheExpiresAndIsClearedByANewRelease()
     {
         _store.Upsert([Mod("M", lastVersion: T0.AddDays(-3))], T0);
         _store.SaveVersions("M", [Version("M", "1.0.0")], T0);
@@ -162,7 +177,7 @@ public sealed class ModCatalogStoreTests : IDisposable
     }
 
     [Fact]
-    public void Survives_reopening()
+    public void SurvivesReopening()
     {
         _store.Upsert([Mod("M")], T0);
         _store.SetState("k", T0);
@@ -174,7 +189,7 @@ public sealed class ModCatalogStoreTests : IDisposable
     }
 
     [Fact]
-    public void Rebuilds_a_catalogue_from_an_older_schema()
+    public void RebuildsACatalogueFromAnOlderSchema()
     {
         var path = _dir.Combine("old.db");
         using (var old = new SqliteConnection($"Data Source={path};Pooling=False"))

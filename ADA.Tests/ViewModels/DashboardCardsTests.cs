@@ -37,7 +37,7 @@ public sealed class DashboardCardsTests : IDisposable
     public void Dispose() => _dir.Dispose();
 
     [Fact]
-    public async Task Refreshing_and_changing_the_limit_never_create_a_profile_by_themselves()
+    public async Task RefreshingAndChangingTheLimitNeverCreateAProfileByThemselves()
     {
         _store.Upsert(Enumerable.Range(1, 8).Select(i => CatalogFixtures.Mod($"Mod{i}", lastVersion: DateTimeOffset.UtcNow.AddDays(-i))), DateTimeOffset.UtcNow);
         var vm = Dashboard();
@@ -55,7 +55,7 @@ public sealed class DashboardCardsTests : IDisposable
     }
 
     [Fact]
-    public async Task A_new_selection_supersedes_an_in_flight_storage_and_profile_refresh()
+    public async Task ANewSelectionSupersedesAnInFlightStorageAndProfileRefresh()
     {
         var vm = Dashboard();
         var first = Card("First");
@@ -73,7 +73,7 @@ public sealed class DashboardCardsTests : IDisposable
     }
 
     [Fact]
-    public async Task Queued_mod_operations_disable_profile_selection_and_cannot_be_overtaken()
+    public async Task QueuedModOperationsDisableProfileSelectionAndCannotBeOvertaken()
     {
         var vm = Dashboard();
         var card = Card("First");
@@ -88,7 +88,7 @@ public sealed class DashboardCardsTests : IDisposable
     }
 
     [Fact]
-    public async Task First_run_prompts_for_a_profile_and_creating_it_makes_it_active()
+    public async Task FirstRunPromptsForAProfileAndCreatingItMakesItActive()
     {
         var vm = Dashboard();
         var card = Card("First");
@@ -108,7 +108,7 @@ public sealed class DashboardCardsTests : IDisposable
     }
 
     [Fact]
-    public async Task Awaiting_a_superseded_refresh_waits_for_the_newer_one()
+    public async Task AwaitingASupersededRefreshWaitsForTheNewerOne()
     {
         var vm = Dashboard();
         var card = Card("First");
@@ -124,7 +124,7 @@ public sealed class DashboardCardsTests : IDisposable
     }
 
     [Fact]
-    public async Task A_dismissed_prompt_stays_closed_until_new_profile_is_chosen()
+    public async Task ADismissedPromptStaysClosedUntilNewProfileIsChosen()
     {
         _profileStore.Save(new("Profile 1", []));
         var vm = Dashboard();
