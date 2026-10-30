@@ -28,6 +28,23 @@ jobs:
       - name: Test
         run: dotnet test ADA.sln --configuration Release --no-build --logger "trx;LogFileName=results.trx"
 
+      # The real OS secret store, which the main test step skips. Separate, so a keyring problem on a
+      # runner can't hide other failures. macOS is checked locally: its runner keychain can prompt.
+      - name: Secret store (Windows)
+        if: runner.os == 'Windows'
+        env:
+          ADA_TEST_SECRET_STORE: '1'
+        run: dotnet test ADA.Tests --configuration Release --no-build --filter "FullyQualifiedName~SecretStoresTests"
+
+      - name: Secret store (Linux)
+        if: runner.os == 'Linux'
+        env:
+          ADA_TEST_SECRET_STORE: '1'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gnome-keyring libsecret-tools dbus-x11
+          dbus-run-session -- sh -c 'echo -n ci | gnome-keyring-daemon --unlock --components=secrets && dotnet test ADA.Tests --configuration Release --no-build --filter "FullyQualifiedName~SecretStoresTests"'
+
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v4

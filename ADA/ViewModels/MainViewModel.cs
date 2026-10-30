@@ -25,6 +25,7 @@ public partial class MainViewModel : ViewModelBase
 {
     private readonly DashboardViewModel _dashboard;
     private readonly NavItem _dashboardNav;
+    private readonly NavItem _modsNav;
     private readonly Func<UpdatesViewModel> _updates;
     private readonly ServerConnections _connections;
 
@@ -42,24 +43,25 @@ public partial class MainViewModel : ViewModelBase
     [ObservableProperty]
     public partial NavItem SelectedNav { get; set; }
 
-    public MainViewModel(DashboardViewModel dashboard, ModsViewModel mods, ServersViewModel servers, ServerConnections connections,
-        CatalogStatusViewModel catalog, SettingsViewModel settings, Func<UpdatesViewModel> updates)
+    public MainViewModel(DashboardViewModel dashboard, ModsViewModel mods, ServersViewModel servers, SavesViewModel saves,
+        ServerConnections connections, CatalogStatusViewModel catalog, SettingsViewModel settings, Func<UpdatesViewModel> updates)
     {
         _dashboard = dashboard;
         _updates = updates;
         _connections = connections;
         Catalog = catalog;
         _dashboardNav = new NavItem("Dashboard", "◧", dashboard);
+        _modsNav = new NavItem("Mods", "▦", mods);
         NavItems =
         [
             _dashboardNav,
 
             new("Satisfactory", "", null),
-            new("Mods", "▦", mods),
+            _modsNav,
             new("Servers", "⇅", servers),
 
             new("Installations", "", null),
-            new("Saves", "▤", new PlaceholderViewModel("Saves", "Coming soon")),
+            new("Saves", "▤", saves),
             new("Backups", "▣", new PlaceholderViewModel("Backups", "Coming soon")),
 
             new("Misc", "", null),
@@ -67,6 +69,13 @@ public partial class MainViewModel : ViewModelBase
             new("Settings", "⚙", settings),
         ];
         SelectedNav = _dashboardNav;
+
+        // A save's "Install missing mods": queue them on the Mods page and show it for review.
+        saves.InstallRequested += (_, references) =>
+        {
+            mods.QueueForInstall(references);
+            SelectedNav = _modsNav;
+        };
 
         dashboard.PropertyChanged += OnDashboardChanged;
         catalog.PropertyChanged += OnCatalogChanged;

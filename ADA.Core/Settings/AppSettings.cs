@@ -34,6 +34,7 @@ namespace ADA.Core.Settings;
 /// After each file is uploaded to a server, read it back and compare hashes. Off checks sizes only,
 /// trusting SSH's own integrity checks for the bytes. Local installs always read back.
 /// </param>
+/// <param name="SavesView">The Saves page's layout (List, Grid or Card), as last chosen; null for the default.</param>
 public sealed record AppSettings(
     bool KeepDownloadedArchives = true,
     int DownloadRetries = AppSettings.DEFAULT_DOWNLOAD_RETRIES,
@@ -46,7 +47,8 @@ public sealed record AppSettings(
     int InterfaceScale = AppSettings.DEFAULT_INTERFACE_SCALE,
     string Theme = AppSettings.THEME_SYSTEM,
     string? ServersView = null,
-    bool CheckServerUploads = true)
+    bool CheckServerUploads = true,
+    string? SavesView = null)
 {
     internal const int DEFAULT_DOWNLOAD_RETRIES = 5;
     public const int MIN_DOWNLOAD_RETRIES = 0;

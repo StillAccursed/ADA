@@ -80,6 +80,8 @@ public partial class ServersViewModel : ViewModelBase
         View = Enum.TryParse<ModView>(settings.Current.ServersView, out var saved) ? saved : ModView.List;
         store.Changed += OnSourceChanged;
         connections.Changed += OnSourceChanged;
+        // An operation ending, including one refused because another PC holds the lock, re-reads the lock line.
+        installs.Changed += OnInstallsChanged;
         Reload();
     }
 
@@ -314,6 +316,18 @@ public partial class ServersViewModel : ViewModelBase
         else
         {
             Reload();
+        }
+    }
+
+    private void OnInstallsChanged(object? sender, EventArgs e)
+    {
+        if (_viewContext is { } context && !ReferenceEquals(context, SynchronizationContext.Current))
+        {
+            context.Post(_ => _ = RefreshLockAsync(), null);
+        }
+        else
+        {
+            _ = RefreshLockAsync();
         }
     }
 

@@ -8,7 +8,12 @@ namespace ADA.Platform.Launchers;
 /// Reads the Epic Games Launcher's per-game <c>*.item</c> manifests and keeps completed
 /// Satisfactory installs.
 /// </summary>
-internal sealed class EpicManifestScanner(Func<string, string?> mapPath, GameHost host, string location)
+/// <param name="userDataPath">The user-data folder for an install of the given kind; see <see cref="GameInstall.UserDataPath"/>.</param>
+internal sealed class EpicManifestScanner(
+    Func<string, string?> mapPath,
+    GameHost host,
+    string location,
+    Func<GameKind, string?> userDataPath)
 {
     // Epic's catalog namespace for Satisfactory (its codename is "Crab").
     public const string CATALOG_NAMESPACE = "crab";
@@ -40,7 +45,7 @@ internal sealed class EpicManifestScanner(Func<string, string?> mapPath, GameHos
             }
 
             results.Add(new GameInstall(gamePath, GameLauncher.Epic, host, kind, manifest.Version, location,
-                GameBuildReader.Read(gamePath)));
+                GameBuildReader.Read(gamePath), userDataPath(kind)));
         }
 
         return results;

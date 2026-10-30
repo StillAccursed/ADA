@@ -17,6 +17,9 @@
         <DataTemplate DataType="vm:ServersViewModel">
             <views:ServersView />
         </DataTemplate>
+        <DataTemplate DataType="vm:SavesViewModel">
+            <views:SavesView />
+        </DataTemplate>
         <DataTemplate DataType="vm:SettingsViewModel">
             <views:SettingsView />
         </DataTemplate>

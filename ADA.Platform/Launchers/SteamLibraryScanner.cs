@@ -12,7 +12,15 @@ namespace ADA.Platform.Launchers;
 /// Turns a library path as Steam wrote it into a host path: identity on native installs,
 /// <see cref="WinePrefix.ToHostPath"/> inside a bottle.
 /// </param>
-internal sealed class SteamLibraryScanner(Func<string, string?> mapPath, GameHost clientHost, string location)
+/// <param name="userDataPath">
+/// The user-data folder for an install of the given kind found in the given library (a host path);
+/// see <see cref="GameInstall.UserDataPath"/>.
+/// </param>
+internal sealed class SteamLibraryScanner(
+    Func<string, string?> mapPath,
+    GameHost clientHost,
+    string location,
+    Func<string, GameKind, string?> userDataPath)
 {
     public const string CLIENT_APP_ID = "526870";
     public const string SERVER_APP_ID = "1690800";
@@ -95,7 +103,7 @@ internal sealed class SteamLibraryScanner(Func<string, string?> mapPath, GameHos
         }
 
         results.Add(new GameInstall(gamePath, GameLauncher.Steam, host, kind, state.GetString("buildid"), location,
-            GameBuildReader.Read(gamePath)));
+            GameBuildReader.Read(gamePath), userDataPath(library, kind)));
     }
 
     private static string Normalize(string path) =>

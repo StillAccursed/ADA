@@ -19,6 +19,7 @@ public sealed class ServersViewModelTests : IDisposable
     private readonly SettingsStore _settings;
     private readonly ProfileStore _profileStore;
     private readonly ServerConnections _connections;
+    private readonly ModInstallService _installs;
     private readonly ServersViewModel _page;
 
     public ServersViewModelTests()
@@ -29,10 +30,10 @@ public sealed class ServersViewModelTests : IDisposable
         var api = new SatisfactoryServerApi(new HttpClient(new FakeHttpHandler()));
         var secrets = new ServerSecrets(_secrets);
         _connections = new ServerConnections(_store, secrets, api);
-        var installs = new ModInstallService(_settings, new(new HttpClient(new FakeHttpHandler()), _dir.Combine("Archives")),
+        _installs = new ModInstallService(_settings, new(new HttpClient(new FakeHttpHandler()), _dir.Combine("Archives")),
             new FakeVersionSource((_, _) => Task.FromResult<IReadOnlyList<CatalogVersion>>([])), (_, _) => Task.FromResult(false));
-        _page = new ServersViewModel(_store, secrets, _connections, new ServerSetupCheck(_connections, api), installs,
-            new GameProfiles(_profileStore, installs), _settings, NullLogger<ServersViewModel>.Instance);
+        _page = new ServersViewModel(_store, secrets, _connections, new ServerSetupCheck(_connections, api), _installs,
+            new GameProfiles(_profileStore, _installs), _settings, NullLogger<ServersViewModel>.Instance);
     }
 
     public void Dispose()
@@ -152,5 +153,26 @@ public sealed class ServersViewModelTests : IDisposable
 
         Assert.False(_page.IsAdding);
         Assert.True(_page.ShowsEmptyState);
+    }
+
+    [Fact]
+    public async Task TheLockLineIsReReadWhenAnyOperationEnds()
+    {
+        var root = _dir.Combine("Server");
+        Directory.CreateDirectory(Path.Combine(root, "FactoryGame", ".ada"));
+        Directory.CreateDirectory(Path.Combine(root, "Engine", "Binaries", "Linux"));
+        var server = new ServerConnection(Guid.NewGuid(), "Home", "", 22, "", ServerAuth.Password, root, GameHost.Linux, "",
+            Transport: ServerTransport.Folder);
+        _store.Save(server);
+        await _connections.ConnectAsync(server.Id);
+        var item = Assert.Single(_page.Servers);
+        Assert.Null(item.LockText);
+
+        File.WriteAllText(Path.Combine(root, "FactoryGame", ".ada", "lock"), System.Text.Json.JsonSerializer.Serialize(
+            new LockHolder("OTHER-PC", 1234, DateTimeOffset.UtcNow), new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web)));
+        var game = new GameInstall(_dir.CreateGame("Satisfactory"), GameLauncher.Steam, GameHost.Windows, GameKind.Client, null, "Steam");
+        await _installs.RecoverAndCheckAsync(game); // any operation ending raises Changed
+
+        await Wait.Until(() => item.LockText?.Contains("OTHER-PC") == true);
     }
 }

@@ -8,9 +8,11 @@ using ADA.Infrastructure.Ficsit;
 using ADA.Infrastructure.Installing;
 using ADA.Infrastructure.IO;
 using ADA.Infrastructure.Profiles;
+using ADA.Infrastructure.Saves;
 using ADA.Infrastructure.Servers;
 using ADA.Infrastructure.Settings;
 using ADA.Platform.Detection;
+using ADA.Platform.Formats;
 using ADA.Platform.Secrets;
 using ADA.Platform.Storage;
 using ADA.ViewModels;
@@ -58,6 +60,8 @@ public static class Services
         services.AddSingleton(_ => new FavouritesStore(paths.FavouritesFile));
         services.AddSingleton(sp => new ArchiveCache(paths.Archives));
         services.AddSingleton(_ => new DashboardStorageReader(paths.Archives));
+        services.AddSingleton(sp => new SaveLibrary(SaveHeaderReader.Read, sp.GetRequiredService<ILogger<SaveLibrary>>()));
+        services.AddSingleton(sp => new BlueprintTransfer(sp.GetRequiredService<ILogger<BlueprintTransfer>>()));
         services.AddSingleton(sp => new ArchiveDownloader(Http(sp, DOWNLOAD_CLIENT), paths.Archives,
             log: sp.GetRequiredService<ILogger<ArchiveDownloader>>()));
         services.AddSingleton(sp => new ModInstallService(
@@ -101,6 +105,7 @@ public static class Services
         services.AddSingleton<DashboardViewModel>();
         services.AddSingleton<ModsViewModel>();
         services.AddSingleton<ServersViewModel>();
+        services.AddSingleton<SavesViewModel>();
         services.AddSingleton<Func<UpdatesViewModel>>(sp => () => ActivatorUtilities.CreateInstance<UpdatesViewModel>(sp));
         services.AddSingleton<MainViewModel>();
 

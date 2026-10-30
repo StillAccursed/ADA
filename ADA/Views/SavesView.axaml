@@ -1,0 +1,448 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:ADA.ViewModels"
+             xmlns:views="using:ADA.Views"
+             xmlns:saves="using:ADA.Core.Saves"
+             x:Class="ADA.Views.SavesView"
+             x:DataType="vm:SavesViewModel">
+    <UserControl.Resources>
+        <!-- Sessions, List: compact rows. -->
+        <DataTemplate x:Key="SessionRow" x:DataType="vm:SessionItemViewModel">
+            <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="16" Margin="0,4">
+                <StackPanel Spacing="2" VerticalAlignment="Center">
+                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"
+                               Foreground="{DynamicResource TextPrimaryBrush}" />
+                    <TextBlock FontSize="12" TextTrimming="CharacterEllipsis" Foreground="{DynamicResource TextSecondaryBrush}">
+                        <Run Text="{Binding SavesText}" /><Run Text=" · " /><Run Text="{Binding LastSavedText}" />
+                    </TextBlock>
+                </StackPanel>
+                <TextBlock Grid.Column="1" Text="{Binding PlayTimeText}" VerticalAlignment="Center"
+                           Foreground="{DynamicResource TextPrimaryBrush}" />
+                <TextBlock Grid.Column="2" Text="{Binding ModsText}" FontSize="12" VerticalAlignment="Center" MinWidth="70"
+                           TextAlignment="Right" Foreground="{DynamicResource TextSecondaryBrush}" />
+            </Grid>
+        </DataTemplate>
+
+        <!-- Sessions, Grid: tiles. -->
+        <DataTemplate x:Key="SessionTile" x:DataType="vm:SessionItemViewModel">
+            <Border Width="220" Height="120" Padding="12" CornerRadius="8" BorderThickness="1" Margin="2"
+                    Background="{DynamicResource SurfaceRaisedBrush}" BorderBrush="{DynamicResource BorderSubtleBrush}">
+                <Grid RowDefinitions="Auto,Auto,*,Auto">
+                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="15" TextTrimming="CharacterEllipsis"
+                               Foreground="{DynamicResource TextPrimaryBrush}" />
+                    <TextBlock Grid.Row="1" FontSize="12" Text="{Binding SavesText}" Foreground="{DynamicResource TextSecondaryBrush}" />
+                    <TextBlock Grid.Row="3" FontSize="12" Foreground="{DynamicResource TextSecondaryBrush}">
+                        <Run Text="{Binding PlayTimeText}" /><Run Text=" · " /><Run Text="{Binding LastSavedText}" />
+                    </TextBlock>
+                </Grid>
+            </Border>
+        </DataTemplate>
+
+        <!-- Sessions, Card: everything the list knows. -->
+        <DataTemplate x:Key="SessionCard" x:DataType="vm:SessionItemViewModel">
+            <Border Padding="14" CornerRadius="8" BorderThickness="1" Margin="0,2"
+                    Background="{DynamicResource SurfaceRaisedBrush}" BorderBrush="{DynamicResource BorderSubtleBrush}">
+                <StackPanel Spacing="3">
+                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="15" TextTrimming="CharacterEllipsis"
+                               Foreground="{DynamicResource TextPrimaryBrush}" />
+                    <WrapPanel>
+                        <TextBlock FontSize="12" Margin="0,0,14,0" Text="{Binding PlayTimeText}" Foreground="{DynamicResource TextSecondaryBrush}" />
+                        <TextBlock FontSize="12" Margin="0,0,14,0" Text="{Binding LastSavedText}" Foreground="{DynamicResource TextSecondaryBrush}" />
+                        <TextBlock FontSize="12" Margin="0,0,14,0" Text="{Binding SavesText}" Foreground="{DynamicResource TextSecondaryBrush}" />
+                        <TextBlock FontSize="12" Margin="0,0,14,0" Text="{Binding BlueprintsText}" Foreground="{DynamicResource TextSecondaryBrush}" />
+                        <TextBlock FontSize="12" Text="{Binding ModsText}" Foreground="{DynamicResource TextSecondaryBrush}" />
+                    </WrapPanel>
+                </StackPanel>
+            </Border>
+        </DataTemplate>
+    </UserControl.Resources>
+
+    <UserControl.Styles>
+        <Style Selector="ListBox.list">
+            <Setter Property="ItemTemplate" Value="{StaticResource SessionRow}" />
+        </Style>
+        <Style Selector="ListBox.grid">
+            <Setter Property="ItemTemplate" Value="{StaticResource SessionTile}" />
+            <Setter Property="ItemsPanel">
+                <ItemsPanelTemplate>
+                    <WrapPanel />
+                </ItemsPanelTemplate>
+            </Setter>
+        </Style>
+        <Style Selector="ListBox.card">
+            <Setter Property="ItemTemplate" Value="{StaticResource SessionCard}" />
+        </Style>
+        <Style Selector="RadioButton.view">
+            <Setter Property="Theme" Value="{StaticResource {x:Type ToggleButton}}" />
+            <Setter Property="Padding" Value="10,4" />
+        </Style>
+        <Style Selector="Button.crumb">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Padding" Value="2" />
+            <Setter Property="Foreground" Value="{DynamicResource AccentBrush}" />
+        </Style>
+        <Style Selector="TextBlock.crumbSeparator">
+            <Setter Property="Margin" Value="6,0" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
+        </Style>
+        <Style Selector="TextBlock.crumbHere">
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+        </Style>
+        <Style Selector="Border.box">
+            <Setter Property="Padding" Value="14,12" />
+            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Background" Value="{DynamicResource SurfaceRaisedBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderSubtleBrush}" />
+        </Style>
+        <Style Selector="TextBlock.boxTitle">
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="LetterSpacing" Value="1" />
+            <Setter Property="Margin" Value="0,0,0,8" />
+            <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
+        </Style>
+        <Style Selector="TextBlock.label">
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
+        </Style>
+        <Style Selector="TextBlock.value">
+            <Setter Property="TextWrapping" Value="Wrap" />
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+        </Style>
+        <Style Selector="TextBlock.status">
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
+        </Style>
+        <Style Selector="TextBlock.status.installed">
+            <Setter Property="Foreground" Value="{DynamicResource SuccessBrush}" />
+        </Style>
+        <Style Selector="TextBlock.status.different">
+            <Setter Property="Foreground" Value="{DynamicResource WarningBrush}" />
+        </Style>
+        <Style Selector="TextBlock.status.missing">
+            <Setter Property="Foreground" Value="{DynamicResource FailureBrush}" />
+        </Style>
+    </UserControl.Styles>
+
+    <Panel>
+        <!-- Level 1: the sessions. -->
+        <DockPanel Margin="32,28,32,16" IsVisible="{Binding ShowsSessionList}">
+            <TextBlock DockPanel.Dock="Top" Text="Saves" FontSize="24" FontWeight="SemiBold" Margin="0,0,0,16"
+                       Foreground="{DynamicResource TextPrimaryBrush}" />
+
+            <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8" Margin="0,0,0,8" IsVisible="{Binding ShowsList}">
+                <TextBox PlaceholderText="Search sessions and saves" Text="{Binding SearchText}" />
+                <ComboBox Grid.Column="1" MinWidth="150" ItemsSource="{Binding Sorts}" SelectedItem="{Binding Sort}"
+                          ToolTip.Tip="Sort by" />
+                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="2" Margin="4,0,0,0">
+                    <RadioButton Classes="view" GroupName="SessionView" Content="List" IsChecked="{Binding IsListView}" />
+                    <RadioButton Classes="view" GroupName="SessionView" Content="Grid" IsChecked="{Binding IsGridView}" />
+                    <RadioButton Classes="view" GroupName="SessionView" Content="Card" IsChecked="{Binding IsCardView}" />
+                </StackPanel>
+            </Grid>
+
+            <TextBlock DockPanel.Dock="Top" Text="{Binding Notice}" TextWrapping="Wrap" Margin="2,0,0,8"
+                       IsVisible="{Binding Notice, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                       Foreground="{DynamicResource WarningBrush}" />
+            <TextBlock DockPanel.Dock="Top" Text="{Binding ResultsText}" Margin="2,0,0,8" FontSize="12"
+                       IsVisible="{Binding ShowsList}" Foreground="{DynamicResource TextSecondaryBrush}" />
+
+            <Panel>
+                <TextBlock Text="{Binding EmptyText}" IsVisible="{Binding ShowsEmptyState}" TextWrapping="Wrap" MaxWidth="420"
+                           HorizontalAlignment="Center" VerticalAlignment="Center" TextAlignment="Center" FontSize="15"
+                           Foreground="{DynamicResource TextSecondaryBrush}" />
+                <ListBox ItemsSource="{Binding Shown}" SelectedItem="{Binding SessionSelection}" Background="Transparent"
+                         IsVisible="{Binding ShowsList}" ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                         Classes.list="{Binding IsListView}" Classes.grid="{Binding IsGridView}" Classes.card="{Binding IsCardView}" />
+            </Panel>
+        </DockPanel>
+
+        <!-- Levels 2 and 3 share the breadcrumb. -->
+        <DockPanel Margin="32,20,32,20" IsVisible="{Binding !ShowsSessionList}">
+            <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,8">
+                <Button Classes="crumb" Content="Saves" Command="{Binding ShowSessionsCommand}" />
+                <TextBlock Classes="crumbSeparator" Text="›" />
+                <Button Classes="crumb" Content="{Binding Session.Name, FallbackValue=''}" Command="{Binding ShowSessionCommand}"
+                        IsVisible="{Binding ShowsSave}" />
+                <TextBlock Classes="crumbHere" Text="{Binding Session.Name, FallbackValue=''}" IsVisible="{Binding ShowsSession}" />
+                <TextBlock Classes="crumbSeparator" Text="›" IsVisible="{Binding ShowsSave}" />
+                <TextBlock Classes="crumbHere" Text="{Binding Save.Name, FallbackValue=''}" IsVisible="{Binding ShowsSave}" />
+            </StackPanel>
+            <TextBlock DockPanel.Dock="Top" Text="{Binding Notice}" TextWrapping="Wrap" Margin="2,0,0,8"
+                       IsVisible="{Binding Notice, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                       Foreground="{DynamicResource WarningBrush}" />
+
+            <Panel>
+                <!-- Level 2: one session's saves and blueprints. -->
+                <DockPanel DataContext="{Binding Session}" x:DataType="vm:SessionDetailsViewModel"
+                           IsVisible="{Binding $parent[views:SavesView].((vm:SavesViewModel)DataContext).ShowsSession}">
+                    <StackPanel DockPanel.Dock="Top" Spacing="2" Margin="0,0,0,8">
+                        <TextBlock Text="{Binding Name}" FontSize="24" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimaryBrush}" />
+                        <TextBlock Foreground="{DynamicResource TextSecondaryBrush}">
+                            <Run Text="{Binding Session.PlayTimeText}" /><Run Text=" played · last saved " /><Run Text="{Binding Session.LastSavedText}" />
+                        </TextBlock>
+                    </StackPanel>
+                    <TabControl Padding="0,8,0,0">
+                        <TabItem Header="{Binding SavesHeader}">
+                            <Panel>
+                                <TextBlock Text="This session has only blueprints so far." IsVisible="{Binding !HasSaves}"
+                                           Foreground="{DynamicResource TextSecondaryBrush}" />
+                                <ListBox ItemsSource="{Binding Saves}" Background="Transparent"
+                                         SelectedItem="{Binding $parent[views:SavesView].((vm:SavesViewModel)DataContext).SaveSelection}"
+                                         ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate x:DataType="vm:SaveItemViewModel">
+                                            <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="16" Margin="0,4">
+                                                <StackPanel Spacing="2" VerticalAlignment="Center">
+                                                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"
+                                                               Foreground="{DynamicResource TextPrimaryBrush}" />
+                                                    <TextBlock FontSize="12" Text="{Binding SavedText}" Foreground="{DynamicResource TextSecondaryBrush}" />
+                                                </StackPanel>
+                                                <TextBlock Grid.Column="1" Text="{Binding PlayTimeText}" VerticalAlignment="Center"
+                                                           Foreground="{DynamicResource TextPrimaryBrush}" />
+                                                <TextBlock Grid.Column="2" Text="{Binding SizeText}" FontSize="12" VerticalAlignment="Center"
+                                                           MinWidth="70" TextAlignment="Right" Foreground="{DynamicResource TextSecondaryBrush}" />
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
+                            </Panel>
+                        </TabItem>
+                        <TabItem Header="{Binding BlueprintsHeader}">
+                            <DockPanel>
+                                <TextBlock DockPanel.Dock="Top" Text="{Binding BlueprintsNote}" Margin="0,0,0,8" TextWrapping="Wrap"
+                                           Foreground="{DynamicResource TextSecondaryBrush}" />
+
+                                <WrapPanel DockPanel.Dock="Top" Margin="0,0,0,8">
+                                    <Button Margin="0,0,8,4" Content="Select all" Command="{Binding SelectAllCommand}" IsVisible="{Binding HasBlueprints}" />
+                                    <Button Margin="0,0,8,4" Content="Select none" Command="{Binding SelectNoneCommand}" IsVisible="{Binding HasBlueprints}" />
+                                    <StackPanel Orientation="Horizontal" Spacing="4" Margin="0,0,8,4" IsVisible="{Binding CanCopy}">
+                                        <ComboBox MinWidth="150" ItemsSource="{Binding CopyTargets}" SelectedItem="{Binding CopyTarget}"
+                                                  ToolTip.Tip="Session to copy the ticked blueprints into" />
+                                        <Button Content="Copy"
+                                                Command="{Binding $parent[views:SavesView].((vm:SavesViewModel)DataContext).CopyBlueprintsCommand}"
+                                                CommandParameter="{Binding CopyTarget}" />
+                                    </StackPanel>
+                                    <Button Margin="0,0,8,4" Content="Export…" Click="OnExportBlueprints" IsVisible="{Binding HasBlueprints}"
+                                            ToolTip.Tip="Save the ticked blueprints, or all of them, as a .zip" />
+                                    <Button Margin="0,0,8,4" Content="Import…" Click="OnImportBlueprints"
+                                            ToolTip.Tip="Add blueprints from .zip or .sbp files to this session" />
+                                </WrapPanel>
+
+                                <TextBlock DockPanel.Dock="Top" TextWrapping="Wrap" Margin="0,0,0,8"
+                                           Text="{Binding $parent[views:SavesView].((vm:SavesViewModel)DataContext).BlueprintNotice}"
+                                           IsVisible="{Binding $parent[views:SavesView].((vm:SavesViewModel)DataContext).BlueprintNotice, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                                           Foreground="{DynamicResource AccentBrush}" />
+                                <TextBlock DockPanel.Dock="Top" Text="No blueprints in this session yet." IsVisible="{Binding !HasBlueprints}"
+                                           Foreground="{DynamicResource TextSecondaryBrush}" />
+
+                                <ScrollViewer>
+                                    <ItemsControl ItemsSource="{Binding Blueprints}" Margin="0,0,12,0">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate x:DataType="vm:BlueprintRowViewModel">
+                                                <CheckBox IsChecked="{Binding IsSelected}" Margin="0,2">
+                                                    <StackPanel>
+                                                        <TextBlock Text="{Binding Name}" Foreground="{DynamicResource TextPrimaryBrush}" />
+                                                        <TextBlock Classes="label" Text="{Binding DetailText}" />
+                                                    </StackPanel>
+                                                </CheckBox>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </ScrollViewer>
+                            </DockPanel>
+                        </TabItem>
+                    </TabControl>
+                </DockPanel>
+
+                <!-- Level 3: one save. -->
+                <Grid DataContext="{Binding Save}" x:DataType="vm:SaveDetailsViewModel" ColumnDefinitions="*,300" ColumnSpacing="24"
+                      IsVisible="{Binding $parent[views:SavesView].((vm:SavesViewModel)DataContext).ShowsSave}">
+                    <TabControl Padding="0,8,0,0">
+                        <!-- The mods the save was made with, against what's installed now. -->
+                        <TabItem Header="Mods">
+                            <DockPanel>
+                                <TextBlock DockPanel.Dock="Top" Text="{Binding ModsSummary}" Margin="0,0,0,8"
+                                           Foreground="{DynamicResource TextPrimaryBrush}" />
+                                <TextBox DockPanel.Dock="Top" Margin="0,0,12,8" PlaceholderText="Search mods"
+                                         Text="{Binding ModSearch}" IsVisible="{Binding HasMods}" />
+                                <ScrollViewer>
+                                    <ItemsControl ItemsSource="{Binding ShownMods}" Margin="0,0,12,0">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate x:DataType="vm:SaveModRowViewModel">
+                                                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12" Margin="0,4">
+                                                    <StackPanel>
+                                                        <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis"
+                                                                   Foreground="{DynamicResource TextPrimaryBrush}" />
+                                                        <TextBlock Classes="label" Text="{Binding SavedVersionText}" />
+                                                    </StackPanel>
+                                                    <TextBlock Grid.Column="1" Classes="status" Text="{Binding StatusText}"
+                                                               Classes.installed="{Binding IsInstalled}"
+                                                               Classes.different="{Binding IsDifferentVersion}"
+                                                               Classes.missing="{Binding IsMissing}" />
+                                                </Grid>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </ScrollViewer>
+                            </DockPanel>
+                        </TabItem>
+
+                        <!-- Map options and the mods' per-session settings. -->
+                        <TabItem Header="Options">
+                            <ScrollViewer>
+                                <StackPanel Spacing="12" Margin="0,0,12,0">
+                                    <Border Classes="box">
+                                        <StackPanel>
+                                            <TextBlock Classes="boxTitle" Text="GAME" />
+                                            <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto,Auto" ColumnSpacing="12" RowSpacing="10">
+                                                <StackPanel>
+                                                    <TextBlock Classes="value" Text="{Binding AdvancedGameSettingsText}" />
+                                                    <TextBlock Classes="label" Text="Advanced Game Settings" />
+                                                </StackPanel>
+                                                <StackPanel Grid.Column="1">
+                                                    <TextBlock Classes="value" Text="{Binding TutorialText}" />
+                                                    <TextBlock Classes="label" Text="Tutorial" />
+                                                </StackPanel>
+                                                <StackPanel Grid.Row="1">
+                                                    <TextBlock Classes="value" Text="{Binding VisibilityText}" />
+                                                    <TextBlock Classes="label" Text="Visibility" />
+                                                </StackPanel>
+                                                <StackPanel Grid.Row="1" Grid.Column="1">
+                                                    <TextBlock Classes="value" Text="{Binding PartitionedWorldText}" />
+                                                    <TextBlock Classes="label" Text="Partitioned world" />
+                                                </StackPanel>
+                                                <StackPanel Grid.Row="2" Grid.ColumnSpan="2">
+                                                    <SelectableTextBlock Text="{Binding SaveIdText}" Foreground="{DynamicResource TextPrimaryBrush}" />
+                                                    <TextBlock Classes="label" Text="Save id" />
+                                                </StackPanel>
+                                            </Grid>
+                                        </StackPanel>
+                                    </Border>
+
+                                    <TextBlock Classes="boxTitle" Text="MOD SETTINGS" IsVisible="{Binding HasSettings}" />
+                                    <ItemsControl ItemsSource="{Binding SettingGroups}">
+                                        <ItemsControl.ItemsPanel>
+                                            <ItemsPanelTemplate>
+                                                <StackPanel Spacing="6" />
+                                            </ItemsPanelTemplate>
+                                        </ItemsControl.ItemsPanel>
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate x:DataType="vm:SessionSettingGroupViewModel">
+                                                <Expander Header="{Binding Header}" HorizontalAlignment="Stretch">
+                                                    <ItemsControl ItemsSource="{Binding Settings}">
+                                                        <ItemsControl.ItemTemplate>
+                                                            <DataTemplate x:DataType="vm:SessionSettingRowViewModel">
+                                                                <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8" Margin="0,3"
+                                                                      ToolTip.Tip="{Binding Key}">
+                                                                    <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis"
+                                                                               Foreground="{DynamicResource TextPrimaryBrush}" />
+                                                                    <Border Grid.Column="1" Width="14" Height="14" CornerRadius="3"
+                                                                            Background="{Binding Swatch}" IsVisible="{Binding HasSwatch}"
+                                                                            BorderThickness="1" BorderBrush="{DynamicResource BorderSubtleBrush}" />
+                                                                    <SelectableTextBlock Grid.Column="2" Text="{Binding ValueText}"
+                                                                                         Foreground="{DynamicResource TextSecondaryBrush}" />
+                                                                </Grid>
+                                                            </DataTemplate>
+                                                        </ItemsControl.ItemTemplate>
+                                                    </ItemsControl>
+                                                </Expander>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+
+                                    <Border Classes="box" IsVisible="{Binding HasOtherOptions}">
+                                        <StackPanel>
+                                            <TextBlock Classes="boxTitle" Text="OTHER OPTIONS" />
+                                            <ItemsControl ItemsSource="{Binding OtherOptions}">
+                                                <ItemsControl.ItemTemplate>
+                                                    <DataTemplate x:DataType="saves:SaveOption">
+                                                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8" Margin="0,3">
+                                                            <TextBlock Text="{Binding Key}" Foreground="{DynamicResource TextPrimaryBrush}" />
+                                                            <SelectableTextBlock Grid.Column="1" Text="{Binding Value}"
+                                                                                 Foreground="{DynamicResource TextSecondaryBrush}" />
+                                                        </Grid>
+                                                    </DataTemplate>
+                                                </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
+                                        </StackPanel>
+                                    </Border>
+                                </StackPanel>
+                            </ScrollViewer>
+                        </TabItem>
+                    </TabControl>
+
+                    <!-- Side column: the save, getting its mods, and its facts. -->
+                    <ScrollViewer Grid.Column="1">
+                        <StackPanel Spacing="12">
+                            <StackPanel Spacing="2">
+                                <TextBlock Text="{Binding Name}" FontSize="18" FontWeight="SemiBold" TextWrapping="Wrap"
+                                           Foreground="{DynamicResource TextPrimaryBrush}" />
+                                <TextBlock Text="{Binding SessionName}" Foreground="{DynamicResource TextSecondaryBrush}" />
+                            </StackPanel>
+
+                            <Border Classes="box" IsVisible="{Binding HasMods}">
+                                <StackPanel Spacing="8">
+                                    <TextBlock Classes="boxTitle" Text="THIS SAVE'S MODS" />
+                                    <Button Classes="accent" Content="Switch to this save's mods" HorizontalAlignment="Stretch"
+                                            HorizontalContentAlignment="Center"
+                                            Command="{Binding $parent[views:SavesView].((vm:SavesViewModel)DataContext).SwitchToSaveModsCommand}"
+                                            ToolTip.Tip="Makes a profile of exactly these mods and shows what switching to it would change" />
+                                    <Button Content="{Binding InstallMissingText}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+                                            IsVisible="{Binding HasMissingMods}"
+                                            Command="{Binding $parent[views:SavesView].((vm:SavesViewModel)DataContext).InstallMissingModsCommand}"
+                                            ToolTip.Tip="Queues the missing mods on the Mods page; nothing is removed" />
+                                    <TextBlock TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource WarningBrush}"
+                                               Text="{Binding $parent[views:SavesView].((vm:SavesViewModel)DataContext).ActionNotice}"
+                                               IsVisible="{Binding $parent[views:SavesView].((vm:SavesViewModel)DataContext).ActionNotice, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                                </StackPanel>
+                            </Border>
+
+                            <Border Classes="box">
+                                <StackPanel>
+                                    <TextBlock Classes="boxTitle" Text="INFO" />
+                                    <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto,Auto" ColumnSpacing="12" RowSpacing="10">
+                                        <StackPanel>
+                                            <TextBlock Classes="value" Text="{Binding PlayTimeText}" />
+                                            <TextBlock Classes="label" Text="Playtime" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="1">
+                                            <TextBlock Classes="value" Text="{Binding SizeText}" />
+                                            <TextBlock Classes="label" Text="Size" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Row="1" Grid.ColumnSpan="2">
+                                            <TextBlock Classes="value" Text="{Binding SavedText}" />
+                                            <TextBlock Classes="label" Text="Saved" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Row="2">
+                                            <TextBlock Classes="value" Text="{Binding BuildText}" />
+                                            <TextBlock Classes="label" Text="Game build" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Row="2" Grid.Column="1">
+                                            <TextBlock Classes="value" Text="{Binding FormatText}" />
+                                            <TextBlock Classes="label" Text="Format" />
+                                        </StackPanel>
+                                    </Grid>
+                                </StackPanel>
+                            </Border>
+
+                            <Border Classes="box">
+                                <StackPanel Spacing="8">
+                                    <TextBlock Classes="boxTitle" Text="FILE" />
+                                    <SelectableTextBlock Text="{Binding FileName}" TextWrapping="Wrap"
+                                                         Foreground="{DynamicResource TextPrimaryBrush}" />
+                                    <Button Content="Show in folder" Click="OnShowInFolder" HorizontalAlignment="Stretch"
+                                            HorizontalContentAlignment="Center" />
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+                    </ScrollViewer>
+                </Grid>
+            </Panel>
+        </DockPanel>
+    </Panel>
+</UserControl>

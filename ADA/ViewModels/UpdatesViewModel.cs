@@ -21,6 +21,9 @@ public partial class UpdatesViewModel : ViewModelBase
     private static readonly TimeSpan FRESH_ENOUGH = TimeSpan.FromMinutes(5);
 
     private readonly DashboardViewModel _dashboard;
+
+    // Local games this window updated; offered a server update when it closes.
+    private readonly HashSet<GameInstallViewModel> _updated = [];
     private readonly ModResolutionService _resolution;
     private readonly GameProfiles _profiles;
     private readonly ModCatalogStore _store;
@@ -113,6 +116,7 @@ public partial class UpdatesViewModel : ViewModelBase
             foreach (var (game, plan) in _plans.ToList())
             {
                 var result = await _resolution.ApplyAsync(game.Install, plan, progress);
+                _updated.Add(game);
                 await _profiles.RecordInstalledAsync(game.Install);
                 updated.AddRange(result.Installed.Select(m => $"{m.Reference} {m.Version}"));
             }
@@ -129,6 +133,7 @@ public partial class UpdatesViewModel : ViewModelBase
         }
 
         var result = await _resolution.ApplyAsync(item.Game.Install, plan, progress);
+        _updated.Add(item.Game);
         await _profiles.RecordInstalledAsync(item.Game.Install);
         return $"Updated {string.Join(", ", result.Installed.Select(m => $"{m.Reference} {m.Version}"))}.";
     });
@@ -254,6 +259,11 @@ public partial class UpdatesViewModel : ViewModelBase
     }
 
     /// <summary>Stops listening to the Dashboard once the window closes.</summary>
+    /// <summary>
+    /// Stops following the Dashboard. Each local game this window updated is then offered to bring a
+    /// server that shares its profile up to date; asked on close so the question isn't hidden behind
+    /// this window, and once rather than after every update.
+    /// </summary>
     public void Close()
     {
         _dashboard.PropertyChanged -= OnDashboardChanged;
@@ -261,6 +271,11 @@ public partial class UpdatesViewModel : ViewModelBase
         {
             game.PropertyChanged -= OnGameChanged;
         }
+        foreach (var game in _updated.Where(g => !g.Install.IsRemote))
+        {
+            _ = _dashboard.OfferServerUpdateAsync(game);
+        }
+        _updated.Clear();
     }
 }
 

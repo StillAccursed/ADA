@@ -37,13 +37,15 @@ internal sealed class CrossOverDetector(string bottlesRoot) : IGameDetector
             }
 
             var location = $"CrossOver bottle \"{Path.GetFileName(bottle)}\"";
-            results.AddRange(DetectEpic(prefix, location));
-            results.AddRange(DetectSteam(prefix, location));
+            // Every install in a bottle runs as the bottle's one Windows user.
+            var userData = GameUserDataPaths.InWinePrefix(prefix, GameUserDataPaths.CROSSOVER_USER);
+            results.AddRange(DetectEpic(prefix, location, userData));
+            results.AddRange(DetectSteam(prefix, location, userData));
         }
         return results;
     }
 
-    private static IEnumerable<GameInstall> DetectEpic(WinePrefix prefix, string location)
+    private static IEnumerable<GameInstall> DetectEpic(WinePrefix prefix, string location, string userData)
     {
         var appData = ReadFirst(prefix.SystemRegistry, "AppDataPath",
                           @"Software\Wow6432Node\Epic Games\EpicGamesLauncher",
@@ -53,10 +55,10 @@ internal sealed class CrossOverDetector(string bottlesRoot) : IGameDetector
         var manifests = prefix.ToHostPath(appData.TrimEnd('\\') + @"\Manifests");
         return manifests is null
             ? []
-            : new EpicManifestScanner(prefix.ToHostPath, GameHost.CrossOver, location).Scan(manifests);
+            : new EpicManifestScanner(prefix.ToHostPath, GameHost.CrossOver, location, _ => userData).Scan(manifests);
     }
 
-    private static IEnumerable<GameInstall> DetectSteam(WinePrefix prefix, string location)
+    private static IEnumerable<GameInstall> DetectSteam(WinePrefix prefix, string location, string userData)
     {
         var steamRoot = ReadFirst(prefix.SystemRegistry, "InstallPath",
                             @"Software\Wow6432Node\Valve\Steam",
@@ -67,7 +69,7 @@ internal sealed class CrossOverDetector(string bottlesRoot) : IGameDetector
         var host = prefix.ToHostPath(steamRoot);
         return host is null
             ? []
-            : new SteamLibraryScanner(prefix.ToHostPath, GameHost.CrossOver, location).Scan(host);
+            : new SteamLibraryScanner(prefix.ToHostPath, GameHost.CrossOver, location, (_, _) => userData).Scan(host);
     }
 
     private static string? ReadFirst(string regFile, string valueName, params string[] keys) =>

@@ -1,3 +1,5 @@
+using ADA.Platform.Formats;
+
 namespace ADA.Platform.Paths;
 
 /// <summary>
@@ -5,6 +7,10 @@ namespace ADA.Platform.Paths;
 /// </summary>
 internal sealed class WinePrefix(string prefixPath)
 {
+    private const string SHELL_FOLDERS_KEY = @"Software\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders";
+
+    private const string LOCAL_APP_DATA_VALUE = "Local AppData";
+
     public string PrefixPath { get; } = prefixPath;
 
     public string SystemRegistry => Path.Combine(PrefixPath, "system.reg");
@@ -38,6 +44,19 @@ internal sealed class WinePrefix(string prefixPath)
             ['\\', '/'], StringSplitOptions.RemoveEmptyEntries);
 
         return CaseInsensitivePath.Resolve(root, segments);
+    }
+
+    /// <summary>
+    /// Host path of the prefix user's <c>AppData\Local</c>: the folder Wine recorded under Shell Folders
+    /// in <c>user.reg</c>, or <c>drive_c/users/{defaultUser}/AppData/Local</c> when it recorded none or
+    /// that folder doesn't exist. The fallback isn't checked, since a prefix that has never run has neither.
+    /// </summary>
+    /// <param name="defaultUser">The Windows user the prefix's creator always uses, e.g. <c>crossover</c> or <c>steamuser</c>.</param>
+    public string LocalAppData(string defaultUser)
+    {
+        var recorded = WineRegistryFile.ReadString(UserRegistry, SHELL_FOLDERS_KEY, LOCAL_APP_DATA_VALUE);
+        return (recorded is null ? null : ToHostPath(recorded))
+               ?? Path.Combine(PrefixPath, "drive_c", "users", defaultUser, "AppData", "Local");
     }
 
     private string? DriveRoot(char drive)

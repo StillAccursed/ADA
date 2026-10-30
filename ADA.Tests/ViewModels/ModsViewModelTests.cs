@@ -274,6 +274,22 @@ public sealed class ModsViewModelTests : IDisposable
     }
 
     [Fact]
+    public async Task QueueForInstallAddsModsAndShowsTheQueue()
+    {
+        Publish("A", "1.0.0");
+        Publish("B", "1.0.0");
+        var page = await OpenPageAsync();
+
+        page.QueueForInstall(["A", "B"]);
+        await page.PendingSearch;
+
+        Assert.Equal("2 mods queued", page.QueueText);
+        Assert.Equal(ModFilter.Queued, page.Filter.Value);
+        Assert.Equal(["A", "B"], page.Results.Select(r => r.Reference).Order());
+        Assert.All(page.Results, r => Assert.True(r.IsQueued));
+    }
+
+    [Fact]
     public async Task QueuedModsInstallTogetherWithoutConfirmation()
     {
         Publish("SML", "3.12.0");

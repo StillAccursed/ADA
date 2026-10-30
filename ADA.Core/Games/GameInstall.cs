@@ -50,6 +50,13 @@ public enum GameKind
 /// </param>
 /// <param name="Location">Human-readable origin, e.g. the CrossOver bottle name or Steam library.</param>
 /// <param name="Build">The game build read from the install's files, or null if it could not be read.</param>
+/// <param name="UserDataPath">
+/// Host path of the game's per-user folder, which holds <c>Saved/SaveGames</c> and <c>Saved/Config</c>:
+/// <c>…/AppData/Local/FactoryGame</c> on Windows and in Wine prefixes, <c>~/.config/Epic/FactoryGame</c>
+/// for the native Linux server. It is where the folder is or will be: it may not exist until the game
+/// first runs. Several installs can share one (Steam and Epic on Windows). Null when it can't be known:
+/// servers, and Legendary installs run without Heroic.
+/// </param>
 public sealed record GameInstall(
     string GamePath,
     GameLauncher Launcher,
@@ -57,7 +64,8 @@ public sealed record GameInstall(
     GameKind Kind,
     string? Version,
     string Location,
-    GameBuild? Build = null)
+    GameBuild? Build = null,
+    string? UserDataPath = null)
 {
     /// <summary>
     /// Install keys for saved servers start with this; see <see cref="IsRemote"/>. It's an identifier,

@@ -403,6 +403,24 @@ public partial class ModsViewModel : ViewModelBase
         }
     }
 
+    /// <summary>
+    /// Adds <paramref name="references"/> to the selected install's install queue and shows the Queued filter,
+    /// so the user can review them and press Install queued. Installs nothing itself. Used by a save's
+    /// "Install missing mods".
+    /// </summary>
+    internal void QueueForInstall(IReadOnlyCollection<string> references)
+    {
+        if (CurrentQueue() is not { } queue)
+        {
+            return;
+        }
+
+        queue.UnionWith(references);
+        QueueCount = queue.Count;
+        SelectedMod = null;
+        Filter = Filters.First(o => o.Value == ModFilter.Queued);
+    }
+
     /// <summary>Submits the selected batch as one transaction after earlier operations.</summary>
     [RelayCommand(CanExecute = nameof(CanInstallQueued), AllowConcurrentExecutions = true)]
     private Task InstallQueuedAsync()

@@ -60,6 +60,24 @@ public class CrossOverDetectorTests
     }
 
     [UnixFact]
+    public void EpicInstallUsesUserDataFolderRecordedInBottle()
+    {
+        var (dir, _) = EpicBottleWithGameOnMappedDrive(EpicItem(@"Y:\Games\Satisfactory"));
+        using var _ = dir;
+        var local = Directory.CreateDirectory(
+            dir.Combine("Bottles", "Epic Games Store", "drive_c", "users", "crossover", "AppData", "Local")).FullName;
+        // As in the real bottle on the development Mac.
+        dir.WriteFile("Bottles/Epic Games Store/user.reg", """
+            [Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Shell Folders] 1792336854
+            "Local AppData"="C:\\users\\crossover\\AppData\\Local"
+            """);
+
+        var install = Assert.Single(new CrossOverDetector(dir.Combine("Bottles")).Detect());
+
+        Assert.Equal(Path.Combine(local, "FactoryGame"), install.UserDataPath);
+    }
+
+    [UnixFact]
     public void SkipsIncompleteInstalls()
     {
         var (dir, _) = EpicBottleWithGameOnMappedDrive(EpicItem(@"Y:\Games\Satisfactory", incomplete: true));
@@ -113,6 +131,8 @@ public class CrossOverDetectorTests
         Assert.Equal(game, install.GamePath);
         Assert.Equal(GameLauncher.Steam, install.Launcher);
         Assert.Equal("17000000", install.Version);
+        Assert.Equal(dir.Combine("Bottles", "Steam", "drive_c", "users", "crossover", "AppData", "Local", "FactoryGame"),
+            install.UserDataPath);
     }
 
     [Fact]

@@ -618,6 +618,22 @@ public partial class DashboardViewModel
     }
 
     /// <summary>
+    /// Opens the Switch profile dialog for <paramref name="profile"/>, which needn't be saved yet: a switch
+    /// saves it when it succeeds, and Cancel leaves nothing behind. Used by a save's "Switch to this save's
+    /// mods". The dialog shows over any page.
+    /// </summary>
+    /// <returns>False when the install can't switch now (game running, busy, unavailable, or a dialog already open).</returns>
+    internal async Task<bool> OpenSwitchToAsync(GameInstallViewModel game, ModProfile profile)
+    {
+        if (!CanChooseProfileFor(game) || SwitchPrompt is not null)
+        {
+            return false;
+        }
+        await OpenSwitchPromptAsync(game, profile);
+        return true;
+    }
+
+    /// <summary>
     /// Shows what switching to <paramref name="profile"/> would change, instead of switching at once.
     /// The installation is marked as switching while the dialog is open, so nothing else starts on it;
     /// closing restores the dropdown to the active profile unless the switch succeeded.

@@ -185,6 +185,10 @@ public sealed class FixAfterImportTests : IDisposable
         Assert.Empty(updates.Items);
         Assert.Equal("All installed mods are up to date.", updates.StatusText);
         Assert.Equal("3.12.5", new ModInstaller(_game.Root, () => false).Installed["SML"].Version);
+
+        // No server shares the profile, so closing asks nothing.
+        updates.Close();
+        Assert.Null(dashboard.SyncQuestion);
     }
 
     private sealed class OneGame(GameInstallViewModel card) : IGameDetector

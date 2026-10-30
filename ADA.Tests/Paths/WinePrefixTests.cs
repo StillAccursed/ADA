@@ -40,4 +40,41 @@ public class WinePrefixTests
 
         Assert.Null(new WinePrefix(dir.Combine("bottle")).ToHostPath(windowsPath));
     }
+
+    [Fact]
+    public void LocalAppDataComesFromUserRegistry()
+    {
+        using var dir = new TempDir();
+        var local = Directory.CreateDirectory(dir.Combine("bottle", "drive_c", "users", "alice", "AppData", "Local")).FullName;
+        dir.WriteFile("bottle/user.reg", """
+            [Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Shell Folders] 1792336854
+            "Local AppData"="C:\\users\\alice\\AppData\\Local"
+            """);
+
+        Assert.Equal(local, new WinePrefix(dir.Combine("bottle")).LocalAppData("crossover"));
+    }
+
+    [Fact]
+    public void LocalAppDataFallsBackToDefaultUserWithoutCheckingItExists()
+    {
+        using var dir = new TempDir();
+        var bottle = dir.Combine("bottle");
+
+        Assert.Equal(Path.Combine(bottle, "drive_c", "users", "crossover", "AppData", "Local"),
+            new WinePrefix(bottle).LocalAppData("crossover"));
+    }
+
+    [Fact]
+    public void LocalAppDataFallsBackWhenRecordedFolderIsMissing()
+    {
+        using var dir = new TempDir();
+        dir.WriteFile("bottle/user.reg", """
+            [Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Shell Folders] 1
+            "Local AppData"="C:\\users\\gone\\AppData\\Local"
+            """);
+        var bottle = dir.Combine("bottle");
+
+        Assert.Equal(Path.Combine(bottle, "drive_c", "users", "crossover", "AppData", "Local"),
+            new WinePrefix(bottle).LocalAppData("crossover"));
+    }
 }
