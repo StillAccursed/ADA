@@ -11,6 +11,7 @@ public partial class MainWindow : Window
     private CreateProfileViewModel? _shownPrompt;
     private SwitchProfileViewModel? _shownSwitch;
     private ConfirmViewModel? _shownSyncQuestion;
+    private ConfirmViewModel? _shownDeleteProfileQuestion;
     private PushConfigsViewModel? _shownConfigs;
 
     public MainWindow()
@@ -59,6 +60,10 @@ public partial class MainWindow : Window
         {
             ShowConfigsPrompt();
         }
+        else if (e.PropertyName == nameof(DashboardViewModel.DeleteProfileQuestion))
+        {
+            ShowDeleteProfileQuestion();
+        }
     }
 
     /// <summary>
@@ -106,6 +111,17 @@ public partial class MainWindow : Window
         }
         _shownConfigs = prompt;
         await new PushConfigsWindow { DataContext = prompt }.ShowDialog(this);
+    }
+
+    /// <summary>Shows each profile deletion question once, using the shared destructive-action confirmation.</summary>
+    private async void ShowDeleteProfileQuestion()
+    {
+        if (!IsVisible || _dashboard?.DeleteProfileQuestion is not { } question || ReferenceEquals(question, _shownDeleteProfileQuestion))
+        {
+            return;
+        }
+        _shownDeleteProfileQuestion = question;
+        await new ConfirmWindow { DataContext = question }.ShowDialog(this);
     }
 
     // Opens the updates window over this one; it lists updates as soon as it has checked.

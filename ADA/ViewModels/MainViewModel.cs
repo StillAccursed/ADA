@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using ADA.Infrastructure.Backups;
 using ADA.Infrastructure.Servers;
 using CommunityToolkit.Mvvm.ComponentModel;
 
@@ -28,6 +29,7 @@ public partial class MainViewModel : ViewModelBase
     private readonly NavItem _modsNav;
     private readonly Func<UpdatesViewModel> _updates;
     private readonly ServerConnections _connections;
+    private readonly BackupScheduler _scheduler;
 
     public IReadOnlyList<NavItem> NavItems { get; }
 
@@ -44,8 +46,10 @@ public partial class MainViewModel : ViewModelBase
     public partial NavItem SelectedNav { get; set; }
 
     public MainViewModel(DashboardViewModel dashboard, ModsViewModel mods, ServersViewModel servers, SavesViewModel saves,
-        ServerConnections connections, CatalogStatusViewModel catalog, SettingsViewModel settings, Func<UpdatesViewModel> updates)
+        BackupsViewModel backups, BackupScheduler scheduler, ServerConnections connections, CatalogStatusViewModel catalog,
+        SettingsViewModel settings, Func<UpdatesViewModel> updates)
     {
+        _scheduler = scheduler;
         _dashboard = dashboard;
         _updates = updates;
         _connections = connections;
@@ -62,7 +66,7 @@ public partial class MainViewModel : ViewModelBase
 
             new("Installations", "", null),
             new("Saves", "▤", saves),
-            new("Backups", "▣", new PlaceholderViewModel("Backups", "Coming soon")),
+            new("Backups", "▣", backups),
 
             new("Misc", "", null),
             new("Activity", "◷", new PlaceholderViewModel("Activity", "Install transaction history and logs. Coming in Phase 1.")),
@@ -93,6 +97,8 @@ public partial class MainViewModel : ViewModelBase
         _ = _connections.ResumeAsync();
         _ = Catalog.LoadAsync();
         _ = Catalog.KeepFreshAsync(CATALOG_REFRESH_INTERVAL);
+        // Runs on this (UI) thread between checks, so the installs collection is read on its own thread.
+        _ = _scheduler.RunAsync(() => _dashboard.Installs.Select(i => i.Install).ToList());
     }
 
     /// <summary>A fresh "Check for Updates" window's contents.</summary>

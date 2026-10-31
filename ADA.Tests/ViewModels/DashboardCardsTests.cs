@@ -141,13 +141,153 @@ public sealed class DashboardCardsTests : IDisposable
         Assert.NotNull(vm.ProfilePrompt);
     }
 
+    [Fact]
+    public async Task ImportRefreshesTheLibraryWithoutSwitchingOrChangingInstalledFiles()
+    {
+        var vm = Dashboard();
+        var game = Card("First");
+        _profileStore.Save(new("Active", []));
+        _profileStore.SetActive(game.Install.GamePath, "Active");
+        vm.SelectedInstall = game;
+        await vm.RefreshCardsAsync();
+        var sentinel = Path.Combine(game.Install.ModsPath, "unmanaged.txt");
+        Directory.CreateDirectory(game.Install.ModsPath);
+        File.WriteAllText(sentinel, "keep");
+        var path = _dir.Combine("incoming.olp");
+        OlpFile.Write(path, new("Imported", [new("SML", "1.0.0")]));
+
+        Assert.True(vm.BeginProfileTransfer());
+        try
+        {
+            Assert.False(vm.CanImportProfile);
+            Assert.False(vm.CanExportProfile);
+            Assert.False(vm.BeginProfileTransfer());
+            await vm.ImportProfileAsync(path);
+        }
+        finally
+        {
+            vm.EndProfileTransfer();
+        }
+
+        Assert.Equal(["Active", "Imported"], vm.Profiles.Select(p => p.Name));
+        Assert.Equal("Active", vm.SelectedProfile!.Name);
+        Assert.Equal("Active", await _profiles.ActiveNameAsync(game.Install));
+        Assert.Null(vm.SwitchPrompt);
+        Assert.Equal("keep", File.ReadAllText(sentinel));
+        Assert.True(vm.CanImportProfile);
+        Assert.True(vm.CanExportProfile);
+        Assert.Contains("Imported", vm.ProfileNotice);
+    }
+
+    [Fact]
+    public async Task CancellingAPickerReleasesControlsWithoutChangingTheProfileOrNotice()
+    {
+        var vm = Dashboard();
+        Assert.True(vm.CanImportProfile);
+        Assert.False(vm.CanExportProfile);
+        Assert.True(vm.BeginProfileTransfer());
+        vm.EndProfileTransfer();
+
+        await vm.RefreshCardsAsync();
+
+        Assert.True(vm.CanImportProfile);
+        Assert.False(vm.CanExportProfile);
+        Assert.Null(vm.ProfileNotice);
+        Assert.Empty(_profileStore.List());
+    }
+
+    [Fact]
+    public async Task CancellingDeletionKeepsTheSavedProfileAndActiveSelection()
+    {
+        var vm = Dashboard();
+        var game = Card("First");
+        _profileStore.Save(new("Keep", []));
+        _profileStore.SetActive(game.Install.GamePath, "Keep");
+        vm.SelectedInstall = game;
+        await vm.RefreshCardsAsync();
+
+        var deletion = vm.DeleteProfileCommand.ExecuteAsync(null);
+        var question = Assert.IsType<ConfirmViewModel>(vm.DeleteProfileQuestion);
+        Assert.True(question.IsDanger);
+        Assert.Contains("Installed mods will stay", question.Message);
+        Assert.False(vm.CanChooseProfile);
+        Assert.False(vm.CanImportProfile);
+        question.Cancel();
+        await deletion;
+
+        Assert.NotNull(_profileStore.Get("Keep"));
+        Assert.Equal("Keep", await _profiles.ActiveNameAsync(game.Install));
+        Assert.Equal("Keep", vm.SelectedProfile!.Name);
+        Assert.Null(vm.DeleteProfileQuestion);
+        Assert.Null(vm.ProfileNotice);
+        Assert.True(vm.CanChooseProfile);
+    }
+
+    [Fact]
+    public async Task ConfirmedDeletionClearsSharedSelectionsWithoutDeletingInstalledFiles()
+    {
+        var vm = Dashboard();
+        var game = Card("First");
+        var other = Card("Second");
+        _profileStore.Save(new("Shared", []));
+        _profileStore.SetActive(game.Install.GamePath, "Shared");
+        _profileStore.SetActive(other.Install.GamePath, "Shared");
+        game.ProfileName = "Shared";
+        other.ProfileName = "Shared";
+        vm.Installs.Add(game);
+        vm.Installs.Add(other);
+        vm.SelectedInstall = game;
+        await vm.RefreshCardsAsync();
+        Directory.CreateDirectory(game.Install.ModsPath);
+        var sentinel = Path.Combine(game.Install.ModsPath, "unmanaged.txt");
+        File.WriteAllText(sentinel, "keep");
+
+        var deletion = vm.DeleteProfileCommand.ExecuteAsync(null);
+        vm.DeleteProfileQuestion!.ConfirmCommand.Execute(null);
+        await deletion;
+
+        Assert.Empty(_profileStore.List());
+        Assert.Empty(vm.Profiles);
+        Assert.Null(vm.SelectedProfile);
+        Assert.Null(game.ProfileName);
+        Assert.Null(other.ProfileName);
+        Assert.Null(await _profiles.ActiveNameAsync(game.Install));
+        Assert.Null(await _profiles.ActiveNameAsync(other.Install));
+        Assert.Equal("keep", File.ReadAllText(sentinel));
+        Assert.False(vm.DeleteProfileCommand.CanExecute(null));
+        Assert.Null(vm.ProfilePrompt);
+        Assert.Contains("Deleted", vm.ProfileNotice);
+    }
+
+    [Fact]
+    public async Task DeletionRechecksQueuedOperationsAfterConfirmation()
+    {
+        var vm = Dashboard();
+        var game = Card("First");
+        _profileStore.Save(new("Keep", []));
+        _profileStore.SetActive(game.Install.GamePath, "Keep");
+        vm.SelectedInstall = game;
+        await vm.RefreshCardsAsync();
+
+        var deletion = vm.DeleteProfileCommand.ExecuteAsync(null);
+        game.HasModOperations = true;
+        vm.DeleteProfileQuestion!.ConfirmCommand.Execute(null);
+        await deletion;
+
+        Assert.NotNull(_profileStore.Get("Keep"));
+        Assert.Equal("Keep", await _profiles.ActiveNameAsync(game.Install));
+        Assert.Contains("state changed", vm.ProfileNotice);
+        Assert.False(vm.DeleteProfileCommand.CanExecute(null));
+    }
+
     private DashboardViewModel Dashboard()
     {
         var catalog = new CatalogStatusViewModel(new CatalogSync(new FicsitApiClient(new HttpClient(new FakeHttpHandler())), _store),
             NullLogger<CatalogStatusViewModel>.Instance);
         return DashboardFactory.Create(_dir, new EmptyDetector(),
             game => new(game, _service, _resolution, _profiles, NullLogger<GameInstallViewModel>.Instance),
-            catalog, _store, _settings, _service, _profiles, _resolution);
+            catalog, _store, _settings, _service, _profiles, _resolution,
+            profileTransfer: new ProfileTransfer(_profileStore, new FakeVersionSource((_, _) => Task.FromResult<IReadOnlyList<CatalogVersion>>([]))));
     }
 
     private GameInstallViewModel Card(string folder)

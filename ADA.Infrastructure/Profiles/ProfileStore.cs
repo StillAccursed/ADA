@@ -49,6 +49,64 @@ public sealed partial class ProfileStore(string profilesFolder, string stateFile
         Changed?.Invoke(this, EventArgs.Empty);
     }
 
+    /// <summary>
+    /// Adds a validated imported profile without replacing an existing name or changing any active
+    /// selection. Name allocation and writing share the store lock; collisions get a numbered suffix.
+    /// Raises <see cref="Changed"/> after saving, on the calling thread.
+    /// </summary>
+    internal ModProfile AddImported(ModProfile profile)
+    {
+        OlpFile.Serializer(profile);
+        ModProfile imported;
+        lock (_gate)
+        {
+            var name = profile.Name.Trim();
+            var candidate = name;
+            for (var n = 2; Find(candidate) is not null; n++)
+            {
+                var suffix = $" ({n})";
+                candidate = name[..Math.Min(name.Length, OlpFile.MAX_NAME_LENGTH - suffix.Length)] + suffix;
+            }
+            imported = profile with { Name = candidate };
+            Directory.CreateDirectory(Folder);
+            OlpFile.Write(NewPath(candidate), imported);
+        }
+        Changed?.Invoke(this, EventArgs.Empty);
+        return imported;
+    }
+
+    /// <summary>
+    /// Removes the saved profile and every active selection of its name, leaving installation files
+    /// and left-alone decisions untouched. Saves cleared selections before removing the file so a
+    /// later record cannot recreate it. A failed file removal restores the original selections.
+    /// Raises <see cref="Changed"/> after success, on the calling thread.
+    /// </summary>
+    internal void Delete(string name)
+    {
+        name = name.Trim();
+        lock (_gate)
+        {
+            var file = Find(name) ?? throw new InvalidProfileException("This profile no longer exists.");
+            var original = LoadState();
+            var active = new Dictionary<string, string>(original.Active, StringComparer.Ordinal);
+            foreach (var game in active.Where(entry => entry.Value.Equals(name, StringComparison.OrdinalIgnoreCase)).Select(entry => entry.Key).ToList())
+            {
+                active.Remove(game);
+            }
+            SaveState(original with { Active = active });
+            try
+            {
+                File.Delete(file.Path);
+            }
+            catch
+            {
+                SaveState(original);
+                throw;
+            }
+        }
+        Changed?.Invoke(this, EventArgs.Empty);
+    }
+
     /// <returns>Why the name can't be used for a new profile, or null if it can.</returns>
     public string? ProblemWithNewName(string? name)
     {

@@ -1,0 +1,211 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:ADA.ViewModels"
+             xmlns:views="using:ADA.Views"
+             x:Class="ADA.Views.BackupsView"
+             x:DataType="vm:BackupsViewModel">
+    <UserControl.Resources>
+        <!-- A bin: lid, handle and body, as on the Servers page. -->
+        <StreamGeometry x:Key="TrashIcon">M3,4 L13,4 M6,4 L6,2.5 L10,2.5 L10,4 M4.5,4 L5.2,14 L10.8,14 L11.5,4 M7,6.5 L7,12 M9,6.5 L9,12</StreamGeometry>
+
+        <DataTemplate x:Key="PartOption" x:DataType="vm:PartOptionViewModel">
+            <CheckBox Content="{Binding Label}" IsChecked="{Binding IsChecked}" IsEnabled="{Binding IsAvailable}"
+                      ToolTip.Tip="{Binding UnavailableReason}" Margin="0,0,16,4" />
+        </DataTemplate>
+    </UserControl.Resources>
+
+    <UserControl.Styles>
+        <Style Selector="Border.box">
+            <Setter Property="Padding" Value="14,12" />
+            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Background" Value="{DynamicResource SurfaceRaisedBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderSubtleBrush}" />
+        </Style>
+        <Style Selector="TextBlock.boxTitle">
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="LetterSpacing" Value="1" />
+            <Setter Property="Margin" Value="0,0,0,8" />
+            <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
+        </Style>
+        <Style Selector="TextBlock.detail">
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+            <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
+        </Style>
+        <Style Selector="Button.trash">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Padding" Value="6" />
+        </Style>
+        <Style Selector="Button.trash Path">
+            <Setter Property="Width" Value="16" />
+            <Setter Property="Height" Value="16" />
+            <Setter Property="Stretch" Value="Uniform" />
+            <Setter Property="StrokeThickness" Value="1.4" />
+            <Setter Property="Stroke" Value="{DynamicResource TextSecondaryBrush}" />
+        </Style>
+        <Style Selector="Button.trash:pointerover Path">
+            <Setter Property="Stroke" Value="{DynamicResource DangerActionBrush}" />
+        </Style>
+    </UserControl.Styles>
+
+    <Panel>
+        <!-- The list, with Back up now above it. -->
+        <DockPanel Margin="32,28,32,16" IsVisible="{Binding !IsRestoring}">
+            <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" Margin="0,0,0,16">
+                <TextBlock Text="Backups" FontSize="24" FontWeight="SemiBold" VerticalAlignment="Center"
+                           Foreground="{DynamicResource TextPrimaryBrush}" />
+                <Button Grid.Column="1" Content="Show folder" Click="OnShowFolder" ToolTip.Tip="{Binding FolderPath}" />
+            </Grid>
+
+            <Border DockPanel.Dock="Top" Classes="box" Margin="0,0,0,12">
+                <StackPanel Spacing="8">
+                    <TextBlock Classes="boxTitle" Text="BACK UP NOW" />
+                    <TextBlock Text="{Binding InstallText}" Foreground="{DynamicResource TextPrimaryBrush}" />
+                    <ItemsControl ItemsSource="{Binding Parts}" ItemTemplate="{StaticResource PartOption}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <WrapPanel />
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                    </ItemsControl>
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <Button Classes="accent" Content="Back up now" Command="{Binding BackUpNowCommand}" />
+                        <Button Content="Cancel" Command="{Binding CancelCommand}" IsVisible="{Binding IsBusy}" />
+                    </StackPanel>
+                    <ProgressBar Minimum="0" Maximum="1" Value="{Binding Progress}" IsVisible="{Binding IsBusy}" />
+                    <TextBlock Classes="detail" Text="{Binding ProgressText}" TextTrimming="CharacterEllipsis" IsVisible="{Binding IsBusy}" />
+                </StackPanel>
+            </Border>
+
+            <Border DockPanel.Dock="Top" Classes="box" Margin="0,0,0,12" DataContext="{Binding Schedule}"
+                    x:DataType="vm:BackupScheduleViewModel">
+                <StackPanel Spacing="8">
+                    <TextBlock Classes="boxTitle" Text="SCHEDULE" />
+                    <WrapPanel>
+                        <ComboBox Margin="0,0,8,4" MinWidth="160" ItemsSource="{Binding Intervals}" SelectedItem="{Binding Interval}"
+                                  ToolTip.Tip="How often to back up while ADA is open" />
+                        <ComboBox Margin="0,0,8,4" MinWidth="220" ItemsSource="{Binding Installs}" SelectedItem="{Binding Install}"
+                                  IsVisible="{Binding IsOn}" PlaceholderText="Choose an install" />
+                    </WrapPanel>
+                    <ItemsControl ItemsSource="{Binding Parts}" ItemTemplate="{StaticResource PartOption}" IsVisible="{Binding IsOn}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <WrapPanel />
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                    </ItemsControl>
+                    <TextBlock Classes="detail" Text="{Binding StatusText}"
+                               IsVisible="{Binding StatusText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <TextBlock Text="Keep the newest" VerticalAlignment="Center" Foreground="{DynamicResource TextPrimaryBrush}" />
+                        <NumericUpDown Value="{Binding Keep}" Minimum="{Binding MinKeep}" Maximum="{Binding MaxKeep}"
+                                       Increment="1" FormatString="0" Width="110" />
+                        <TextBlock Text="automatic backups of each kind, per install" VerticalAlignment="Center"
+                                   Foreground="{DynamicResource TextPrimaryBrush}" />
+                    </StackPanel>
+                    <CheckBox Content="Back up saves before installing, removing or switching mods" IsChecked="{Binding BeforeModChanges}" />
+                    <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+                        <TextBlock Classes="detail" Text="{Binding Folder, StringFormat='Folder: {0}'}" VerticalAlignment="Center"
+                                   TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Folder}" />
+                        <Button Grid.Column="1" Content="Change…" Click="OnChangeFolder" />
+                        <Button Grid.Column="2" Content="Use default" Command="{Binding UseDefaultFolderCommand}"
+                                IsVisible="{Binding !IsDefaultFolder}" />
+                    </Grid>
+                    <TextBlock Classes="detail" Text="{Binding FolderNotice}"
+                               IsVisible="{Binding FolderNotice, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                               Foreground="{DynamicResource WarningBrush}" />
+                </StackPanel>
+            </Border>
+
+            <TextBlock DockPanel.Dock="Top" Text="{Binding Notice}" TextWrapping="Wrap" Margin="2,0,0,8"
+                       IsVisible="{Binding Notice, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                       Foreground="{DynamicResource AccentBrush}" />
+            <TextBlock DockPanel.Dock="Top" Text="{Binding UnreadableText}" TextWrapping="Wrap" Margin="2,0,0,8"
+                       IsVisible="{Binding UnreadableText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                       Foreground="{DynamicResource WarningBrush}" />
+
+            <Panel>
+                <TextBlock Text="No backups yet." IsVisible="{Binding !HasBackups}" HorizontalAlignment="Center"
+                           VerticalAlignment="Center" FontSize="15" Foreground="{DynamicResource TextSecondaryBrush}" />
+                <ScrollViewer IsVisible="{Binding HasBackups}">
+                    <ItemsControl ItemsSource="{Binding Backups}" Margin="0,0,12,0">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:BackupItemViewModel">
+                                <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8" Margin="0,6">
+                                    <StackPanel Spacing="2">
+                                        <TextBlock Text="{Binding WhenText}" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimaryBrush}" />
+                                        <TextBlock Classes="detail">
+                                            <Run Text="{Binding TriggerText}" /><Run Text=" · " /><Run Text="{Binding SourceText}" />
+                                        </TextBlock>
+                                        <TextBlock Classes="detail" Text="{Binding DetailText}" />
+                                        <TextBlock Classes="detail" Text="{Binding SkippedText}" IsVisible="{Binding HasSkipped}"
+                                                   Foreground="{DynamicResource WarningBrush}" />
+                                    </StackPanel>
+                                    <Button Grid.Column="1" Content="Restore…" VerticalAlignment="Center"
+                                            Command="{Binding $parent[views:BackupsView].((vm:BackupsViewModel)DataContext).RestoreCommand}"
+                                            CommandParameter="{Binding}" />
+                                    <Button Grid.Column="2" Classes="trash" ToolTip.Tip="Delete" AutomationProperties.Name="Delete"
+                                            VerticalAlignment="Center"
+                                            Command="{Binding $parent[views:BackupsView].((vm:BackupsViewModel)DataContext).DeleteCommand}"
+                                            CommandParameter="{Binding}">
+                                        <Path Data="{StaticResource TrashIcon}" />
+                                    </Button>
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+            </Panel>
+        </DockPanel>
+
+        <!-- The restore page, in the list's place. -->
+        <ScrollViewer IsVisible="{Binding IsRestoring}">
+            <StackPanel Margin="32,20,32,20" Spacing="12" MaxWidth="720" HorizontalAlignment="Left"
+                        DataContext="{Binding Restoring}" x:DataType="vm:RestoreBackupViewModel">
+                <Button Content="‹ Back" Command="{Binding CloseCommand}" Background="Transparent" Padding="4,2" />
+                <StackPanel Spacing="2">
+                    <TextBlock Text="{Binding Title}" FontSize="24" FontWeight="SemiBold" TextWrapping="Wrap"
+                               Foreground="{DynamicResource TextPrimaryBrush}" />
+                    <TextBlock Text="{Binding TargetText}" Foreground="{DynamicResource TextSecondaryBrush}" />
+                    <TextBlock Classes="detail" Text="{Binding Backup.DetailText}" />
+                </StackPanel>
+                <TextBlock Text="{Binding DifferentSourceText}" TextWrapping="Wrap"
+                           IsVisible="{Binding DifferentSourceText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                           Foreground="{DynamicResource WarningBrush}" />
+
+                <Border Classes="box">
+                    <StackPanel>
+                        <TextBlock Classes="boxTitle" Text="PARTS TO RESTORE" />
+                        <ItemsControl ItemsSource="{Binding Parts}" ItemTemplate="{StaticResource PartOption}" IsEnabled="{Binding !IsDone}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <WrapPanel />
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                        </ItemsControl>
+                    </StackPanel>
+                </Border>
+                <TextBlock Classes="detail" Text="{Binding SafetyText}" />
+
+                <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding !IsDone}">
+                    <Button Classes="accent" Content="Restore" Command="{Binding RestoreCommand}" />
+                </StackPanel>
+                <ProgressBar Minimum="0" Maximum="1" Value="{Binding Progress}" IsVisible="{Binding IsBusy}" />
+                <TextBlock Classes="detail" Text="{Binding ProgressText}" TextTrimming="CharacterEllipsis" IsVisible="{Binding IsBusy}" />
+                <TextBlock Text="{Binding Problem}" TextWrapping="Wrap"
+                           IsVisible="{Binding Problem, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                           Foreground="{DynamicResource WarningBrush}" />
+                <TextBlock Text="{Binding Result}" TextWrapping="Wrap"
+                           IsVisible="{Binding Result, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                           Foreground="{DynamicResource SuccessBrush}" />
+                <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding IsDone}">
+                    <Button Classes="accent" Content="Restart ADA now" Command="{Binding RestartNowCommand}" IsVisible="{Binding NeedsRestart}" />
+                    <Button Content="Later" Command="{Binding CloseCommand}" IsVisible="{Binding NeedsRestart}" />
+                    <Button Classes="accent" Content="Done" Command="{Binding CloseCommand}" IsVisible="{Binding !NeedsRestart}" />
+                </StackPanel>
+            </StackPanel>
+        </ScrollViewer>
+    </Panel>
+</UserControl>

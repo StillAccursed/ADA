@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using ADA.Core.Catalog;
+using ADA.Core.Games;
 using ADA.Core.Profiles;
 using ADA.Core.Settings;
 using ADA.Infrastructure.Catalog;
@@ -33,6 +34,7 @@ public partial class DashboardViewModel
     private readonly ModCatalogStore _store;
     private readonly SettingsStore _settings;
     private readonly GameProfiles _profiles;
+    private readonly ProfileTransfer _profileTransfer;
     private readonly ModResolutionService _resolution;
     private readonly DashboardStorageReader _storage;
     private readonly ModChangelogs _changelogs;
@@ -63,6 +65,8 @@ public partial class DashboardViewModel
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ProfileModsText))]
+    [NotifyPropertyChangedFor(nameof(CanExportProfile))]
+    [NotifyCanExecuteChangedFor(nameof(DeleteProfileCommand))]
     public partial ModProfile? SelectedProfile { get; set; }
 
     [ObservableProperty]
@@ -143,6 +147,7 @@ public partial class DashboardViewModel
     /// it as a dialog and it clears itself when closed.
     /// </summary>
     [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(DeleteProfileCommand))]
     public partial CreateProfileViewModel? ProfilePrompt { get; private set; }
 
     /// <summary>
@@ -150,7 +155,38 @@ public partial class DashboardViewModel
     /// card; the main window shows it as a dialog and it clears itself when closed.
     /// </summary>
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanExportProfile))]
+    [NotifyCanExecuteChangedFor(nameof(DeleteProfileCommand))]
     public partial SwitchProfileViewModel? SwitchPrompt { get; private set; }
+
+    /// <summary>Includes the native picker lifetime so a second transfer cannot start behind it.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanImportProfile), nameof(CanExportProfile))]
+    [NotifyCanExecuteChangedFor(nameof(DeleteProfileCommand))]
+    public partial bool IsTransferringProfile { get; private set; }
+
+    /// <summary>The deletion confirmation; closing it is treated as Cancel.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanChooseProfile), nameof(CanImportProfile), nameof(CanExportProfile))]
+    [NotifyCanExecuteChangedFor(nameof(DeleteProfileCommand))]
+    public partial ConfirmViewModel? DeleteProfileQuestion { get; private set; }
+
+    /// <summary>Deletion is in progress; profile controls stay unavailable until it finishes.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanChooseProfile), nameof(CanImportProfile), nameof(CanExportProfile))]
+    [NotifyCanExecuteChangedFor(nameof(DeleteProfileCommand))]
+    public partial bool IsDeletingProfile { get; private set; }
+
+    /// <summary>Imports only add library entries, so they do not require an idle installation.</summary>
+    public bool CanImportProfile => !IsTransferringProfile && !IsDeletingProfile && DeleteProfileQuestion is null;
+
+    /// <summary>Exports the active selection; a pending switch must first be completed or cancelled.</summary>
+    public bool CanExportProfile => CanImportProfile && SelectedProfile is not null && SelectedInstall is not null && SwitchPrompt is null;
+
+    /// <summary>Deletion waits for all known installations and open profile dialogs, including queued requests.</summary>
+    public bool CanDeleteProfile => CanImportProfile && SelectedProfile is not null && !IsScanning
+        && SwitchPrompt is null && ProfilePrompt is null
+        && ProfileGames().All(game => !game.IsBusy && !game.HasModOperations && !game.IsSwitchingProfile && !_profiles.IsChanging(game.Install));
 
     public string LastCatalogUpdateText => Catalog.LastChecked?.ToLocalTime().ToString("g") ?? "Not checked yet";
 
@@ -158,7 +194,8 @@ public partial class DashboardViewModel
 
     /// <summary>Whether this install's profile can change now: nothing running on it, and it's reachable.</summary>
     private bool CanChooseProfileFor(GameInstallViewModel? game) =>
-        game is { IsBusy: false, IsSwitchingProfile: false, HasModOperations: false, IsGameRunning: false, IsUnavailable: false }
+        !IsDeletingProfile && DeleteProfileQuestion is null
+        && game is { IsBusy: false, IsSwitchingProfile: false, HasModOperations: false, IsGameRunning: false, IsUnavailable: false }
         && !_profiles.IsChanging(game.Install);
 
     /// <summary>Current actionable conditions, deduplicated without inventing notification history.</summary>
@@ -201,6 +238,38 @@ public partial class DashboardViewModel
     /// again once its dialog has closed and the cards are refreshed.
     /// </summary>
     internal Task PendingProfileSwitch { get; private set; } = Task.CompletedTask;
+
+    /// <summary>Reserves the transfer controls before opening a native file picker.</summary>
+    internal bool BeginProfileTransfer()
+    {
+        if (!CanImportProfile)
+        {
+            return false;
+        }
+        IsTransferringProfile = true;
+        return true;
+    }
+
+    /// <summary>Releases the transfer controls, including when the picker is cancelled or fails.</summary>
+    internal void EndProfileTransfer() => IsTransferringProfile = false;
+
+    /// <summary>Adds a picked profile to the library; preserves the active selection and installed mods.</summary>
+    internal async Task ImportProfileAsync(string path)
+    {
+        var imported = await _profileTransfer.ImportAsync(path);
+        ProfileNotice = $"Imported \"{imported.Name}\". Choose it from the list to switch profiles.";
+        await RefreshCardsAsync();
+    }
+
+    /// <summary>Exports the profile and installation captured before opening the picker.</summary>
+    internal async Task ExportProfileAsync(ModProfile profile, GameInstall game, string path)
+    {
+        await _profileTransfer.ExportAsync(profile, game, path);
+        ProfileNotice = $"Exported \"{profile.Name}\" to {Path.GetFileName(path)}.";
+    }
+
+    /// <summary>Shows picker, validation, catalogue and filesystem errors in the Profiles card.</summary>
+    internal void ReportProfileTransferProblem(Exception error) => ProfileNotice = "Couldn't transfer profile: " + error.Message;
 
     /// <summary>
     /// Reads cached releases, profiles and storage. A newer refresh cancels this one's snapshot; this
@@ -357,6 +426,8 @@ public partial class DashboardViewModel
     {
         ProfileNotice = null;
         OnPropertyChanged(nameof(CanChooseProfile));
+        OnPropertyChanged(nameof(CanExportProfile));
+        DeleteProfileCommand.NotifyCanExecuteChanged();
         OnPropertyChanged(nameof(ServerStateText));
         OnPropertyChanged(nameof(DiskModsLabel));
         OnPropertyChanged(nameof(DiskVolumeLabel));
@@ -372,6 +443,64 @@ public partial class DashboardViewModel
             PendingProfileSwitch = OpenSwitchPromptAsync(game, value);
         }
     }
+
+    /// <summary>Confirms deletion of the captured profile, then checks again for work that started while asking.</summary>
+    [RelayCommand(CanExecute = nameof(CanDeleteProfile))]
+    private async Task DeleteProfileAsync()
+    {
+        if (!CanDeleteProfile || SelectedProfile is not { } profile)
+        {
+            return;
+        }
+        var question = new ConfirmViewModel("Delete profile?",
+            $"Delete \"{profile.Name}\" from your saved profiles? Installed mods will stay in place. "
+            + "Every installation using this profile will have its active selection cleared. "
+            + "Create a new profile for any installed mods before switching to another profile.", "Delete profile") { IsDanger = true };
+        DeleteProfileQuestion = question;
+        bool confirmed;
+        try
+        {
+            confirmed = await question.Answer;
+        }
+        finally
+        {
+            DeleteProfileQuestion = null;
+        }
+        if (!confirmed)
+        {
+            return;
+        }
+        if (!CanDeleteProfile || !string.Equals(SelectedProfile?.Name, profile.Name, StringComparison.OrdinalIgnoreCase))
+        {
+            ProfileNotice = "The profile selection or installation state changed. Wait for current operations and try deleting again.";
+            return;
+        }
+        IsDeletingProfile = true;
+        try
+        {
+            var games = ProfileGames();
+            await _profiles.DeleteAsync(profile.Name, games.Select(game => game.Install).ToList());
+            foreach (var game in games.Where(game => string.Equals(game.ProfileName, profile.Name, StringComparison.OrdinalIgnoreCase)))
+            {
+                game.ProfileName = null;
+                _promptDismissed.Add(game.Install.GamePath);
+            }
+            ProfileNotice = $"Deleted \"{profile.Name}\". Installed mods were left in place. Create a new profile to keep them before switching.";
+            await RefreshCardsAsync();
+        }
+        catch (Exception error)
+        {
+            ProfileNotice = "Couldn't delete profile: " + error.Message;
+        }
+        finally
+        {
+            IsDeletingProfile = false;
+        }
+    }
+
+    /// <summary>Includes a selected installation retained outside the current detection list.</summary>
+    private IReadOnlyList<GameInstallViewModel> ProfileGames() => Installs.Append(SelectedInstall)
+        .OfType<GameInstallViewModel>().DistinctBy(game => game.Install.GamePath).ToList();
 
     /// <summary>Opens the create-profile prompt for the selected installation, even if it was dismissed.</summary>
     [RelayCommand]

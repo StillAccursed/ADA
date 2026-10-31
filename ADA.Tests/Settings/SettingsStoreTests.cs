@@ -183,4 +183,13 @@ public class SettingsStoreTests
         Assert.True(Directory.Exists(cache.Folder));
         Assert.True(File.Exists(dir.Combine("Staging", "other.txt")));
     }
+
+    [Fact]
+    public void BackupSettingsAreNormalized()
+    {
+        var settings = new AppSettings(BackupIntervalHours: 5, KeepAutomaticBackups: 1000).Normalized();
+
+        Assert.Equal(0, settings.BackupIntervalHours);
+        Assert.Equal(AppSettings.MAX_KEEP_AUTOMATIC_BACKUPS, settings.KeepAutomaticBackups);
+    }
 }

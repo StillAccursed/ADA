@@ -36,11 +36,12 @@ public sealed class ModInstallServiceTests : IDisposable
 
     public void Dispose() => _dir.Dispose();
 
-    private ModInstallService Service() => new(
+    private ModInstallService Service(Func<GameInstall, CancellationToken, Task>? beforeChange = null) => new(
         _settings,
         new ArchiveDownloader(new HttpClient(_http), _archives, time: new InstantTimeProvider()),
         new FakeVersionSource((reference, _) => Task.FromResult<IReadOnlyList<CatalogVersion>>(_catalog.GetValueOrDefault(reference) ?? [])),
-        (game, _) => Task.FromResult(_gameRunning && (_runningInstall is null || _runningInstall == game)));
+        (game, _) => Task.FromResult(_gameRunning && (_runningInstall is null || _runningInstall == game)),
+        beforeChange: beforeChange);
 
     /// <summary>Publishes a mod version on the fake ficsit.app; returns the catalogue entry.</summary>
     private CatalogVersion Publish(string reference, string version, bool gameFeature = false,
@@ -133,6 +134,35 @@ public sealed class ModInstallServiceTests : IDisposable
 
         Assert.Equal(["SML", "WeatherExtended"], InstalledNow());
         Assert.Equal(["WeatherExtended"], new ModInstaller(_game.Root, () => false).Requested);
+    }
+
+    [Fact]
+    public async Task RunsTheBeforeChangeHookBeforeInstallingAndUninstalling()
+    {
+        var a = Publish("A", "1.0.0");
+        Serve(a);
+        var seen = new List<bool>();
+        var service = Service(beforeChange: (_, _) =>
+        {
+            seen.Add(new ModInstaller(_game.Root, () => false).Installed.ContainsKey("A"));
+            return Task.CompletedTask;
+        });
+
+        await service.InstallAsync(_install, [a]);
+        await service.UninstallAsync(_install, ["A"]);
+
+        Assert.Equal([false, true], seen);
+    }
+
+    [Fact]
+    public async Task AFailingBeforeChangeHookChangesNothing()
+    {
+        var a = Publish("A", "1.0.0");
+        var service = Service(beforeChange: (_, _) => throw new InstallException("no backup"));
+
+        await Assert.ThrowsAsync<InstallException>(() => service.InstallAsync(_install, [a]));
+
+        Assert.Empty(new ModInstaller(_game.Root, () => false).Installed);
     }
 
     [Fact]

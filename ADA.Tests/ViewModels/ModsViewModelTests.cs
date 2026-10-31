@@ -290,6 +290,24 @@ public sealed class ModsViewModelTests : IDisposable
     }
 
     [Fact]
+    public async Task RemoveFromQueueDropsRowAndUpdatesCount()
+    {
+        Publish("A", "1.0.0");
+        Publish("B", "1.0.0");
+        var page = await OpenPageAsync();
+        page.QueueForInstall(["A", "B"]);
+        await page.PendingSearch;
+        var removed = Find(page, "A");
+
+        page.RemoveFromQueueCommand.Execute(removed);
+        await page.PendingSearch;
+
+        Assert.False(removed.IsQueued);
+        Assert.Equal(1, page.QueueCount);
+        Assert.Equal(["B"], page.Results.Select(r => r.Reference));
+    }
+
+    [Fact]
     public async Task QueuedModsInstallTogetherWithoutConfirmation()
     {
         Publish("SML", "3.12.0");

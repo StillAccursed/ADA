@@ -187,4 +187,54 @@ public sealed class GameProfilesTests : IDisposable
         Assert.Equal([file], Directory.EnumerateFiles(_store.Folder).Select(Path.GetFileName));
         Assert.Equal(name, _store.Get(name)!.Name);
     }
+
+    [Fact]
+    public async Task DeletionLeavesInstalledModsAndRecordsIntactAndDoesNotRecreateTheProfile()
+    {
+        PlaceForeign("Mods/SML", "3.12.0");
+        var profiles = Profiles();
+        await profiles.ImportToNewAsync(_install, await Found(), "Delete", switchTo: true);
+        var dll = _game.ModFolder("Mods/SML/Binaries/mod.dll");
+        var writtenAt = File.GetLastWriteTimeUtc(dll);
+
+        await profiles.DeleteAsync("Delete", [_install]);
+        await profiles.RecordInstalledAsync(_install);
+
+        Assert.Empty(_store.List());
+        Assert.Null(_store.ActiveName(_game.Root));
+        Assert.Equal("binary SML", File.ReadAllText(dll));
+        Assert.Equal(writtenAt, File.GetLastWriteTimeUtc(dll));
+        Assert.Single(Installer().Installed);
+    }
+
+    [Fact]
+    public async Task DeletionRefusesABusyInstallationAndReleasesEarlierReservations()
+    {
+        var installs = Installs();
+        var profiles = new GameProfiles(_store, installs);
+        _store.Save(new("Keep", []));
+        var other = _install with { GamePath = _dir.CreateGame("Other") };
+        using var busy = installs.BeginOperation(other);
+
+        await Assert.ThrowsAsync<InstallationBusyException>(() => profiles.DeleteAsync("Keep", [_install, other]));
+
+        Assert.NotNull(_store.Get("Keep"));
+        Assert.False(installs.IsChanging(_install));
+        Assert.True(installs.IsChanging(other));
+    }
+
+    [Fact]
+    public async Task PendingRecoveryRefusesDeletionBeforeChangingTheLibrary()
+    {
+        _store.Save(new("Keep", []));
+        _store.SetActive(_game.Root, "Keep");
+        var activation = Path.Combine(_game.FactoryGame, GameModFolders.PROFILE_ACTIVATION);
+        Directory.CreateDirectory(Path.GetDirectoryName(activation)!);
+        File.WriteAllText(activation, "{}");
+
+        await Assert.ThrowsAsync<InstallException>(() => Profiles().DeleteAsync("Keep", [_install]));
+
+        Assert.NotNull(_store.Get("Keep"));
+        Assert.Equal("Keep", _store.ActiveName(_game.Root));
+    }
 }

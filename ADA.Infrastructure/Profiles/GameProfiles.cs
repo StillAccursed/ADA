@@ -52,6 +52,42 @@ public sealed class GameProfiles(ProfileStore store, ModInstallService installs,
     public Task<IReadOnlyList<ModProfile>> ListAsync() => Task.Run(store.List);
 
     /// <summary>
+    /// Deletes a saved profile and clears all of its active selections, without changing installed
+    /// mods. Reserves the known installations and refuses pending recovery before deleting, so a
+    /// concurrent operation or committed switch cannot recreate the deleted profile.
+    /// Cancellation is observed before deletion; the store then finishes its save-and-remove step.
+    /// </summary>
+    /// <exception cref="InstallationBusyException">A known installation is already reserved.</exception>
+    /// <exception cref="InstallException">Recovery or profile activation is pending.</exception>
+    /// <exception cref="InvalidProfileException">The profile no longer exists.</exception>
+    public Task DeleteAsync(string name, IReadOnlyList<GameInstall> games, CancellationToken ct = default) => Task.Run(() =>
+    {
+        var leases = new List<IDisposable>();
+        try
+        {
+            var known = games.DistinctBy(game => game.GamePath).ToList();
+            foreach (var game in known)
+            {
+                ct.ThrowIfCancellationRequested();
+                leases.Add(installs.BeginOperation(game));
+            }
+            foreach (var game in known)
+            {
+                installs.InstallerFor(game).ThrowIfUnsettled("deleting a profile");
+            }
+            ct.ThrowIfCancellationRequested();
+            store.Delete(name);
+        }
+        finally
+        {
+            foreach (var lease in leases)
+            {
+                lease.Dispose();
+            }
+        }
+    }, ct);
+
+    /// <summary>
     /// Saves the mods ADA manages in <paramref name="game"/> as a new profile and makes it the game's
     /// active profile. Used for a game's first profile, and to start a new playthrough's profile
     /// from what is installed. Holds the installation for the whole read-and-save.

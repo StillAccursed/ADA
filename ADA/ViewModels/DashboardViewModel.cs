@@ -48,6 +48,7 @@ public partial class DashboardViewModel : ViewModelBase
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(StatusText))]
     [NotifyPropertyChangedFor(nameof(GameStateText))]
+    [NotifyCanExecuteChangedFor(nameof(DeleteProfileCommand))]
     public partial bool IsScanning { get; set; }
 
     public string StatusText => IsScanning
@@ -95,6 +96,7 @@ public partial class DashboardViewModel : ViewModelBase
         Func<GameInstall, GameInstallViewModel> installViewModel, ILogger<DashboardViewModel> log,
         ModCatalogStore store, SettingsStore settings, GameProfiles profiles, ModResolutionService resolution,
         DashboardStorageReader storage, ModInstallService installs, ArchiveCache archives, ModChangelogs changelogs,
+        ProfileTransfer profileTransfer,
         Func<CancellationToken, Task<IReadOnlyList<GameProcess>>>? findRunning = null,
         TimeSpan? watchInterval = null, ServerConnections? servers = null, ProfileSync? sync = null, ConfigPush? configPush = null)
     {
@@ -107,6 +109,7 @@ public partial class DashboardViewModel : ViewModelBase
         _store = store;
         _settings = settings;
         _profiles = profiles;
+        _profileTransfer = profileTransfer;
         _resolution = resolution;
         _storage = storage;
         _changelogs = changelogs;
@@ -198,6 +201,7 @@ public partial class DashboardViewModel : ViewModelBase
         HasUpdates = Installs.Any(i => i.HasUpdates);
         OnPropertyChanged(nameof(CanChooseProfile));
         OnPropertyChanged(nameof(Notifications));
+        DeleteProfileCommand.NotifyCanExecuteChanged();
         OnPropertyChanged(nameof(ServerStateText));
         if (e.PropertyName == nameof(GameInstallViewModel.IsBusy) && sender is GameInstallViewModel { IsBusy: false })
         {

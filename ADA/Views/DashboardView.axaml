@@ -28,6 +28,14 @@
             <Setter Property="Stretch" Value="Uniform" /><Setter Property="StrokeThickness" Value="1.4" />
             <Setter Property="Stroke" Value="{DynamicResource TextSecondaryBrush}" />
         </Style>
+        <Style Selector="Button.profile-trash">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Padding" Value="8" />
+            <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
+        </Style>
+        <Style Selector="Button.profile-trash:pointerover">
+            <Setter Property="Foreground" Value="{DynamicResource DangerActionBrush}" />
+        </Style>
     </UserControl.Styles>
     <ScrollViewer HorizontalScrollBarVisibility="Disabled">
         <StackPanel Margin="24,28" Spacing="16">
@@ -92,13 +100,27 @@
                     <Border Classes="dashboard-card"><StackPanel Spacing="12">
                         <Grid ColumnDefinitions="*,Auto"><TextBlock Classes="card-title" Text="Profiles" /><Path Grid.Column="1" Classes="card-icon" Data="M1,5 L8,1 L15,5 L8,9 Z M1,8 L8,12 L15,8 M1,11 L8,15 L15,11" /></Grid>
                         <TextBlock Classes="secondary" FontSize="12" Text="Active profile" />
-                        <ComboBox HorizontalAlignment="Stretch" ItemsSource="{Binding Profiles}" SelectedItem="{Binding SelectedProfile}"
-                                  IsEnabled="{Binding CanChooseProfile}" AutomationProperties.Name="Active profile">
-                            <ComboBox.ItemTemplate><DataTemplate x:DataType="profiles:ModProfile"><TextBlock Text="{Binding Name}" TextWrapping="Wrap" /></DataTemplate></ComboBox.ItemTemplate>
-                        </ComboBox>
+                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                            <ComboBox HorizontalAlignment="Stretch" ItemsSource="{Binding Profiles}" SelectedItem="{Binding SelectedProfile}"
+                                      IsEnabled="{Binding CanChooseProfile}" AutomationProperties.Name="Active profile">
+                                <ComboBox.ItemTemplate><DataTemplate x:DataType="profiles:ModProfile"><TextBlock Text="{Binding Name}" TextWrapping="Wrap" /></DataTemplate></ComboBox.ItemTemplate>
+                            </ComboBox>
+                            <Button Grid.Column="1" Classes="profile-trash" Command="{Binding DeleteProfileCommand}"
+                                    ToolTip.Tip="Delete profile" AutomationProperties.Name="Delete profile" VerticalAlignment="Center">
+                                <Path Width="16" Height="16" Stretch="Uniform" StrokeThickness="1.4"
+                                      Stroke="{Binding $parent[Button].Foreground}"
+                                      Data="M3,4 L13,4 M6,4 L6,2.5 L10,2.5 L10,4 M4.5,4 L5.2,14 L10.8,14 L11.5,4 M7,6.5 L7,12 M9,6.5 L9,12" />
+                            </Button>
+                        </Grid>
                         <TextBlock Classes="secondary" Text="{Binding ProfilesText}" /><TextBlock Classes="secondary" Text="{Binding ProfileModsText}" />
                         <Button Content="New profile…" Command="{Binding NewProfileCommand}" IsEnabled="{Binding CanChooseProfile}"
                                 ToolTip.Tip="Save the installed mods as a new profile, e.g. for a new playthrough" />
+                        <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
+                            <Button Content="Import…" Click="OnImportProfile" IsEnabled="{Binding CanImportProfile}"
+                                    HorizontalAlignment="Stretch" ToolTip.Tip="Add an ADA or Satisfactory Mod Manager profile to your library" />
+                            <Button Grid.Column="1" Content="Export…" Click="OnExportProfile" IsEnabled="{Binding CanExportProfile}"
+                                    HorizontalAlignment="Stretch" ToolTip.Tip="Export the active profile as an ADA or Satisfactory Mod Manager file" />
+                        </Grid>
                         <TextBlock Classes="secondary" Text="Close Satisfactory and wait for current operations to finish before switching." IsVisible="{Binding !CanChooseProfile}" FontSize="12" />
                         <TextBlock Classes="value" Text="{Binding ProfileNotice}" IsVisible="{Binding ProfileNotice, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
                     </StackPanel></Border>

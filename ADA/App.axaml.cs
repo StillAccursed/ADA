@@ -1,3 +1,5 @@
+using System.Diagnostics;
+using ADA.Infrastructure.Backups;
 using ADA.Infrastructure.Settings;
 using ADA.Platform.Storage;
 using ADA.ViewModels;
@@ -57,12 +59,19 @@ public partial class App : Application
                         rollingInterval: RollingInterval.Day, retainedFileCountLimit: 7)
                     .CreateLogger();
                 Log.Information("ADA starting on {OS}", Environment.OSVersion);
+                // Before any store reads Config, so restored files aren't overwritten by cached ones.
+                if (PendingAdaConfig.Apply(paths.PendingAdaConfig, paths.Config) is > 0 and var restored)
+                {
+                    Log.Information("Applied {Count} restored ADA config files", restored);
+                }
 
                 _services = Services.Build(paths);
                 return _services.GetRequiredService<MainViewModel>();
             });
 
-            Appearance.Follow(_services!.GetRequiredService<SettingsStore>());
+            var services = _services!;
+            Appearance.Follow(services.GetRequiredService<SettingsStore>());
+            services.GetRequiredService<BackupsViewModel>().RestartRequested += (_, _) => Restart(desktop);
 
             window.DataContext = main;
             main.Start();
@@ -73,6 +82,27 @@ public partial class App : Application
             await Log.CloseAndFlushAsync();
             desktop.Shutdown(1);
         }
+    }
+
+    /// <summary>
+    /// Starts a new ADA with the same arguments, then closes this one; used after restoring ADA's own settings,
+    /// which the new one applies at startup. Run through the <c>dotnet</c> host, the app's own <c>.dll</c> is
+    /// the first argument and is passed on too.
+    /// </summary>
+    private static void Restart(IClassicDesktopStyleApplicationLifetime desktop)
+    {
+        if (Environment.ProcessPath is { } executable)
+        {
+            var start = new ProcessStartInfo(executable) { UseShellExecute = false };
+            var viaHost = Path.GetFileNameWithoutExtension(executable).Equals("dotnet", StringComparison.OrdinalIgnoreCase);
+            foreach (var argument in Environment.GetCommandLineArgs().Skip(viaHost ? 0 : 1))
+            {
+                start.ArgumentList.Add(argument);
+            }
+            Log.Information("Restarting ADA to apply restored settings");
+            Process.Start(start);
+        }
+        desktop.Shutdown();
     }
 
     private static void LogUnhandledExceptions()

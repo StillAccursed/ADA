@@ -29,13 +29,18 @@ public sealed record RepairResult(IReadOnlyList<string> Repaired, IReadOnlyDicti
 /// <c>isGameRunning</c> answers for one install; local installs answer for every Satisfactory
 /// process on this machine, since processes can't be matched to an install.
 /// </remarks>
+/// <param name="beforeChange">
+/// Called before mods are installed, uninstalled or a profile is switched, after the game-running check and while
+/// the install is reserved; throwing <see cref="InstallException"/> stops the change. Not called for repairs.
+/// </param>
 public sealed class ModInstallService(
     SettingsStore settings,
     ArchiveDownloader downloader,
     IModVersionSource versions,
     Func<GameInstall, CancellationToken, Task<bool>> isGameRunning,
     ILogger<ModInstallService>? log = null,
-    GameFilesFactory? files = null)
+    GameFilesFactory? files = null,
+    Func<GameInstall, CancellationToken, Task>? beforeChange = null)
 {
     // Enough to fill a typical connection without hammering ficsit.app.
     private const int PARALLEL_DOWNLOADS = 3;
@@ -149,11 +154,15 @@ public sealed class ModInstallService(
     /// <summary>Caller must hold BeginOperation for this game through all record updates.</summary>
     internal async Task<TransactionResult> ApplyReservedAsync(GameInstall game, IReadOnlyList<CatalogVersion> install,
         IReadOnlyList<string> uninstall, IProgress<ModInstallProgress>? progress, CancellationToken ct,
-        ProfileActivation? activation = null)
+        ProfileActivation? activation = null, bool runBeforeChange = true)
     {
         if (await isGameRunning(game, ct))
         {
             throw GameRunningException.For(game);
+        }
+        if (runBeforeChange && (install.Count > 0 || uninstall.Count > 0) && beforeChange is not null)
+        {
+            await beforeChange(game, ct);
         }
 
         var current = settings.Current;
@@ -219,6 +228,14 @@ public sealed class ModInstallService(
     public async Task<TransactionResult> UninstallAsync(GameInstall game, IReadOnlyList<string> references, CancellationToken ct = default)
     {
         using var operation = BeginOperation(game);
+        if (await isGameRunning(game, ct))
+        {
+            throw GameRunningException.For(game);
+        }
+        if (references.Count > 0 && beforeChange is not null)
+        {
+            await beforeChange(game, ct);
+        }
         var result = await Task.Run(
             () => InstallerFor(game).Apply(references.Select(r => (ModChange)new ModChange.Uninstall(r)).ToList(), ct: ct), ct);
         _log.LogInformation("Uninstalled {Mods} from {Game}", result.Uninstalled, game.GamePath);
@@ -286,7 +303,7 @@ public sealed class ModInstallService(
 
         try
         {
-            var result = await ApplyReservedAsync(game, toInstall, [], progress, ct);
+            var result = await ApplyReservedAsync(game, toInstall, [], progress, ct, runBeforeChange: false);
             return new RepairResult(result.Installed.Select(m => m.Reference).ToList(), failed);
         }
         catch (Exception e) when (e is InstallException or ArchiveDownloadException or InvalidModArchiveException)

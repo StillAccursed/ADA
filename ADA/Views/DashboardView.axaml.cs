@@ -3,11 +3,16 @@ using ADA.ViewModels;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
+using Avalonia.Platform.Storage;
 
 namespace ADA.Views;
 
 public partial class DashboardView : UserControl
 {
+    private static readonly FilePickerFileType ADA_PROFILE = new("ADA profile") { Patterns = ["*.olp"] };
+    private static readonly FilePickerFileType SMM_PROFILE = new("Satisfactory Mod Manager profile") { Patterns = ["*.smmprofile"] };
+    private static readonly FilePickerFileType PROFILES = new("Mod profiles") { Patterns = ["*.olp", "*.smmprofile"] };
+
     private DashboardViewModel? _viewModel;
     private GameInstallViewModel? _game;
     private int _layoutMode = -1;
@@ -81,6 +86,74 @@ public partial class DashboardView : UserControl
     }
 
     private void OnInstallChanged(object? sender, PropertyChangedEventArgs e) => UpdateAttentionCard();
+
+    /// <summary>Owns the picker lifetime; validation and file work belong to the view model and transfer service.</summary>
+    private async void OnImportProfile(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not DashboardViewModel vm || TopLevel.GetTopLevel(this)?.StorageProvider is not { } storage
+            || !vm.BeginProfileTransfer())
+        {
+            return;
+        }
+        try
+        {
+            var files = await storage.OpenFilePickerAsync(new FilePickerOpenOptions
+            {
+                Title = "Import profile",
+                AllowMultiple = false,
+                FileTypeFilter = [PROFILES, ADA_PROFILE, SMM_PROFILE],
+            });
+            if (files.Count > 0)
+            {
+                var path = files[0].TryGetLocalPath() ?? throw new IOException("Choose a local profile file.");
+                await vm.ImportProfileAsync(path);
+            }
+        }
+        catch (Exception error)
+        {
+            vm.ReportProfileTransferProblem(error);
+        }
+        finally
+        {
+            vm.EndProfileTransfer();
+        }
+    }
+
+    /// <summary>Captures the active profile before the picker so later selection changes cannot redirect the export.</summary>
+    private async void OnExportProfile(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not DashboardViewModel vm || !vm.CanExportProfile
+            || vm.SelectedProfile is not { } profile || vm.SelectedInstall is not { } game
+            || TopLevel.GetTopLevel(this)?.StorageProvider is not { } storage || !vm.BeginProfileTransfer())
+        {
+            return;
+        }
+        try
+        {
+            var safeName = string.Join("_", profile.Name.Split([.. Path.GetInvalidFileNameChars(), '<', '>', ':', '"', '/', '\\', '|', '?', '*']));
+            var file = await storage.SaveFilePickerAsync(new FilePickerSaveOptions
+            {
+                Title = "Export profile",
+                SuggestedFileName = $"Profile - {safeName}.olp",
+                DefaultExtension = "olp",
+                FileTypeChoices = [ADA_PROFILE, SMM_PROFILE],
+                ShowOverwritePrompt = true,
+            });
+            if (file is not null)
+            {
+                var path = file.TryGetLocalPath() ?? throw new IOException("Choose a local destination for the profile.");
+                await vm.ExportProfileAsync(profile, game.Install, path);
+            }
+        }
+        catch (Exception error)
+        {
+            vm.ReportProfileTransferProblem(error);
+        }
+        finally
+        {
+            vm.EndProfileTransfer();
+        }
+    }
 
     /// <summary>
     /// Shows the attention card while the connected server can't be reached or a side sharing its

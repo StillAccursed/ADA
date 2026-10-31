@@ -24,7 +24,8 @@ internal static class DashboardFactory
         CatalogStatusViewModel? catalog = null, ModCatalogStore? store = null, SettingsStore? settings = null,
         ModInstallService? installs = null, GameProfiles? profiles = null, ModResolutionService? resolution = null,
         Func<CancellationToken, Task<IReadOnlyList<GameProcess>>>? findRunning = null, TimeSpan? watchInterval = null,
-        ModChangelogs? changelogs = null, ServerConnections? servers = null, ProfileSync? sync = null, ConfigPush? configPush = null)
+        ModChangelogs? changelogs = null, ServerConnections? servers = null, ProfileSync? sync = null, ConfigPush? configPush = null,
+        ProfileTransfer? profileTransfer = null)
     {
         store ??= new ModCatalogStore(dir.Combine("dashboard-catalog.db"));
         settings ??= new SettingsStore(dir.Combine("dashboard-settings.json"));
@@ -38,6 +39,8 @@ internal static class DashboardFactory
             store, settings, profiles, resolution, new DashboardStorageReader(dir.Combine("Archives")), installs,
             new ArchiveCache(dir.Combine("Archives")),
             changelogs ?? new ModChangelogs(new FakeVersionSource((_, _) => Task.FromResult<IReadOnlyList<CatalogVersion>>([]))),
+            profileTransfer ?? new ProfileTransfer(new ProfileStore(dir.Combine("Profiles"), dir.Combine("profiles.json")),
+                new FakeVersionSource((_, _) => Task.FromResult<IReadOnlyList<CatalogVersion>>([]))),
             findRunning ?? (_ => Task.FromResult<IReadOnlyList<GameProcess>>([])),
             watchInterval, servers, sync, configPush);
     }

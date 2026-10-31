@@ -8,7 +8,8 @@ namespace ADA.Platform.Storage;
 /// macOS    ~/Library/Application Support/ADA
 ///   Databases/   SQLite files (mod catalogue)
 ///   Config/      settings, profiles (Config/Profiles/*.olp), each game's active profile and saved servers
-///   Staging/     downloaded archives (Staging/Archives)
+///   Staging/     downloaded archives (Staging/Archives), and restored ADA config waiting for the next start (Staging/PendingConfig)
+///   Backups/     backups of saves, blueprints and configs, one .zip each
 ///   Logs/        daily log files, the last week kept
 /// </code>
 /// </summary>
@@ -43,6 +44,12 @@ public sealed class AppPaths
     /// <summary>Saved dedicated servers (no secrets; those are in the OS secret store).</summary>
     public string ServersFile => Path.Combine(Config, "servers.json");
 
+    /// <summary>Backups of saves, blueprints and configs, one <c>.zip</c> each.</summary>
+    public string Backups => Path.Combine(Root, "Backups");
+
+    /// <summary>ADA config restored from a backup, moved into <see cref="Config"/> at the next start.</summary>
+    public string PendingAdaConfig => Path.Combine(Staging, "PendingConfig");
+
     /// <param name="root">Overrides the OS default; for tests only.</param>
     public AppPaths(string root) => Root = root;
 
@@ -57,6 +64,7 @@ public sealed class AppPaths
         Directory.CreateDirectory(Staging);
         Directory.CreateDirectory(Archives);
         Directory.CreateDirectory(Logs);
+        Directory.CreateDirectory(Backups);
         return this;
     }
 

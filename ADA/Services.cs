@@ -2,6 +2,7 @@ using ADA.Core.Catalog;
 using ADA.Core.Games;
 using ADA.Core.Secrets;
 using ADA.Imaging;
+using ADA.Infrastructure.Backups;
 using ADA.Infrastructure.Catalog;
 using ADA.Infrastructure.Downloads;
 using ADA.Infrastructure.Ficsit;
@@ -70,9 +71,12 @@ public static class Services
             sp.GetRequiredService<IModVersionSource>(),
             sp.GetRequiredService<GameRunningChecks>().IsRunningAsync,
             sp.GetRequiredService<ILogger<ModInstallService>>(),
-            sp.GetRequiredService<GameFilesFactory>()));
+            sp.GetRequiredService<GameFilesFactory>(),
+            // Resolved when called, not when built: the scheduler's dependencies lead back to this service.
+            (game, ct) => sp.GetRequiredService<BackupScheduler>().BeforeModChangeAsync(game, ct)));
         services.AddSingleton<ModResolutionService>();
         services.AddSingleton(_ => new ProfileStore(paths.Profiles, paths.ProfilesState));
+        services.AddSingleton<ProfileTransfer>();
         services.AddSingleton(sp => new GameProfiles(
             sp.GetRequiredService<ProfileStore>(),
             sp.GetRequiredService<ModInstallService>(),
@@ -90,6 +94,12 @@ public static class Services
         services.AddSingleton(sp => new ServerSetupCheck(sp.GetRequiredService<ServerConnections>(), sp.GetRequiredService<SatisfactoryServerApi>()));
         // Any local Satisfactory process blocks every local install: ps can't say which install it runs from.
         services.AddSingleton(sp => new GameRunningChecks(sp.GetRequiredService<ServerConnections>(), GameProcesses.IsAnyRunningAsync));
+        services.AddSingleton(sp => new BackupService(
+            () => sp.GetRequiredService<SettingsStore>().Current.BackupFolder ?? paths.Backups,
+            paths.Config, paths.PendingAdaConfig,
+            sp.GetRequiredService<GameRunningChecks>().IsRunningAsync, sp.GetRequiredService<ILogger<BackupService>>()));
+        services.AddSingleton(sp => new BackupScheduler(sp.GetRequiredService<BackupService>(),
+            sp.GetRequiredService<SettingsStore>(), sp.GetRequiredService<ILogger<BackupScheduler>>()));
         services.AddSingleton(sp => new GameFilesFactory(sp.GetRequiredService<ServerConnections>()));
         services.AddSingleton(sp => new ConfigPush(sp.GetRequiredService<ModInstallService>(), sp.GetRequiredService<GameFilesFactory>(),
             sp.GetRequiredService<GameRunningChecks>().IsRunningAsync, sp.GetRequiredService<ILogger<ConfigPush>>()));
@@ -106,6 +116,10 @@ public static class Services
         services.AddSingleton<ModsViewModel>();
         services.AddSingleton<ServersViewModel>();
         services.AddSingleton<SavesViewModel>();
+        services.AddSingleton(sp => new BackupScheduleViewModel(sp.GetRequiredService<SettingsStore>(),
+            sp.GetRequiredService<BackupScheduler>(), sp.GetRequiredService<DashboardViewModel>(), paths.Backups,
+            sp.GetRequiredService<ILogger<BackupScheduleViewModel>>()));
+        services.AddSingleton<BackupsViewModel>();
         services.AddSingleton<Func<UpdatesViewModel>>(sp => () => ActivatorUtilities.CreateInstance<UpdatesViewModel>(sp));
         services.AddSingleton<MainViewModel>();
 

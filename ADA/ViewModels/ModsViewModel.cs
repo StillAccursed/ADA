@@ -387,6 +387,23 @@ public partial class ModsViewModel : ViewModelBase
         }
     }
 
+    /// <summary>Takes a listed mod out of the game's install queue; the Queued filter drops it straight away.</summary>
+    [RelayCommand]
+    private void RemoveFromQueue(ModItemViewModel? mod)
+    {
+        if (mod is null || CurrentQueue() is not { } queue || !queue.Remove(mod.Reference))
+        {
+            return;
+        }
+
+        mod.IsQueued = false;
+        QueueCount = queue.Count;
+        if (Filter.Value == ModFilter.Queued)
+        {
+            ScheduleSearch(TimeSpan.Zero);
+        }
+    }
+
     [RelayCommand]
     private void ClearQueue()
     {

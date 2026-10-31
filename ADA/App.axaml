@@ -20,6 +20,9 @@
         <DataTemplate DataType="vm:SavesViewModel">
             <views:SavesView />
         </DataTemplate>
+        <DataTemplate DataType="vm:BackupsViewModel">
+            <views:BackupsView />
+        </DataTemplate>
         <DataTemplate DataType="vm:SettingsViewModel">
             <views:SettingsView />
         </DataTemplate>

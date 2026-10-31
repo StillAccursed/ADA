@@ -35,6 +35,19 @@ namespace ADA.Core.Settings;
 /// trusting SSH's own integrity checks for the bytes. Local installs always read back.
 /// </param>
 /// <param name="SavesView">The Saves page's layout (List, Grid or Card), as last chosen; null for the default.</param>
+/// <param name="BackupFolder">Where backups are kept; null for <c>ADA/Backups</c>.</param>
+/// <param name="BackupIntervalHours">
+/// Hours between scheduled backups; 0 turns the schedule off. One of <see cref="BACKUP_INTERVALS"/>, otherwise off.
+/// </param>
+/// <param name="BackupInstall">The game path of the install the schedule backs up; null when none was chosen.</param>
+/// <param name="BackupParts">
+/// Parts the schedule backs up, as <c>BackupPart</c> names joined by ", "; null for every part the install can have.
+/// </param>
+/// <param name="KeepAutomaticBackups">
+/// How many automatic backups of each kind to keep per install (scheduled, before mod changes, before restores);
+/// clamped to <see cref="MIN_KEEP_AUTOMATIC_BACKUPS"/>–<see cref="MAX_KEEP_AUTOMATIC_BACKUPS"/>.
+/// </param>
+/// <param name="BackupBeforeModChanges">Back up saves before installing, removing or switching mods.</param>
 public sealed record AppSettings(
     bool KeepDownloadedArchives = true,
     int DownloadRetries = AppSettings.DEFAULT_DOWNLOAD_RETRIES,
@@ -48,7 +61,13 @@ public sealed record AppSettings(
     string Theme = AppSettings.THEME_SYSTEM,
     string? ServersView = null,
     bool CheckServerUploads = true,
-    string? SavesView = null)
+    string? SavesView = null,
+    string? BackupFolder = null,
+    int BackupIntervalHours = 0,
+    string? BackupInstall = null,
+    string? BackupParts = null,
+    int KeepAutomaticBackups = AppSettings.DEFAULT_KEEP_AUTOMATIC_BACKUPS,
+    bool BackupBeforeModChanges = false)
 {
     internal const int DEFAULT_DOWNLOAD_RETRIES = 5;
     public const int MIN_DOWNLOAD_RETRIES = 0;
@@ -58,6 +77,9 @@ public sealed record AppSettings(
     public const int MIN_DASHBOARD_LATEST_MODS_COUNT = 1;
     public const int MAX_DASHBOARD_LATEST_MODS_COUNT = 20;
     internal const int DEFAULT_INTERFACE_SCALE = 100;
+    internal const int DEFAULT_KEEP_AUTOMATIC_BACKUPS = 10;
+    public const int MIN_KEEP_AUTOMATIC_BACKUPS = 1;
+    public const int MAX_KEEP_AUTOMATIC_BACKUPS = 100;
     public const string THEME_SYSTEM = "System";
     public const string THEME_LIGHT = "Light";
     public const string THEME_DARK = "Dark";
@@ -74,6 +96,9 @@ public sealed record AppSettings(
     /// <summary>Themes the Settings page offers; any other saved value falls back to System.</summary>
     public static readonly IReadOnlyList<string> THEMES = Array.AsReadOnly([THEME_SYSTEM, THEME_LIGHT, THEME_DARK]);
 
+    /// <summary>The intervals the Schedule box offers, in hours; 0 is off. Any other saved value turns the schedule off.</summary>
+    public static readonly IReadOnlyList<int> BACKUP_INTERVALS = Array.AsReadOnly([0, 1, 3, 6, 12, 24, 168]);
+
     public static AppSettings Default { get; } = new();
 
     /// <summary>The same settings with any out-of-range values (e.g. from a hand-edited file) pulled back into range.</summary>
@@ -85,5 +110,7 @@ public sealed record AppSettings(
             MIN_DASHBOARD_LATEST_MODS_COUNT, MAX_DASHBOARD_LATEST_MODS_COUNT),
         InterfaceScale = INTERFACE_SCALES.Contains(InterfaceScale) ? InterfaceScale : DEFAULT_INTERFACE_SCALE,
         Theme = THEMES.Contains(Theme) ? Theme : THEME_SYSTEM,
+        BackupIntervalHours = BACKUP_INTERVALS.Contains(BackupIntervalHours) ? BackupIntervalHours : 0,
+        KeepAutomaticBackups = Math.Clamp(KeepAutomaticBackups, MIN_KEEP_AUTOMATIC_BACKUPS, MAX_KEEP_AUTOMATIC_BACKUPS),
     };
 }

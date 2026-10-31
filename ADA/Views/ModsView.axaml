@@ -9,7 +9,7 @@
     <UserControl.Resources>
         <!-- List: compact rows. -->
         <DataTemplate x:Key="ListRow" x:DataType="vm:ModItemViewModel">
-            <Grid ColumnDefinitions="32,*,Auto,Auto,Auto" ColumnSpacing="12" Margin="0,3">
+            <Grid ColumnDefinitions="32,*,Auto,Auto,Auto,Auto" ColumnSpacing="12" Margin="0,3">
                 <Border Width="32" Height="32" CornerRadius="4" ClipToBounds="True" Background="{DynamicResource SurfaceRaisedBrush}">
                     <Image Source="{Binding Logo}" Stretch="UniformToFill" />
                 </Border>
@@ -31,14 +31,17 @@
                         Classes.install="{Binding !IsUninstallAction}" Classes.uninstall="{Binding IsUninstallAction}"
                         Command="{Binding $parent[views:ModsView].((vm:ModsViewModel)DataContext).QuickChangeCommand}"
                         CommandParameter="{Binding}" VerticalAlignment="Center" />
-                <Button Grid.Column="4" Classes="star" Content="{Binding FavouriteGlyph}" Command="{Binding ToggleFavouriteCommand}"
+                <Button Grid.Column="4" Classes="quickAction" Content="Remove from queue" IsVisible="{Binding IsQueued}"
+                        Command="{Binding $parent[views:ModsView].((vm:ModsViewModel)DataContext).RemoveFromQueueCommand}"
+                        CommandParameter="{Binding}" VerticalAlignment="Center" />
+                <Button Grid.Column="5" Classes="star" Content="{Binding FavouriteGlyph}" Command="{Binding ToggleFavouriteCommand}"
                         ToolTip.Tip="Favourite" />
             </Grid>
         </DataTemplate>
 
         <!-- Grid: tiles led by the logo. -->
         <DataTemplate x:Key="GridTile" x:DataType="vm:ModItemViewModel">
-            <Grid Width="164" RowDefinitions="Auto,Auto,Auto,Auto" Margin="2">
+            <Grid Width="164" RowDefinitions="Auto,Auto,Auto,Auto,Auto" Margin="2">
                 <Panel>
                     <Border Height="132" CornerRadius="6" ClipToBounds="True" Background="{DynamicResource SurfaceRaisedBrush}">
                         <Image Source="{Binding Logo}" Stretch="UniformToFill" />
@@ -62,6 +65,9 @@
                 <TextBlock Grid.Row="3" Margin="0,8,0,0" FontSize="12" HorizontalAlignment="Center"
                            Text="{Binding NoBuildHere.Tag, FallbackValue=''}" IsVisible="{Binding !ShowQuickAction}"
                            ToolTip.Tip="{Binding NoBuildHere.Reason, FallbackValue=''}" Foreground="{DynamicResource TextSecondaryBrush}" />
+                <Button Grid.Row="4" Classes="quickAction" Content="Remove from queue" Margin="0,6,0,0" IsVisible="{Binding IsQueued}"
+                        Command="{Binding $parent[views:ModsView].((vm:ModsViewModel)DataContext).RemoveFromQueueCommand}"
+                        CommandParameter="{Binding}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
             </Grid>
         </DataTemplate>
 
@@ -98,6 +104,9 @@
                         <Button Classes="quickAction" Content="{Binding QuickActionText}" IsVisible="{Binding ShowQuickAction}"
                                 Classes.install="{Binding !IsUninstallAction}" Classes.uninstall="{Binding IsUninstallAction}"
                                 Command="{Binding $parent[views:ModsView].((vm:ModsViewModel)DataContext).QuickChangeCommand}"
+                                CommandParameter="{Binding}" />
+                        <Button Classes="quickAction" Content="Remove from queue" IsVisible="{Binding IsQueued}"
+                                Command="{Binding $parent[views:ModsView].((vm:ModsViewModel)DataContext).RemoveFromQueueCommand}"
                                 CommandParameter="{Binding}" />
                     </StackPanel>
                 </Grid>
