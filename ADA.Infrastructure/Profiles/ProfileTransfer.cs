@@ -1,6 +1,8 @@
+using ADA.Core.Activity;
 using ADA.Core.Catalog;
 using ADA.Core.Games;
 using ADA.Core.Profiles;
+using ADA.Infrastructure.Activity;
 using ADA.Infrastructure.Installing;
 
 namespace ADA.Infrastructure.Profiles;
@@ -9,7 +11,8 @@ namespace ADA.Infrastructure.Profiles;
 /// Transfers saved profiles through ADA and SMM files. Import only adds to the library; activation
 /// and installation remain the profile switcher's responsibility. File work runs off the UI thread.
 /// </summary>
-public sealed class ProfileTransfer(ProfileStore store, IModVersionSource versions)
+/// <param name="activity">Where imports and exports are recorded.</param>
+public sealed class ProfileTransfer(ProfileStore store, IModVersionSource versions, ActivityLog? activity = null)
 {
     /// <summary>
     /// Validates one .olp or .smmprofile and saves it under an unused name. SMM imports preserve locked
@@ -17,7 +20,22 @@ public sealed class ProfileTransfer(ProfileStore store, IModVersionSource versio
     /// Cancellation before saving leaves the library unchanged; saving itself completes atomically.
     /// </summary>
     /// <exception cref="InvalidProfileException">The format or profile is invalid, or an enabled SMM mod has no locked version.</exception>
-    public Task<ModProfile> ImportAsync(string path, CancellationToken ct = default) => Task.Run(() =>
+    public Task<ModProfile> ImportAsync(string path, CancellationToken ct = default) =>
+        activity.RecordAsync(ActivityArea.Profiles, ActivityActions.PROFILE_IMPORTED, null, () => ImportCoreAsync(path, ct),
+            profile => new ActivityDescription($"Imported profile {profile.Name} from {Path.GetFileName(path)}"),
+            $"Importing {Path.GetFileName(path)} failed");
+
+    /// <summary>
+    /// Exports a snapshot to the format named by the destination extension, using the selected
+    /// installation's build and platform for SMM. SMM catalogue validation finishes before writing;
+    /// ADA exports work offline. Writes atomically without changing the saved or active profile.
+    /// </summary>
+    /// <exception cref="InvalidProfileException">The extension is unsupported, the SMM game build is unknown, or catalogue validation fails.</exception>
+    public Task ExportAsync(ModProfile profile, GameInstall game, string path, CancellationToken ct = default) =>
+        activity.RecordAsync(ActivityArea.Profiles, ActivityActions.PROFILE_EXPORTED, game, () => ExportCoreAsync(profile, game, path, ct),
+            new ActivityDescription($"Exported {profile.Name} to {Path.GetFileName(path)}"), $"Exporting {profile.Name} failed");
+
+    private Task<ModProfile> ImportCoreAsync(string path, CancellationToken ct) => Task.Run(() =>
     {
         var profile = Path.GetExtension(path).ToLowerInvariant() switch
         {
@@ -29,13 +47,7 @@ public sealed class ProfileTransfer(ProfileStore store, IModVersionSource versio
         return store.AddImported(profile);
     }, ct);
 
-    /// <summary>
-    /// Exports a snapshot to the format named by the destination extension, using the selected
-    /// installation's build and platform for SMM. SMM catalogue validation finishes before writing;
-    /// ADA exports work offline. Writes atomically without changing the saved or active profile.
-    /// </summary>
-    /// <exception cref="InvalidProfileException">The extension is unsupported, the SMM game build is unknown, or catalogue validation fails.</exception>
-    public Task ExportAsync(ModProfile profile, GameInstall game, string path, CancellationToken ct = default)
+    private Task ExportCoreAsync(ModProfile profile, GameInstall game, string path, CancellationToken ct)
     {
         var format = Path.GetExtension(path).ToLowerInvariant() switch
         {

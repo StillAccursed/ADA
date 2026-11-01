@@ -1,5 +1,6 @@
 using ADA.Core.Catalog;
 using ADA.Core.Games;
+using ADA.Infrastructure.Activity;
 using ADA.Infrastructure.Catalog;
 using ADA.Infrastructure.Ficsit;
 using ADA.Infrastructure.Installing;
@@ -25,7 +26,7 @@ internal static class DashboardFactory
         ModInstallService? installs = null, GameProfiles? profiles = null, ModResolutionService? resolution = null,
         Func<CancellationToken, Task<IReadOnlyList<GameProcess>>>? findRunning = null, TimeSpan? watchInterval = null,
         ModChangelogs? changelogs = null, ServerConnections? servers = null, ProfileSync? sync = null, ConfigPush? configPush = null,
-        ProfileTransfer? profileTransfer = null)
+        ProfileTransfer? profileTransfer = null, ActivityLog? activity = null)
     {
         store ??= new ModCatalogStore(dir.Combine("dashboard-catalog.db"));
         settings ??= new SettingsStore(dir.Combine("dashboard-settings.json"));
@@ -42,6 +43,6 @@ internal static class DashboardFactory
             profileTransfer ?? new ProfileTransfer(new ProfileStore(dir.Combine("Profiles"), dir.Combine("profiles.json")),
                 new FakeVersionSource((_, _) => Task.FromResult<IReadOnlyList<CatalogVersion>>([]))),
             findRunning ?? (_ => Task.FromResult<IReadOnlyList<GameProcess>>([])),
-            watchInterval, servers, sync, configPush);
+            watchInterval, servers, sync, configPush, activity);
     }
 }

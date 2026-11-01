@@ -1,6 +1,8 @@
+using ADA.Core.Activity;
 using ADA.Core.Catalog;
 using ADA.Core.Games;
 using ADA.Core.Profiles;
+using ADA.Infrastructure.Activity;
 using ADA.Infrastructure.Installing;
 using ADA.Infrastructure.Profiles;
 using ADA.Infrastructure.Saves;
@@ -74,7 +76,7 @@ public sealed class SavesViewModelTests : IDisposable
     }
 
     /// <param name="knowsSaveFolder">False gives the install no <c>UserDataPath</c>, as for Legendary without Heroic.</param>
-    private async Task<SavesViewModel> ShowAsync(bool knowsSaveFolder = true)
+    private async Task<SavesViewModel> ShowAsync(bool knowsSaveFolder = true, ActivityLog? activity = null)
     {
         var game = _dir.CreateGame("game");
         var install = new GameInstall(game, GameLauncher.Epic, GameHost.CrossOver, GameKind.Client, null, "Test",
@@ -91,7 +93,7 @@ public sealed class SavesViewModelTests : IDisposable
         await Wait.Until(() => _dashboard.SelectedInstall is { IsBusy: false });
 
         var page = new SavesViewModel(_dashboard, new SaveLibrary(SaveHeaderReader.Read), new BlueprintTransfer(), installs, profiles, _settings,
-            NullLogger<SavesViewModel>.Instance);
+            NullLogger<SavesViewModel>.Instance, activity);
         _pages.Add(page);
         await page.ShowAsync();
         return page;
@@ -358,6 +360,25 @@ public sealed class SavesViewModelTests : IDisposable
 
         Assert.StartsWith("Copied 1 blueprint to Verdana.", page.BlueprintNotice);
         Assert.Equal("1 blueprint", page.Shown.Single(s => s.Name == "Verdana").BlueprintsText);
+    }
+
+    [Fact]
+    public async Task RecordsCopiedBlueprints()
+    {
+        var activity = new ActivityLog(_dir.Combine("activity.jsonl"));
+        WriteSave("Atria_autosave_0");
+        WriteSave("Verdana_autosave_0", session: "Verdana");
+        WriteBlueprint("Atria", "Factory");
+        var page = await ShowAsync(activity: activity);
+        OpenSession(page, "Atria");
+
+        page.Session!.Blueprints.Single().IsSelected = true;
+        await page.CopyBlueprintsCommand.ExecuteAsync("Verdana");
+
+        var entry = Assert.Single(await activity.ReadAsync());
+        Assert.Equal((ActivityArea.Saves, ActivityActions.BLUEPRINTS_COPIED, "Copied 1 blueprint to Verdana"),
+            (entry.Area, entry.Action, entry.Summary));
+        Assert.Equal(["Factory"], entry.Details);
     }
 
     [Fact]

@@ -1,0 +1,133 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:ADA.ViewModels"
+             xmlns:views="using:ADA.Views"
+             x:Class="ADA.Views.ActivityView"
+             x:DataType="vm:ActivityViewModel">
+    <UserControl.Styles>
+        <Style Selector="TextBlock.detail">
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+            <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
+        </Style>
+        <Style Selector="TextBlock.dayHeader">
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="LetterSpacing" Value="1" />
+            <Setter Property="Margin" Value="0,16,0,4" />
+            <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
+        </Style>
+        <!-- A row: the whole width is the toggle, with no button chrome. -->
+        <Style Selector="Button.row">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Padding" Value="6,6" />
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="CornerRadius" Value="6" />
+        </Style>
+        <Style Selector="Button.row:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource SurfaceRaisedBrush}" />
+        </Style>
+        <Style Selector="TextBlock.summary">
+            <Setter Property="TextWrapping" Value="Wrap" />
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+        </Style>
+        <Style Selector="TextBlock.summary.failed">
+            <Setter Property="Foreground" Value="{DynamicResource FailureBrush}" />
+        </Style>
+    </UserControl.Styles>
+
+    <DockPanel Margin="32,28,32,16">
+        <TextBlock DockPanel.Dock="Top" Text="Activity" FontSize="24" FontWeight="SemiBold" Margin="0,0,0,8"
+                   Foreground="{DynamicResource TextPrimaryBrush}" />
+        <TabControl Padding="0,12,0,0">
+            <TabItem Header="Activity">
+                <DockPanel>
+                    <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right" Margin="0,0,0,8">
+                        <Button Content="Show folder" Click="OnShowFolder" ToolTip.Tip="{Binding FolderPath}" />
+                        <Button Content="Clear history…" Command="{Binding ClearHistoryCommand}" />
+                    </StackPanel>
+
+                    <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="8" Margin="0,0,0,8">
+                        <TextBox PlaceholderText="Search summaries, mods, installs and errors" Text="{Binding SearchText}" />
+                        <ComboBox Grid.Column="1" MinWidth="130" ItemsSource="{Binding Areas}" SelectedItem="{Binding SelectedArea}" />
+                        <ComboBox Grid.Column="2" MinWidth="180" MaxWidth="280" ItemsSource="{Binding Installs}"
+                                  SelectedItem="{Binding SelectedInstall}" />
+                        <CheckBox Grid.Column="3" Content="Failures only" IsChecked="{Binding FailuresOnly}" />
+                    </Grid>
+
+                    <TextBlock DockPanel.Dock="Top" Classes="detail" Text="{Binding CountText}" Margin="2,0,0,4"
+                               IsVisible="{Binding HasEntries}" />
+                    <TextBlock DockPanel.Dock="Top" Text="{Binding Notice}" TextWrapping="Wrap" Margin="2,0,0,8"
+                               IsVisible="{Binding Notice, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                               Foreground="{DynamicResource WarningBrush}" />
+
+                    <Panel>
+                        <TextBlock Text="{Binding EmptyText}" IsVisible="{Binding !ShowsList}" TextWrapping="Wrap" TextAlignment="Center"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="420" FontSize="15"
+                                   Foreground="{DynamicResource TextSecondaryBrush}" />
+                        <ScrollViewer IsVisible="{Binding ShowsList}">
+                            <StackPanel Margin="0,0,12,12">
+                                <ItemsControl ItemsSource="{Binding Days}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="vm:ActivityDayViewModel">
+                                            <StackPanel>
+                                                <TextBlock Classes="dayHeader" Text="{Binding Header}" />
+                                                <ItemsControl ItemsSource="{Binding Entries}">
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate x:DataType="vm:ActivityEntryViewModel">
+                                                            <StackPanel>
+                                                                <Button Classes="row" Command="{Binding ToggleCommand}"
+                                                                        ToolTip.Tip="{Binding AreaText}">
+                                                                    <Grid ColumnDefinitions="64,24,*,16" ColumnSpacing="6">
+                                                                        <TextBlock Classes="detail" Text="{Binding TimeText}" VerticalAlignment="Top"
+                                                                                   Margin="0,2,0,0" />
+                                                                        <TextBlock Grid.Column="1" Text="{Binding Glyph}" VerticalAlignment="Top"
+                                                                                   Foreground="{DynamicResource TextSecondaryBrush}" />
+                                                                        <StackPanel Grid.Column="2" Spacing="2">
+                                                                            <TextBlock Classes="summary" Classes.failed="{Binding IsFailed}"
+                                                                                       Text="{Binding Summary}" />
+                                                                            <TextBlock Classes="detail" Text="{Binding SubtitleText}"
+                                                                                       IsVisible="{Binding HasSubtitle}" />
+                                                                        </StackPanel>
+                                                                        <TextBlock Grid.Column="3" Text="{Binding ExpanderGlyph}"
+                                                                                   Foreground="{DynamicResource TextSecondaryBrush}" />
+                                                                    </Grid>
+                                                                </Button>
+                                                                <!-- Outside the button, so the lines can be selected and copied. -->
+                                                                <StackPanel IsVisible="{Binding IsExpanded}" Spacing="2" Margin="106,0,22,8">
+                                                                    <SelectableTextBlock FontSize="12" Text="{Binding FullTimeText}"
+                                                                                         Foreground="{DynamicResource TextSecondaryBrush}" />
+                                                                    <SelectableTextBlock FontSize="12" TextWrapping="Wrap" Text="{Binding Error}"
+                                                                                         IsVisible="{Binding HasError}"
+                                                                                         Foreground="{DynamicResource FailureBrush}" />
+                                                                    <ItemsControl ItemsSource="{Binding Details}">
+                                                                        <ItemsControl.ItemTemplate>
+                                                                            <DataTemplate x:DataType="x:String">
+                                                                                <SelectableTextBlock FontSize="12" TextWrapping="Wrap" Text="{Binding}"
+                                                                                                     Foreground="{DynamicResource TextPrimaryBrush}" />
+                                                                            </DataTemplate>
+                                                                        </ItemsControl.ItemTemplate>
+                                                                    </ItemsControl>
+                                                                </StackPanel>
+                                                            </StackPanel>
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                                <Button Content="{Binding ShowMoreText}" Command="{Binding ShowMoreCommand}" IsVisible="{Binding HasMore}"
+                                        HorizontalAlignment="Center" Margin="0,12,0,0" />
+                            </StackPanel>
+                        </ScrollViewer>
+                    </Panel>
+                </DockPanel>
+            </TabItem>
+            <TabItem Header="Logs">
+                <views:LogsView DataContext="{Binding Logs}" />
+            </TabItem>
+        </TabControl>
+    </DockPanel>
+</UserControl>

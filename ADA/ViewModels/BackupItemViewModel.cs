@@ -21,7 +21,7 @@ public sealed class BackupItemViewModel(BackupInfo backup)
 
     public string SourceText => Backup.Manifest.Source.DisplayName;
 
-    public string PartsText => PartsLabel(Backup.Manifest.Parts);
+    public string PartsText => BackupService.DescribeParts(Backup.Manifest.Parts);
 
     public string DetailText
     {
@@ -37,9 +37,4 @@ public sealed class BackupItemViewModel(BackupInfo backup)
     public string SkippedText => Backup.Manifest.Skipped.Count == 1
         ? "1 file was left out because it kept changing while being copied."
         : $"{Backup.Manifest.Skipped.Count} files were left out because they kept changing while being copied.";
-
-    /// <summary>"Everything", or the parts' names joined, e.g. "Saves, Mod settings".</summary>
-    internal static string PartsLabel(BackupPart parts) => parts == BackupPart.All
-        ? "Everything"
-        : string.Join(", ", BackupService.Split(parts).Select(BackupService.Describe));
 }

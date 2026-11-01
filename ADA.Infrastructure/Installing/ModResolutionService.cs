@@ -2,6 +2,7 @@ using ADA.Core.Catalog;
 using ADA.Core.Games;
 using ADA.Core.Profiles;
 using ADA.Core.Resolution;
+using ADA.Infrastructure.Logging;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Semver;
@@ -105,9 +106,9 @@ public sealed class ModResolutionService(
 
         if (result.Succeeded)
         {
-            _log.LogInformation("Resolved {Requested} for game build {Build}: {Mods}",
-                requested.Select(r => r.Reference), build.Changelist,
-                result.Mods.Select(m => $"{m.Reference} {m.Version.Version}"));
+            var mods = result.Mods.Select(m => $"{m.Reference} {m.Version.Version}").ToList();
+            _log.LogInformation("Resolved {Count} mods ({Requested}) for game build {Build}: {Mods}",
+                mods.Count, LogText.Sample(requested.Select(r => r.Reference)), build.Changelist, LogText.Sample(mods));
         }
         else
         {

@@ -1,8 +1,10 @@
 using System.Security.Authentication;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
+using ADA.Core.Activity;
 using ADA.Core.Games;
 using ADA.Core.Servers;
+using ADA.Infrastructure.Activity;
 using ADA.Infrastructure.Installing;
 using ADA.Infrastructure.IO;
 using FluentFTP;
@@ -41,8 +43,11 @@ public sealed class ServerConnectException(string message, Exception? inner = nu
 /// dropped connection is retried in the background until the user disconnects.
 /// </summary>
 /// <remarks><see cref="Changed"/> is raised on whichever thread changed the state; UI consumers marshal it.</remarks>
+/// <param name="activity">
+/// Where the user's connects, disconnects and lock take-overs are recorded; reconnects at launch and background retries aren't.
+/// </param>
 public sealed class ServerConnections(ServerStore store, ServerSecrets secrets, SatisfactoryServerApi api,
-    ILogger<ServerConnections>? log = null) : IDisposable
+    ILogger<ServerConnections>? log = null, ActivityLog? activity = null) : IDisposable
 {
     private static readonly TimeSpan CONNECT_TIMEOUT = TimeSpan.FromSeconds(15);
     private static readonly TimeSpan OPERATION_TIMEOUT = TimeSpan.FromMinutes(1);
@@ -93,16 +98,25 @@ public sealed class ServerConnections(ServerStore store, ServerSecrets secrets, 
     /// connected and the reason is thrown.
     /// </summary>
     /// <exception cref="ServerConnectException">It couldn't connect; the message says why.</exception>
-    public Task ConnectAsync(Guid serverId, CancellationToken ct = default) =>
-        ConnectCoreAsync(store.Find(serverId) ?? throw new ServerConnectException("That server is no longer saved."),
-            explicitConnect: true, fromRetry: false, ct);
+    public Task ConnectAsync(Guid serverId, CancellationToken ct = default)
+    {
+        if (store.Find(serverId) is not { } server)
+        {
+            return Task.FromException(new ServerConnectException("That server is no longer saved."));
+        }
+        return activity.RecordAsync(ActivityArea.Servers, ActivityActions.SERVER_CONNECTED, ToInstall(server, null),
+            () => ConnectCoreAsync(server, explicitConnect: true, fromRetry: false, ct),
+            new ActivityDescription($"Connected to {server.Name}"), $"Connecting to {server.Name} failed");
+    }
 
     /// <summary>The user chose Disconnect: closes the connection and stops reconnecting on launch.</summary>
     public async Task DisconnectAsync()
     {
+        ServerConnection? was;
         await _gate.WaitAsync();
         try
         {
+            was = Server;
             Close();
             store.SetConnected(null);
             SetState(null, ServerState.Disconnected, null, null);
@@ -110,6 +124,11 @@ public sealed class ServerConnections(ServerStore store, ServerSecrets secrets, 
         finally
         {
             _gate.Release();
+        }
+        if (was is not null)
+        {
+            activity?.Record(ActivityArea.Servers, ActivityActions.SERVER_DISCONNECTED, ActivityOutcome.Succeeded,
+                $"Disconnected from {was.Name}", ToInstall(was, null));
         }
     }
 
@@ -211,6 +230,7 @@ public sealed class ServerConnections(ServerStore store, ServerSecrets secrets, 
         {
             throw new ServerUnavailableException("Connect to the server first.");
         }
+        var holder = RemoteLock.HeldByOther(file);
         try
         {
             RemoteLock.Break(file);
@@ -218,8 +238,12 @@ public sealed class ServerConnections(ServerStore store, ServerSecrets secrets, 
         }
         catch (IOException e)
         {
+            activity?.Record(ActivityArea.Servers, ActivityActions.SERVER_LOCK_TAKEN_OVER, ActivityOutcome.Failed,
+                $"Taking over {server.Name}'s lock failed", ToInstall(server, null), [DescribeHolder(holder)], e.Message);
             throw new ServerUnavailableException($"Couldn't remove the lock: {e.Message}", e);
         }
+        activity?.Record(ActivityArea.Servers, ActivityActions.SERVER_LOCK_TAKEN_OVER, ActivityOutcome.Succeeded,
+            $"Took over {server.Name}'s lock", ToInstall(server, null), [DescribeHolder(holder)]);
     }, ct);
 
     /// <summary>The connected server's files.</summary>
@@ -581,6 +605,10 @@ public sealed class ServerConnections(ServerStore store, ServerSecrets secrets, 
         (Server, State, Problem, Install) = (server, state, problem, install);
         Changed?.Invoke(this, EventArgs.Empty);
     }
+
+    private static string DescribeHolder(LockHolder? holder) => holder is null || holder.IsUnknown
+        ? "Held by an ADA that couldn't be identified"
+        : $"Held by {holder.Machine} (process {holder.Process}) since {holder.Since.ToLocalTime():g}";
 
     private static bool Matches(GameInstall game, ServerConnection server) => game.GamePath == InstallKey(server.Id);
 

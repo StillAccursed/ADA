@@ -1,7 +1,9 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using ADA.Core.Activity;
 using ADA.Core.Games;
 using ADA.Core.Saves;
+using ADA.Infrastructure.Activity;
 using ADA.Infrastructure.Installing;
 using ADA.Infrastructure.Profiles;
 using ADA.Infrastructure.Saves;
@@ -50,6 +52,7 @@ public partial class SavesViewModel : ViewModelBase
     private readonly GameProfiles _profiles;
     private readonly SettingsStore _settings;
     private readonly ILogger _log;
+    private readonly ActivityLog? _activity;
     private SynchronizationContext? _viewContext;
     private bool _isShown;
     private SaveFolderWatcher? _watcher;
@@ -148,10 +151,10 @@ public partial class SavesViewModel : ViewModelBase
     internal Task PendingRefresh { get; private set; } = Task.CompletedTask;
 
     public SavesViewModel(DashboardViewModel dashboard, SaveLibrary library, BlueprintTransfer transfer, ModInstallService installs,
-        GameProfiles profiles, SettingsStore settings, ILogger<SavesViewModel> log)
+        GameProfiles profiles, SettingsStore settings, ILogger<SavesViewModel> log, ActivityLog? activity = null)
     {
-        (_dashboard, _library, _transfer, _installs, _profiles, _settings, _log) =
-            (dashboard, library, transfer, installs, profiles, settings, log);
+        (_dashboard, _library, _transfer, _installs, _profiles, _settings, _log, _activity) =
+            (dashboard, library, transfer, installs, profiles, settings, log, activity);
         View = Enum.TryParse<ModView>(settings.Current.SavesView, out var saved) ? saved : ModView.List;
         dashboard.PropertyChanged += OnDashboardChanged;
         installs.Changed += OnInstallsChanged;
@@ -209,12 +212,14 @@ public partial class SavesViewModel : ViewModelBase
                 BlueprintNotice = string.Join(" ", ["No blueprints were found.", .. import.Problems]);
                 return;
             }
-            await WriteBlueprintsAsync(userData, session.Name, import.Blueprints, import.Problems, "Import", "Imported", $"into {session.Name}");
+            await WriteBlueprintsAsync(userData, session.Name, import.Blueprints, import.Problems, "Import", "Imported", $"into {session.Name}",
+                ActivityActions.BLUEPRINTS_IMPORTED);
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or ArgumentException)
         {
             _log.LogError(e, "Importing blueprints into {Session} failed", session.Name);
             BlueprintNotice = $"Couldn't import blueprints: {e.Message}";
+            RecordBlueprintFailure(ActivityActions.BLUEPRINTS_IMPORTED, $"Importing blueprints into {session.Name} failed", e);
         }
     }
 
@@ -234,11 +239,15 @@ public partial class SavesViewModel : ViewModelBase
             var files = await _transfer.ReadAsync(session.ExportScope);
             await _transfer.ExportAsync(files, zip);
             BlueprintNotice = $"Exported {Count(files.Count, "blueprint")}.";
+            _activity?.Record(ActivityArea.Saves, ActivityActions.BLUEPRINTS_EXPORTED, ActivityOutcome.Succeeded,
+                $"Exported {Count(files.Count, "blueprint")} from {session.Name}", _dashboard.SelectedInstall?.Install,
+                files.Select(f => f.Name).Order(StringComparer.CurrentCultureIgnoreCase).ToList());
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or InvalidDataException)
         {
             _log.LogError(e, "Exporting blueprints from {Session} failed", session.Name);
             BlueprintNotice = $"Couldn't export blueprints: {e.Message}";
+            RecordBlueprintFailure(ActivityActions.BLUEPRINTS_EXPORTED, $"Exporting blueprints from {session.Name} failed", e);
         }
     }
 
@@ -360,12 +369,14 @@ public partial class SavesViewModel : ViewModelBase
         try
         {
             var files = await _transfer.ReadAsync(chosen);
-            await WriteBlueprintsAsync(userData, targetSession, files, [], "Copy", "Copied", $"to {targetSession}");
+            await WriteBlueprintsAsync(userData, targetSession, files, [], "Copy", "Copied", $"to {targetSession}",
+                ActivityActions.BLUEPRINTS_COPIED);
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or InvalidDataException or ArgumentException)
         {
             _log.LogError(e, "Copying blueprints from {From} to {To} failed", session.Name, targetSession);
             BlueprintNotice = $"Couldn't copy blueprints: {e.Message}";
+            RecordBlueprintFailure(ActivityActions.BLUEPRINTS_COPIED, $"Copying blueprints to {targetSession} failed", e);
         }
     }
 
@@ -390,8 +401,9 @@ public partial class SavesViewModel : ViewModelBase
     /// <param name="action">The confirm button's text, e.g. "Copy".</param>
     /// <param name="done">The report's verb, e.g. "Copied".</param>
     /// <param name="where">The report's destination, e.g. "to Verdana".</param>
+    /// <param name="activityAction">What the write is recorded as, e.g. <see cref="ActivityActions.BLUEPRINTS_COPIED"/>.</param>
     private async Task WriteBlueprintsAsync(string userData, string session, IReadOnlyList<BlueprintFiles> files,
-        IReadOnlyList<string> problems, string action, string done, string where)
+        IReadOnlyList<string> problems, string action, string done, string where, string activityAction)
     {
         var clash = BlueprintClash.KeepBoth;
         var clashes = _transfer.Clashes(userData, session, files.Select(f => f.Name));
@@ -416,8 +428,14 @@ public partial class SavesViewModel : ViewModelBase
         var renamed = result.Renamed.Count == 0 ? "" : $", {result.Renamed.Count} renamed";
         BlueprintNotice = string.Join(" ",
             [$"{done} {Count(result.Written.Count, "blueprint")} {where}{renamed}. Reload the session in the game to see them.", .. problems]);
+        _activity?.Record(ActivityArea.Saves, activityAction, ActivityOutcome.Succeeded,
+            $"{done} {Count(result.Written.Count, "blueprint")} {where}{renamed}", _dashboard.SelectedInstall?.Install,
+            [.. result.Written.Order(StringComparer.CurrentCultureIgnoreCase), .. result.Renamed.Select(r => $"{r.From} was saved as {r.To}"), .. problems]);
         await RefreshAsync();
     }
+
+    private void RecordBlueprintFailure(string action, string summary, Exception e) =>
+        _activity?.Record(ActivityArea.Saves, action, ActivityOutcome.Failed, summary, _dashboard.SelectedInstall?.Install, error: e.Message);
 
     private IReadOnlyList<string> OtherSessions(string session) =>
         _all.Select(s => s.Name)

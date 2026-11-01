@@ -1,6 +1,8 @@
+using ADA.Core.Activity;
 using ADA.Core.Catalog;
 using ADA.Core.Games;
 using ADA.Core.Profiles;
+using ADA.Infrastructure.Activity;
 using ADA.Infrastructure.Profiles;
 using ADA.Tests.Fixtures;
 
@@ -156,4 +158,22 @@ public sealed class ProfileTransferTests : IDisposable
         { "profile": { "name": "Imported", "mods": {{requested}} },
           "lockfile": { "version": 1, "mods": {{locked}} } }
         """);
+
+    [Fact]
+    public async Task RecordsImportsAndExports()
+    {
+        var activity = new ActivityLog(_dir.Combine("activity.jsonl"));
+        var transfer = new ProfileTransfer(_store, new FakeVersionSource((_, _) => Task.FromResult<IReadOnlyList<CatalogVersion>>([])), activity);
+        var path = _dir.Combine("Atria.olp");
+
+        await transfer.ExportAsync(new ModProfile("Atria", [new("SML", "1.0.0")]), Game(), path);
+        await transfer.ImportAsync(path);
+        await Assert.ThrowsAsync<InvalidProfileException>(() => transfer.ImportAsync(_dir.Combine("notes.txt")));
+
+        var entries = await activity.ReadAsync();
+        Assert.Equal(["Importing notes.txt failed", "Imported profile Atria from Atria.olp", "Exported Atria to Atria.olp"],
+            entries.Select(e => e.Summary));
+        Assert.Equal([ActivityOutcome.Failed, ActivityOutcome.Succeeded, ActivityOutcome.Succeeded], entries.Select(e => e.Outcome));
+        Assert.Equal("Choose an .olp or .smmprofile file.", entries[0].Error);
+    }
 }

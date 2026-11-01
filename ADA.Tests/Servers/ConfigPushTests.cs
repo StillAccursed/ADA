@@ -1,7 +1,9 @@
 using System.Text.Json;
+using ADA.Core.Activity;
 using ADA.Core.Catalog;
 using ADA.Core.Games;
 using ADA.Core.Servers;
+using ADA.Infrastructure.Activity;
 using ADA.Infrastructure.Installing;
 using ADA.Infrastructure.IO;
 using ADA.Infrastructure.Profiles;
@@ -52,7 +54,8 @@ public sealed class ConfigPushTests : IDisposable
         _dir.Dispose();
     }
 
-    private ConfigPush Push() => new(_installs, new GameFilesFactory(_connections), (_, _) => Task.FromResult(_serverRunning));
+    private ConfigPush Push(ActivityLog? activity = null) =>
+        new(_installs, new GameFilesFactory(_connections), (_, _) => Task.FromResult(_serverRunning), activity: activity);
 
     private GameInstallViewModel Card(GameInstall install) =>
         new(install, _installs, _resolution, _profiles, NullLogger<GameInstallViewModel>.Instance);
@@ -103,6 +106,22 @@ public sealed class ConfigPushTests : IDisposable
         var differences = await Push().CompareAsync(_game, server);
 
         Assert.Equal([new ConfigDifference("Storage", true), new ConfigDifference("Trains", false)], differences);
+    }
+
+    [Fact]
+    public async Task RecordsPushes()
+    {
+        var activity = new ActivityLog(_dir.Combine("activity.jsonl"));
+        var server = await ConnectWith(["Storage", "Trains"], ["Storage", "Trains"]);
+        Write(GameConfig("Storage"), "game storage");
+        Write(GameConfig("Trains"), "game trains");
+
+        await Push(activity).PushAsync(_game, server, ["Trains", "Storage"]);
+
+        var entry = Assert.Single(await activity.ReadAsync());
+        Assert.Equal((ActivityActions.CONFIGS_PUSHED, $"Pushed settings for 2 mods to {server.DisplayName}", server.GamePath),
+            (entry.Action, entry.Summary, entry.InstallKey));
+        Assert.Equal(["Storage", "Trains"], entry.Details);
     }
 
     [Fact]

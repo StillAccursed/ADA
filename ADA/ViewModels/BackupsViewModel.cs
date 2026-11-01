@@ -124,7 +124,7 @@ public partial class BackupsViewModel : ViewModelBase
         {
             var backup = await _backups.CreateAsync(game, parts, BackupTrigger.Manual, progress, _running.Token);
             var skipped = backup.Manifest.Skipped.Count == 0 ? "" : $" {new BackupItemViewModel(backup).SkippedText}";
-            Notice = $"Backed up {BackupItemViewModel.PartsLabel(parts)} ({ByteSize.Format(backup.Size)}).{skipped}";
+            Notice = $"Backed up {BackupService.DescribeParts(parts)} ({ByteSize.Format(backup.Size)}).{skipped}";
         }
         catch (OperationCanceledException)
         {

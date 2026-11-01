@@ -1,6 +1,8 @@
+using ADA.Core.Activity;
 using ADA.Core.Catalog;
 using ADA.Core.Games;
 using ADA.Core.Profiles;
+using ADA.Infrastructure.Activity;
 using ADA.Infrastructure.Installing;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -29,7 +31,9 @@ public sealed record ProfileSwitchPreview(ModChangePlan Saved, ModChangePlan? Ne
 /// mods another manager installed into the current profile or a new one. Only the game's own mod
 /// folders and ADA's files are touched; another manager's files are never edited.
 /// </summary>
-public sealed class GameProfiles(ProfileStore store, ModInstallService installs, ILogger<GameProfiles>? log = null)
+/// <param name="activity">Where creating, switching, deleting and importing profiles is recorded.</param>
+public sealed class GameProfiles(ProfileStore store, ModInstallService installs, ILogger<GameProfiles>? log = null,
+    ActivityLog? activity = null)
 {
     private const string UNSAVED_MODS_PROBLEM = "Create a profile for the installed mods before switching, so they can be restored later.";
 
@@ -60,7 +64,24 @@ public sealed class GameProfiles(ProfileStore store, ModInstallService installs,
     /// <exception cref="InstallationBusyException">A known installation is already reserved.</exception>
     /// <exception cref="InstallException">Recovery or profile activation is pending.</exception>
     /// <exception cref="InvalidProfileException">The profile no longer exists.</exception>
-    public Task DeleteAsync(string name, IReadOnlyList<GameInstall> games, CancellationToken ct = default) => Task.Run(() =>
+    public Task DeleteAsync(string name, IReadOnlyList<GameInstall> games, CancellationToken ct = default) =>
+        activity.RecordAsync(ActivityArea.Profiles, ActivityActions.PROFILE_DELETED, null, () => DeleteCoreAsync(name, games, ct),
+            new ActivityDescription($"Deleted profile {name}"), $"Deleting profile {name} failed");
+
+    /// <summary>
+    /// Saves the mods ADA manages in <paramref name="game"/> as a new profile and makes it the game's
+    /// active profile. Used for a game's first profile, and to start a new playthrough's profile
+    /// from what is installed. Holds the installation for the whole read-and-save.
+    /// </summary>
+    /// <exception cref="InvalidProfileException">The name is empty, too long or already used.</exception>
+    /// <exception cref="InstallationBusyException">Another operation holds this installation.</exception>
+    /// <exception cref="InstallException">Recovery or a profile switch is still pending.</exception>
+    public Task<ModProfile> CreateAsync(GameInstall game, string name, CancellationToken ct = default) =>
+        activity.RecordAsync(ActivityArea.Profiles, ActivityActions.PROFILE_CREATED, game, () => CreateCoreAsync(game, name, ct),
+            p => new ActivityDescription($"Created profile {p.Name} ({ActivityText.Count(p.Mods.Count, "mod")})"),
+            "Creating a profile failed");
+
+    private Task DeleteCoreAsync(string name, IReadOnlyList<GameInstall> games, CancellationToken ct) => Task.Run(() =>
     {
         var leases = new List<IDisposable>();
         try
@@ -87,15 +108,7 @@ public sealed class GameProfiles(ProfileStore store, ModInstallService installs,
         }
     }, ct);
 
-    /// <summary>
-    /// Saves the mods ADA manages in <paramref name="game"/> as a new profile and makes it the game's
-    /// active profile. Used for a game's first profile, and to start a new playthrough's profile
-    /// from what is installed. Holds the installation for the whole read-and-save.
-    /// </summary>
-    /// <exception cref="InvalidProfileException">The name is empty, too long or already used.</exception>
-    /// <exception cref="InstallationBusyException">Another operation holds this installation.</exception>
-    /// <exception cref="InstallException">Recovery or a profile switch is still pending.</exception>
-    public async Task<ModProfile> CreateAsync(GameInstall game, string name, CancellationToken ct = default)
+    private async Task<ModProfile> CreateCoreAsync(GameInstall game, string name, CancellationToken ct)
     {
         name = name.Trim();
         using var operation = installs.BeginOperation(game);
@@ -152,8 +165,24 @@ public sealed class GameProfiles(ProfileStore store, ModInstallService installs,
         IProgress<ModInstallProgress>? progress = null, CancellationToken ct = default,
         bool useNewerVersions = false, ModChangePlan? expected = null)
     {
+        // Switching to the active profile brings it up to its saved (or newer) versions, so it's described as an update.
+        var updating = string.Equals(await ActiveNameAsync(game), profile.Name, StringComparison.OrdinalIgnoreCase);
+        var verb = updating ? $"Updated {profile.Name}" : $"Switched to {profile.Name}";
+        await activity.RecordAsync(ActivityArea.Profiles, ActivityActions.PROFILE_SWITCHED, game,
+            () => SwitchCoreAsync(game, profile, resolution, progress, ct, useNewerVersions, expected),
+            result =>
+            {
+                var change = ActivityText.DescribeChange(result);
+                return change with { Summary = $"{verb}: {ActivityText.LowerFirst(change.Summary)}" };
+            },
+            updating ? $"Updating {profile.Name} failed" : $"Switching to {profile.Name} failed");
+    }
+
+    private Task<TransactionResult> SwitchCoreAsync(GameInstall game, ModProfile profile, ModResolutionService resolution,
+        IProgress<ModInstallProgress>? progress, CancellationToken ct, bool useNewerVersions, ModChangePlan? expected)
+    {
         var snapshot = Snapshot(profile);
-        await installs.ApplyProfileAsync(game, async () =>
+        return installs.ApplyProfileAsync(game, async () =>
         {
             // Without an active profile the installed mods are saved nowhere, and switching would
             // remove them for good. Every change is recorded into the active profile, so with one
@@ -215,15 +244,19 @@ public sealed class GameProfiles(ProfileStore store, ModInstallService installs,
     /// another found mod requires (SML, libraries) count as dependencies, removed once nothing needs them.
     /// </summary>
     public Task<FoundModsImport> ImportToCurrentAsync(GameInstall game, IReadOnlyList<FoundMod> found, CancellationToken ct = default) =>
-        AdoptIntoAsync(game, found, null, ct);
+        RecordImportAsync(game, found, () => AdoptIntoAsync(game, found, null, ct));
 
     /// <summary>
     /// Saves the found mods as a new profile. When <paramref name="switchTo"/>, the game switches to
     /// it and ADA takes the mods over; otherwise they are left where they are, and not asked about again.
     /// </summary>
     /// <exception cref="InvalidProfileException">The name is empty, too long or already used.</exception>
-    public async Task<FoundModsImport> ImportToNewAsync(GameInstall game, IReadOnlyList<FoundMod> found, string name, bool switchTo,
-        CancellationToken ct = default)
+    public Task<FoundModsImport> ImportToNewAsync(GameInstall game, IReadOnlyList<FoundMod> found, string name, bool switchTo,
+        CancellationToken ct = default) =>
+        RecordImportAsync(game, found, () => ImportToNewCoreAsync(game, found, name, switchTo, ct));
+
+    private async Task<FoundModsImport> ImportToNewCoreAsync(GameInstall game, IReadOnlyList<FoundMod> found, string name,
+        bool switchTo, CancellationToken ct)
     {
         name = name.Trim();
         if (await Task.Run(() => store.ProblemWithNewName(name), ct) is { } problem)
@@ -247,6 +280,20 @@ public sealed class GameProfiles(ProfileStore store, ModInstallService installs,
         return new FoundModsImport(profile, [],
             mods.Where(m => !ModIdentifiers.IsExactVersion(m.Version)).Select(m => m.Name).ToList());
     }
+
+    /// <summary>
+    /// Records an import of found mods: "Took over N mods into Atria" when ADA now manages them, or "Saved N found mods
+    /// as profile Atria" when they were left where they are.
+    /// </summary>
+    private Task<FoundModsImport> RecordImportAsync(GameInstall game, IReadOnlyList<FoundMod> found, Func<Task<FoundModsImport>> import) =>
+        activity.RecordAsync(ActivityArea.Profiles, ActivityActions.MODS_TAKEN_OVER, game, import,
+            result => result.Adopted.Count > 0
+                ? new ActivityDescription($"Took over {ActivityText.Count(result.Adopted.Count, "mod")} into {result.Profile.Name}",
+                    result.Adopted.Select(m => $"{m.Reference} {m.Version}").Order(StringComparer.OrdinalIgnoreCase).ToList())
+                : new ActivityDescription($"Saved {ActivityText.Count(found.Count, "found mod")} as profile {result.Profile.Name}",
+                    found.Select(m => $"{m.Reference} {m.Version}").Order(StringComparer.OrdinalIgnoreCase).ToList()),
+            "Taking over found mods failed",
+            found.Select(m => $"{m.Reference} {m.Version}").ToList());
 
     /// <summary>
     /// Takes the found mods over and records them in a profile, holding the installation from the

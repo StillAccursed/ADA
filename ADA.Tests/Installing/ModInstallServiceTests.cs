@@ -1,9 +1,11 @@
 using System.Net;
 using System.Security.Cryptography;
+using ADA.Core.Activity;
 using ADA.Core.Catalog;
 using ADA.Core.Games;
 using ADA.Core.Resolution;
 using ADA.Core.Settings;
+using ADA.Infrastructure.Activity;
 using ADA.Infrastructure.Downloads;
 using ADA.Infrastructure.Installing;
 using ADA.Infrastructure.Settings;
@@ -36,12 +38,13 @@ public sealed class ModInstallServiceTests : IDisposable
 
     public void Dispose() => _dir.Dispose();
 
-    private ModInstallService Service(Func<GameInstall, CancellationToken, Task>? beforeChange = null) => new(
+    private ModInstallService Service(Func<GameInstall, CancellationToken, Task>? beforeChange = null, ActivityLog? activity = null) => new(
         _settings,
         new ArchiveDownloader(new HttpClient(_http), _archives, time: new InstantTimeProvider()),
         new FakeVersionSource((reference, _) => Task.FromResult<IReadOnlyList<CatalogVersion>>(_catalog.GetValueOrDefault(reference) ?? [])),
         (game, _) => Task.FromResult(_gameRunning && (_runningInstall is null || _runningInstall == game)),
-        beforeChange: beforeChange);
+        beforeChange: beforeChange,
+        activity: activity);
 
     /// <summary>Publishes a mod version on the fake ficsit.app; returns the catalogue entry.</summary>
     private CatalogVersion Publish(string reference, string version, bool gameFeature = false,
@@ -504,5 +507,53 @@ public sealed class ModInstallServiceTests : IDisposable
 
         Assert.Equal(["BetterGrass"], plan.Uninstall);
         Assert.Empty(plan.LeavesProfile);
+    }
+
+    [Fact]
+    public async Task RecordsAnInstallWithItsVersions()
+    {
+        var activity = new ActivityLog(_dir.Combine("activity.jsonl"));
+        var old = Publish("A", "1.0.0");
+        var updated = Publish("A", "1.1.0");
+        Serve(old, updated);
+        var service = Service(activity: activity);
+
+        await service.InstallAsync(_install, [old]);
+        await service.InstallAsync(_install, [updated]);
+
+        var entries = await activity.ReadAsync();
+        Assert.Equal(["Updated 1 mod", "Installed 1 mod"], entries.Select(e => e.Summary));
+        Assert.Equal(["A 1.0.0 → 1.1.0"], entries[0].Details);
+        Assert.All(entries, e => Assert.Equal((ActivityArea.Mods, ActivityActions.MODS_CHANGED, _install.GamePath),
+            (e.Area, e.Action, e.InstallKey)));
+    }
+
+    [Fact]
+    public async Task RecordsAFailedChangeWithTheErrorTheUserSaw()
+    {
+        var activity = new ActivityLog(_dir.Combine("activity.jsonl"));
+        var a = Publish("A", "1.0.0");
+        var service = Service(beforeChange: (_, _) => throw new InstallException("no backup"), activity: activity);
+
+        await Assert.ThrowsAsync<InstallException>(() => service.InstallAsync(_install, [a]));
+
+        var entry = Assert.Single(await activity.ReadAsync());
+        Assert.Equal((ActivityOutcome.Failed, "Mod change failed", "no backup"), (entry.Outcome, entry.Summary, entry.Error));
+        Assert.Equal(["Install A 1.0.0"], entry.Details);
+    }
+
+    [Fact]
+    public async Task RecordsAnUninstall()
+    {
+        var activity = new ActivityLog(_dir.Combine("activity.jsonl"));
+        var a = Publish("A", "1.0.0");
+        Serve(a);
+        await Service().InstallAsync(_install, [a]);
+
+        await Service(activity: activity).UninstallAsync(_install, ["A"]);
+
+        var entry = Assert.Single(await activity.ReadAsync());
+        Assert.Equal("Removed 1 mod", entry.Summary);
+        Assert.Equal(["Removed A 1.0.0"], entry.Details);
     }
 }

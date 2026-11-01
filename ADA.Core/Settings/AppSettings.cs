@@ -48,6 +48,10 @@ namespace ADA.Core.Settings;
 /// clamped to <see cref="MIN_KEEP_AUTOMATIC_BACKUPS"/>–<see cref="MAX_KEEP_AUTOMATIC_BACKUPS"/>.
 /// </param>
 /// <param name="BackupBeforeModChanges">Back up saves before installing, removing or switching mods.</param>
+/// <param name="MaxLogFolderMegabytes">
+/// The most the logs folder may hold, in MB; one of <see cref="LOG_FOLDER_LIMITS"/>, otherwise
+/// <see cref="DEFAULT_MAX_LOG_FOLDER_MEGABYTES"/>.
+/// </param>
 public sealed record AppSettings(
     bool KeepDownloadedArchives = true,
     int DownloadRetries = AppSettings.DEFAULT_DOWNLOAD_RETRIES,
@@ -67,7 +71,8 @@ public sealed record AppSettings(
     string? BackupInstall = null,
     string? BackupParts = null,
     int KeepAutomaticBackups = AppSettings.DEFAULT_KEEP_AUTOMATIC_BACKUPS,
-    bool BackupBeforeModChanges = false)
+    bool BackupBeforeModChanges = false,
+    int MaxLogFolderMegabytes = AppSettings.DEFAULT_MAX_LOG_FOLDER_MEGABYTES)
 {
     internal const int DEFAULT_DOWNLOAD_RETRIES = 5;
     public const int MIN_DOWNLOAD_RETRIES = 0;
@@ -80,6 +85,7 @@ public sealed record AppSettings(
     internal const int DEFAULT_KEEP_AUTOMATIC_BACKUPS = 10;
     public const int MIN_KEEP_AUTOMATIC_BACKUPS = 1;
     public const int MAX_KEEP_AUTOMATIC_BACKUPS = 100;
+    public const int DEFAULT_MAX_LOG_FOLDER_MEGABYTES = 2048;
     public const string THEME_SYSTEM = "System";
     public const string THEME_LIGHT = "Light";
     public const string THEME_DARK = "Dark";
@@ -99,6 +105,9 @@ public sealed record AppSettings(
     /// <summary>The intervals the Schedule box offers, in hours; 0 is off. Any other saved value turns the schedule off.</summary>
     public static readonly IReadOnlyList<int> BACKUP_INTERVALS = Array.AsReadOnly([0, 1, 3, 6, 12, 24, 168]);
 
+    /// <summary>The logs folder limits the Settings page offers, in MB; any other saved value falls back to the default.</summary>
+    public static readonly IReadOnlyList<int> LOG_FOLDER_LIMITS = Array.AsReadOnly([100, 250, 500, 1024, 2048, 5120]);
+
     public static AppSettings Default { get; } = new();
 
     /// <summary>The same settings with any out-of-range values (e.g. from a hand-edited file) pulled back into range.</summary>
@@ -112,5 +121,8 @@ public sealed record AppSettings(
         Theme = THEMES.Contains(Theme) ? Theme : THEME_SYSTEM,
         BackupIntervalHours = BACKUP_INTERVALS.Contains(BackupIntervalHours) ? BackupIntervalHours : 0,
         KeepAutomaticBackups = Math.Clamp(KeepAutomaticBackups, MIN_KEEP_AUTOMATIC_BACKUPS, MAX_KEEP_AUTOMATIC_BACKUPS),
+        MaxLogFolderMegabytes = LOG_FOLDER_LIMITS.Contains(MaxLogFolderMegabytes)
+            ? MaxLogFolderMegabytes
+            : DEFAULT_MAX_LOG_FOLDER_MEGABYTES,
     };
 }

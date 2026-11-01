@@ -2,11 +2,13 @@ using ADA.Core.Catalog;
 using ADA.Core.Games;
 using ADA.Core.Secrets;
 using ADA.Imaging;
+using ADA.Infrastructure.Activity;
 using ADA.Infrastructure.Backups;
 using ADA.Infrastructure.Catalog;
 using ADA.Infrastructure.Downloads;
 using ADA.Infrastructure.Ficsit;
 using ADA.Infrastructure.Installing;
+using ADA.Infrastructure.Logging;
 using ADA.Infrastructure.IO;
 using ADA.Infrastructure.Profiles;
 using ADA.Infrastructure.Saves;
@@ -52,12 +54,16 @@ public static class Services
                 ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator,
             });
 
+        // Before the services that record to it.
+        services.AddSingleton(sp => new ActivityLog(paths.ActivityFile, sp.GetRequiredService<ILogger<ActivityLog>>()));
         services.AddSingleton(sp => new FicsitApiClient(Http(sp, API_CLIENT)));
         services.AddSingleton(sp => new ModCatalogStore(paths.CatalogDatabase));
         services.AddSingleton(sp => new CatalogSync(sp.GetRequiredService<FicsitApiClient>(), sp.GetRequiredService<ModCatalogStore>(),
             log: sp.GetRequiredService<ILogger<CatalogSync>>()));
         services.AddSingleton<IModVersionSource>(sp => sp.GetRequiredService<CatalogSync>());
         services.AddSingleton(sp => new SettingsStore(paths.SettingsFile));
+        // Shared by the Settings page's logs limit and the Activity page's Logs tab.
+        services.AddSingleton(_ => new LogFiles(paths.Logs));
         services.AddSingleton(_ => new FavouritesStore(paths.FavouritesFile));
         services.AddSingleton(sp => new ArchiveCache(paths.Archives));
         services.AddSingleton(_ => new DashboardStorageReader(paths.Archives));
@@ -73,14 +79,16 @@ public static class Services
             sp.GetRequiredService<ILogger<ModInstallService>>(),
             sp.GetRequiredService<GameFilesFactory>(),
             // Resolved when called, not when built: the scheduler's dependencies lead back to this service.
-            (game, ct) => sp.GetRequiredService<BackupScheduler>().BeforeModChangeAsync(game, ct)));
+            (game, ct) => sp.GetRequiredService<BackupScheduler>().BeforeModChangeAsync(game, ct),
+            sp.GetRequiredService<ActivityLog>()));
         services.AddSingleton<ModResolutionService>();
         services.AddSingleton(_ => new ProfileStore(paths.Profiles, paths.ProfilesState));
         services.AddSingleton<ProfileTransfer>();
         services.AddSingleton(sp => new GameProfiles(
             sp.GetRequiredService<ProfileStore>(),
             sp.GetRequiredService<ModInstallService>(),
-            sp.GetRequiredService<ILogger<GameProfiles>>()));
+            sp.GetRequiredService<ILogger<GameProfiles>>(),
+            sp.GetRequiredService<ActivityLog>()));
         services.AddSingleton(sp => new ProfileSync(sp.GetRequiredService<ProfileStore>(), sp.GetRequiredService<ModInstallService>(),
             sp.GetRequiredService<IModVersionSource>()));
         services.AddSingleton(_ => GameDetection.ForCurrentOS());
@@ -90,19 +98,22 @@ public static class Services
         services.AddSingleton(sp => new ServerStore(paths.ServersFile, sp.GetRequiredService<ILogger<ServerStore>>()));
         services.AddSingleton(sp => new SatisfactoryServerApi(Http(sp, SERVER_API_CLIENT)));
         services.AddSingleton(sp => new ServerConnections(sp.GetRequiredService<ServerStore>(), sp.GetRequiredService<ServerSecrets>(),
-            sp.GetRequiredService<SatisfactoryServerApi>(), sp.GetRequiredService<ILogger<ServerConnections>>()));
+            sp.GetRequiredService<SatisfactoryServerApi>(), sp.GetRequiredService<ILogger<ServerConnections>>(),
+            sp.GetRequiredService<ActivityLog>()));
         services.AddSingleton(sp => new ServerSetupCheck(sp.GetRequiredService<ServerConnections>(), sp.GetRequiredService<SatisfactoryServerApi>()));
         // Any local Satisfactory process blocks every local install: ps can't say which install it runs from.
         services.AddSingleton(sp => new GameRunningChecks(sp.GetRequiredService<ServerConnections>(), GameProcesses.IsAnyRunningAsync));
         services.AddSingleton(sp => new BackupService(
             () => sp.GetRequiredService<SettingsStore>().Current.BackupFolder ?? paths.Backups,
             paths.Config, paths.PendingAdaConfig,
-            sp.GetRequiredService<GameRunningChecks>().IsRunningAsync, sp.GetRequiredService<ILogger<BackupService>>()));
+            sp.GetRequiredService<GameRunningChecks>().IsRunningAsync, sp.GetRequiredService<ILogger<BackupService>>(),
+            activity: sp.GetRequiredService<ActivityLog>()));
         services.AddSingleton(sp => new BackupScheduler(sp.GetRequiredService<BackupService>(),
             sp.GetRequiredService<SettingsStore>(), sp.GetRequiredService<ILogger<BackupScheduler>>()));
         services.AddSingleton(sp => new GameFilesFactory(sp.GetRequiredService<ServerConnections>()));
         services.AddSingleton(sp => new ConfigPush(sp.GetRequiredService<ModInstallService>(), sp.GetRequiredService<GameFilesFactory>(),
-            sp.GetRequiredService<GameRunningChecks>().IsRunningAsync, sp.GetRequiredService<ILogger<ConfigPush>>()));
+            sp.GetRequiredService<GameRunningChecks>().IsRunningAsync, sp.GetRequiredService<ILogger<ConfigPush>>(),
+            sp.GetRequiredService<ActivityLog>()));
         services.AddSingleton(sp => new ModLogos(Http(sp, API_CLIENT), sp.GetRequiredService<ILogger<ModLogos>>()));
 
         services.AddSingleton<CatalogStatusViewModel>();
@@ -120,6 +131,8 @@ public static class Services
             sp.GetRequiredService<BackupScheduler>(), sp.GetRequiredService<DashboardViewModel>(), paths.Backups,
             sp.GetRequiredService<ILogger<BackupScheduleViewModel>>()));
         services.AddSingleton<BackupsViewModel>();
+        services.AddSingleton<LogsViewModel>();
+        services.AddSingleton<ActivityViewModel>();
         services.AddSingleton<Func<UpdatesViewModel>>(sp => () => ActivatorUtilities.CreateInstance<UpdatesViewModel>(sp));
         services.AddSingleton<MainViewModel>();
 

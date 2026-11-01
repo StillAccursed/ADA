@@ -1,5 +1,7 @@
 using System.Collections.ObjectModel;
+using ADA.Core.Activity;
 using ADA.Core.Games;
+using ADA.Infrastructure.Activity;
 using ADA.Infrastructure.Catalog;
 using ADA.Infrastructure.Installing;
 using ADA.Infrastructure.IO;
@@ -29,7 +31,13 @@ public partial class DashboardViewModel : ViewModelBase
     private readonly ProfileSync? _sync;
     private readonly ConfigPush? _configPush;
     private readonly ModInstallService _installs;
+    private readonly ActivityLog? _activity;
     private IReadOnlyList<GameProcess> _gameProcesses = [];
+
+    // When the game was seen starting, and whether ADA saw the start itself rather than finding it already running.
+    private DateTimeOffset? _playStarted;
+    private bool _sawPlayStart;
+    private bool _checkedGameOnce;
 
     // The connected server's install, kept apart from detection so a rescan doesn't drop it. Null while no server is connected.
     private GameInstallViewModel? _serverInstall;
@@ -98,7 +106,8 @@ public partial class DashboardViewModel : ViewModelBase
         DashboardStorageReader storage, ModInstallService installs, ArchiveCache archives, ModChangelogs changelogs,
         ProfileTransfer profileTransfer,
         Func<CancellationToken, Task<IReadOnlyList<GameProcess>>>? findRunning = null,
-        TimeSpan? watchInterval = null, ServerConnections? servers = null, ProfileSync? sync = null, ConfigPush? configPush = null)
+        TimeSpan? watchInterval = null, ServerConnections? servers = null, ProfileSync? sync = null, ConfigPush? configPush = null,
+        ActivityLog? activity = null)
     {
         _detector = detector;
         Catalog = catalog;
@@ -117,6 +126,7 @@ public partial class DashboardViewModel : ViewModelBase
         _servers = servers;
         _sync = sync;
         _configPush = configPush;
+        _activity = activity;
         _uiContext = SynchronizationContext.Current;
         settings.Changed += OnCardSourceChanged;
         profiles.Changed += OnCardSourceChanged;
@@ -308,12 +318,15 @@ public partial class DashboardViewModel : ViewModelBase
         {
             _gameProcesses = await _findRunning(ct);
             var running = _gameProcesses.Count > 0;
+            var firstCheck = !_checkedGameOnce;
+            _checkedGameOnce = true;
             if (running == IsGameRunning)
             {
                 return;
             }
 
             _log.LogInformation(running ? "Satisfactory started" : "Satisfactory closed");
+            TrackPlay(running, firstCheck);
             IsGameRunning = running;
             if (!running)
             {
@@ -333,6 +346,26 @@ public partial class DashboardViewModel : ViewModelBase
         finally
         {
             _refreshGate.Release();
+        }
+    }
+
+    /// <summary>
+    /// Notes when the game starts, and records how long it was played when it closes. A game already running at
+    /// ADA's first check is recorded as played "for at least" that long, since it started earlier.
+    /// </summary>
+    private void TrackPlay(bool running, bool firstCheck)
+    {
+        if (running)
+        {
+            _playStarted = DateTimeOffset.UtcNow;
+            _sawPlayStart = !firstCheck;
+        }
+        else if (_playStarted is { } started)
+        {
+            var played = SaveText.PlayTime(DateTimeOffset.UtcNow - started);
+            _activity?.Record(ActivityArea.Game, ActivityActions.GAME_PLAYED, ActivityOutcome.Succeeded,
+                _sawPlayStart ? $"Played Satisfactory for {played}" : $"Played Satisfactory for at least {played}");
+            _playStarted = null;
         }
     }
 

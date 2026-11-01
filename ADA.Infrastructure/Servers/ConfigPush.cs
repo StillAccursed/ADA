@@ -1,5 +1,7 @@
+using ADA.Core.Activity;
 using ADA.Core.Catalog;
 using ADA.Core.Games;
+using ADA.Infrastructure.Activity;
 using ADA.Infrastructure.Installing;
 using ADA.Infrastructure.IO;
 using Microsoft.Extensions.Logging;
@@ -18,8 +20,9 @@ public sealed record ConfigDifference(string Reference, bool OnServer);
 /// the server's previous files so the last push can be undone.
 /// </summary>
 /// <param name="isRunning">Whether an install is running; a running server reads and may rewrite its configs.</param>
+/// <param name="activity">Where pushes and put-backs are recorded, against the server.</param>
 public sealed class ConfigPush(ModInstallService installs, GameFilesFactory files,
-    Func<GameInstall, CancellationToken, Task<bool>> isRunning, ILogger<ConfigPush>? log = null)
+    Func<GameInstall, CancellationToken, Task<bool>> isRunning, ILogger<ConfigPush>? log = null, ActivityLog? activity = null)
 {
     private readonly ILogger _log = log ?? NullLogger<ConfigPush>.Instance;
 
@@ -38,7 +41,25 @@ public sealed class ConfigPush(ModInstallService installs, GameFilesFactory file
     /// <exception cref="GameRunningException">The server is running.</exception>
     /// <exception cref="LockHeldException">Another PC is changing the server.</exception>
     /// <exception cref="InstallationBusyException">This ADA is already changing the server.</exception>
-    public async Task PushAsync(GameInstall game, GameInstall server, IReadOnlyCollection<string> references, CancellationToken ct = default)
+    public Task PushAsync(GameInstall game, GameInstall server, IReadOnlyCollection<string> references, CancellationToken ct = default)
+    {
+        var mods = references.Distinct(StringComparer.OrdinalIgnoreCase).Order(StringComparer.OrdinalIgnoreCase).ToList();
+        return activity.RecordAsync(ActivityArea.Servers, ActivityActions.CONFIGS_PUSHED, server,
+            () => PushCoreAsync(game, server, references, ct),
+            new ActivityDescription($"Pushed settings for {ActivityText.Count(mods.Count, "mod")} to {server.DisplayName}", mods),
+            $"Pushing mod settings to {server.DisplayName} failed", mods);
+    }
+
+    /// <summary>Puts back the server configs the last push replaced, then drops the backup. Same rules as <see cref="PushAsync"/>.</summary>
+    /// <exception cref="GameRunningException">The server is running.</exception>
+    /// <exception cref="LockHeldException">Another PC is changing the server.</exception>
+    /// <exception cref="InstallationBusyException">This ADA is already changing the server.</exception>
+    public Task RestoreAsync(GameInstall server, CancellationToken ct = default) =>
+        activity.RecordAsync(ActivityArea.Servers, ActivityActions.CONFIGS_RESTORED, server, () => RestoreCoreAsync(server, ct),
+            new ActivityDescription($"Put back {server.DisplayName}'s previous mod settings"),
+            $"Putting back {server.DisplayName}'s mod settings failed");
+
+    private async Task PushCoreAsync(GameInstall game, GameInstall server, IReadOnlyCollection<string> references, CancellationToken ct)
     {
         using var operation = installs.BeginOperation(server);
         await ThrowIfRunningAsync(server, ct);
@@ -72,11 +93,7 @@ public sealed class ConfigPush(ModInstallService installs, GameFilesFactory file
         }, ct);
     }
 
-    /// <summary>Puts back the server configs the last push replaced, then drops the backup. Same rules as <see cref="PushAsync"/>.</summary>
-    /// <exception cref="GameRunningException">The server is running.</exception>
-    /// <exception cref="LockHeldException">Another PC is changing the server.</exception>
-    /// <exception cref="InstallationBusyException">This ADA is already changing the server.</exception>
-    public async Task RestoreAsync(GameInstall server, CancellationToken ct = default)
+    private async Task RestoreCoreAsync(GameInstall server, CancellationToken ct)
     {
         using var operation = installs.BeginOperation(server);
         await ThrowIfRunningAsync(server, ct);

@@ -1,7 +1,9 @@
 using System.IO.Compression;
 using System.Text;
+using ADA.Core.Activity;
 using ADA.Core.Backups;
 using ADA.Core.Games;
+using ADA.Infrastructure.Activity;
 using ADA.Infrastructure.Backups;
 using ADA.Tests.Fixtures;
 
@@ -37,8 +39,10 @@ public sealed class BackupServiceTests : IDisposable
 
     private string Read(string relative) => File.ReadAllText(PathOf(relative));
 
-    private BackupService Service() => new(_dir.Combine("backups"), _dir.Combine("ada", "Config"), _dir.Combine("pending"),
-        (_, _) => Task.FromResult(_gameRunning), freeSpace: _ => _freeSpace);
+    private BackupService Service(ActivityLog? activity = null) => new(_dir.Combine("backups"), _dir.Combine("ada", "Config"),
+        _dir.Combine("pending"), (_, _) => Task.FromResult(_gameRunning), freeSpace: _ => _freeSpace, activity: activity);
+
+    private ActivityLog Activity() => new(_dir.Combine("activity.jsonl"));
 
     private static IReadOnlyList<string> Entries(BackupInfo backup)
     {
@@ -326,6 +330,72 @@ public sealed class BackupServiceTests : IDisposable
         await service.RestoreAsync(backup, _game, BackupPart.Saves);
 
         Assert.Equal([BackupTrigger.Manual, BackupTrigger.BeforeRestore], created);
+    }
+
+    [Fact]
+    public async Task RecordsHandMadeBackupsButNotSuccessfulScheduledOnes()
+    {
+        var activity = Activity();
+        var service = Service(activity);
+
+        var manual = await service.CreateAsync(_game, BackupPart.Saves | BackupPart.ModConfig, BackupTrigger.Manual);
+        await service.CreateAsync(_game, BackupPart.Saves, BackupTrigger.Scheduled);
+
+        var entry = Assert.Single(await activity.ReadAsync());
+        Assert.Equal((ActivityActions.BACKUP_CREATED, ActivityOutcome.Succeeded), (entry.Action, entry.Outcome));
+        Assert.StartsWith("Backed up Saves, Mod settings (", entry.Summary);
+        Assert.Equal([Path.GetFileName(manual.FilePath)], entry.Details);
+    }
+
+    [Fact]
+    public async Task RecordsAFailedScheduledBackup()
+    {
+        var activity = Activity();
+        _freeSpace = 10;
+
+        await Assert.ThrowsAsync<IOException>(() => Service(activity).CreateAsync(_game, BackupPart.All, BackupTrigger.Scheduled));
+
+        var entry = Assert.Single(await activity.ReadAsync());
+        Assert.Equal((ActivityOutcome.Failed, "Scheduled backup failed"), (entry.Outcome, entry.Summary));
+        Assert.NotNull(entry.Error);
+    }
+
+    [Fact]
+    public async Task NothingToBackUpIsOnlyAFailureWhenDoneByHand()
+    {
+        var activity = Activity();
+        var service = Service(activity);
+
+        foreach (var trigger in new[] { BackupTrigger.Scheduled, BackupTrigger.BeforeModChange, BackupTrigger.Manual })
+        {
+            await Assert.ThrowsAsync<NothingToBackUpException>(() => service.CreateAsync(NeverLaunched(), BackupPart.Saves, trigger));
+        }
+
+        var entry = Assert.Single(await activity.ReadAsync());
+        Assert.Equal((ActivityOutcome.Failed, "Backup failed"), (entry.Outcome, entry.Summary));
+        Assert.StartsWith("There's nothing to back up yet", entry.Error);
+    }
+
+    [Fact]
+    public async Task RecordsRestoresAndDeletesButNotPruning()
+    {
+        var activity = Activity();
+        var service = Service(activity);
+        var first = await service.CreateAsync(_game, BackupPart.Saves, BackupTrigger.Scheduled);
+        var second = await service.CreateAsync(_game, BackupPart.Saves, BackupTrigger.Scheduled);
+        await service.PruneAsync(BackupTrigger.Scheduled, second.Manifest.Source, keep: 1);
+
+        await service.RestoreAsync(second, _game, BackupPart.Saves);
+        var safety = (await service.ListAsync()).Backups.Single(b => b.Manifest.Trigger == BackupTrigger.BeforeRestore);
+        await service.DeleteAsync(second);
+
+        var entries = await activity.ReadAsync();
+        Assert.Equal([ActivityActions.BACKUP_DELETED, ActivityActions.BACKUP_RESTORED], entries.Select(e => e.Action));
+        Assert.StartsWith("Deleted the backup from ", entries[0].Summary);
+        Assert.Equal("Restored Saves (2 files)", entries[1].Summary);
+        Assert.Equal([$"From {Path.GetFileName(second.FilePath)}", $"Safety copy: {Path.GetFileName(safety.FilePath)}"],
+            entries[1].Details);
+        Assert.False(File.Exists(first.FilePath));
     }
 
     [Fact]

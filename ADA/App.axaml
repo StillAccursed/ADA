@@ -26,8 +26,8 @@
         <DataTemplate DataType="vm:SettingsViewModel">
             <views:SettingsView />
         </DataTemplate>
-        <DataTemplate DataType="vm:PlaceholderViewModel">
-            <views:PlaceholderView />
+        <DataTemplate DataType="vm:ActivityViewModel">
+            <views:ActivityView />
         </DataTemplate>
     </Application.DataTemplates>
 

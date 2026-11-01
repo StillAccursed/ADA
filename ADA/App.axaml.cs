@@ -1,5 +1,7 @@
 using System.Diagnostics;
+using ADA.Infrastructure.Activity;
 using ADA.Infrastructure.Backups;
+using ADA.Infrastructure.Logging;
 using ADA.Infrastructure.Settings;
 using ADA.Platform.Storage;
 using ADA.ViewModels;
@@ -51,16 +53,21 @@ public partial class App : Application
             var main = await Task.Run(() =>
             {
                 var paths = AppPaths.ForCurrentOS().EnsureCreated();
+                // Before any store reads Config, so restored files aren't overwritten by cached ones; and before the
+                // logger, so a restored log limit applies this start.
+                var restored = PendingAdaConfig.Apply(paths.PendingAdaConfig, paths.Config);
+                var logLimit = new SettingsStore(paths.SettingsFile).Load().MaxLogFolderMegabytes * 1024L * 1024;
                 Log.Logger = new LoggerConfiguration()
                     .MinimumLevel.Information()
                     // IHttpClientFactory logs every request; only failures are worth keeping.
                     .MinimumLevel.Override("System.Net.Http", LogEventLevel.Warning)
+                    // FILES_KEPT files of a seventh of the limit each can't exceed the limit; a full day stops logging.
                     .WriteTo.File(Path.Combine(paths.Logs, "ada-.log"),
-                        rollingInterval: RollingInterval.Day, retainedFileCountLimit: 7)
+                        rollingInterval: RollingInterval.Day, retainedFileCountLimit: LogFiles.FILES_KEPT,
+                        fileSizeLimitBytes: LogFiles.FileLimitFor(logLimit), rollOnFileSizeLimit: false)
                     .CreateLogger();
                 Log.Information("ADA starting on {OS}", Environment.OSVersion);
-                // Before any store reads Config, so restored files aren't overwritten by cached ones.
-                if (PendingAdaConfig.Apply(paths.PendingAdaConfig, paths.Config) is > 0 and var restored)
+                if (restored > 0)
                 {
                     Log.Information("Applied {Count} restored ADA config files", restored);
                 }
@@ -72,6 +79,9 @@ public partial class App : Application
             var services = _services!;
             Appearance.Follow(services.GetRequiredService<SettingsStore>());
             services.GetRequiredService<BackupsViewModel>().RestartRequested += (_, _) => Restart(desktop);
+            _ = services.GetRequiredService<ActivityLog>().TrimAsync();
+            _ = services.GetRequiredService<LogFiles>().TrimToAsync(
+                services.GetRequiredService<SettingsStore>().Current.MaxLogFolderMegabytes * 1024L * 1024);
 
             window.DataContext = main;
             main.Start();

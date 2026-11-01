@@ -10,6 +10,7 @@ namespace ADA.Platform.Storage;
 ///   Config/      settings, profiles (Config/Profiles/*.olp), each game's active profile and saved servers
 ///   Staging/     downloaded archives (Staging/Archives), and restored ADA config waiting for the next start (Staging/PendingConfig)
 ///   Backups/     backups of saves, blueprints and configs, one .zip each
+///   Activity/    what ADA did, one JSON line per entry (activity.jsonl)
 ///   Logs/        daily log files, the last week kept
 /// </code>
 /// </summary>
@@ -50,6 +51,11 @@ public sealed class AppPaths
     /// <summary>ADA config restored from a backup, moved into <see cref="Config"/> at the next start.</summary>
     public string PendingAdaConfig => Path.Combine(Staging, "PendingConfig");
 
+    /// <summary>What ADA did: one JSON line per entry.</summary>
+    public string Activity => Path.Combine(Root, "Activity");
+
+    public string ActivityFile => Path.Combine(Activity, "activity.jsonl");
+
     /// <param name="root">Overrides the OS default; for tests only.</param>
     public AppPaths(string root) => Root = root;
 
@@ -65,6 +71,7 @@ public sealed class AppPaths
         Directory.CreateDirectory(Archives);
         Directory.CreateDirectory(Logs);
         Directory.CreateDirectory(Backups);
+        Directory.CreateDirectory(Activity);
         return this;
     }
 

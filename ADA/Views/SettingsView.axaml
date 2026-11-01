@@ -105,6 +105,35 @@
 
             </StackPanel>
 
+            <StackPanel Spacing="8" IsVisible="{Binding HasLogs}">
+                <TextBlock Text="LOGS" FontSize="12" FontWeight="SemiBold" LetterSpacing="1"
+                           Foreground="{DynamicResource TextSecondaryBrush}" />
+                <Border Padding="20,16" CornerRadius="8" BorderThickness="1"
+                        Background="{DynamicResource SurfaceRaisedBrush}"
+                        BorderBrush="{DynamicResource BorderSubtleBrush}">
+                    <StackPanel Spacing="16">
+                        <Grid ColumnDefinitions="*,Auto">
+                            <StackPanel Spacing="4" Margin="0,0,24,0">
+                                <TextBlock Text="Logs folder limit" FontWeight="SemiBold"
+                                           Foreground="{DynamicResource TextPrimaryBrush}" />
+                                <TextBlock TextWrapping="Wrap" Foreground="{DynamicResource TextSecondaryBrush}"
+                                           Text="The most ADA's log files may take up. The oldest logs are deleted to stay under it, and a day that reaches its share stops logging. A new limit applies to new logs from the next start; older logs over it are deleted at once." />
+                            </StackPanel>
+                            <ComboBox Grid.Column="1" VerticalAlignment="Center" MinWidth="120"
+                                      ItemsSource="{Binding LogFolderLimits}" SelectedItem="{Binding LogFolderLimit}" />
+                        </Grid>
+
+                        <Border Height="1" Background="{DynamicResource BorderSubtleBrush}" />
+
+                        <StackPanel Spacing="4">
+                            <TextBlock Text="{Binding LogsSummary}" Foreground="{DynamicResource TextPrimaryBrush}" />
+                            <SelectableTextBlock Text="{Binding LogsFolder}" FontFamily="monospace" FontSize="12"
+                                                 TextWrapping="Wrap" Foreground="{DynamicResource TextSecondaryBrush}" />
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+
             <StackPanel Spacing="8">
                 <TextBlock Text="SERVERS" FontSize="12" FontWeight="SemiBold" LetterSpacing="1"
                            Foreground="{DynamicResource TextSecondaryBrush}" />

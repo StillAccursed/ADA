@@ -46,7 +46,7 @@ public partial class MainViewModel : ViewModelBase
     public partial NavItem SelectedNav { get; set; }
 
     public MainViewModel(DashboardViewModel dashboard, ModsViewModel mods, ServersViewModel servers, SavesViewModel saves,
-        BackupsViewModel backups, BackupScheduler scheduler, ServerConnections connections, CatalogStatusViewModel catalog,
+        BackupsViewModel backups, ActivityViewModel activity, BackupScheduler scheduler, ServerConnections connections, CatalogStatusViewModel catalog,
         SettingsViewModel settings, Func<UpdatesViewModel> updates)
     {
         _scheduler = scheduler;
@@ -69,7 +69,7 @@ public partial class MainViewModel : ViewModelBase
             new("Backups", "▣", backups),
 
             new("Misc", "", null),
-            new("Activity", "◷", new PlaceholderViewModel("Activity", "Install transaction history and logs. Coming in Phase 1.")),
+            new("Activity", "◷", activity),
             new("Settings", "⚙", settings),
         ];
         SelectedNav = _dashboardNav;

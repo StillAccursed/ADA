@@ -1,6 +1,8 @@
 using System.Collections.Concurrent;
+using ADA.Core.Activity;
 using ADA.Core.Catalog;
 using ADA.Core.Games;
+using ADA.Infrastructure.Activity;
 using ADA.Infrastructure.Downloads;
 using ADA.Infrastructure.IO;
 using ADA.Infrastructure.Settings;
@@ -33,6 +35,7 @@ public sealed record RepairResult(IReadOnlyList<string> Repaired, IReadOnlyDicti
 /// Called before mods are installed, uninstalled or a profile is switched, after the game-running check and while
 /// the install is reserved; throwing <see cref="InstallException"/> stops the change. Not called for repairs.
 /// </param>
+/// <param name="activity">Where changes, repairs and recoveries are recorded; profile switches are recorded by <see cref="Profiles.GameProfiles"/>.</param>
 public sealed class ModInstallService(
     SettingsStore settings,
     ArchiveDownloader downloader,
@@ -40,7 +43,8 @@ public sealed class ModInstallService(
     Func<GameInstall, CancellationToken, Task<bool>> isGameRunning,
     ILogger<ModInstallService>? log = null,
     GameFilesFactory? files = null,
-    Func<GameInstall, CancellationToken, Task>? beforeChange = null)
+    Func<GameInstall, CancellationToken, Task>? beforeChange = null,
+    ActivityLog? activity = null)
 {
     // Enough to fill a typical connection without hammering ficsit.app.
     private const int PARALLEL_DOWNLOADS = 3;
@@ -85,7 +89,11 @@ public sealed class ModInstallService(
     /// Run on launch for each detected game: finish or undo an interrupted transaction, then the
     /// fast check. Recovery waits if the game is running, because it would move folders the game has open.
     /// </summary>
-    public Task<GameModsStatus> RecoverAndCheckAsync(GameInstall game, CancellationToken ct = default) => Task.Run(async () =>
+    public Task<GameModsStatus> RecoverAndCheckAsync(GameInstall game, CancellationToken ct = default) =>
+        activity.RecordAsync(ActivityArea.Mods, ActivityActions.MODS_RECOVERED, game,
+            () => RecoverAndCheckCoreAsync(game, ct), DescribeRecovery, "Finishing an interrupted mod change failed");
+
+    private Task<GameModsStatus> RecoverAndCheckCoreAsync(GameInstall game, CancellationToken ct) => Task.Run(async () =>
     {
         using var operation = BeginOperation(game);
         var installer = InstallerFor(game);
@@ -115,15 +123,20 @@ public sealed class ModInstallService(
     /// first) in one transaction, so a failure leaves the game exactly as it was.
     /// </summary>
     /// <inheritdoc cref="InstallAsync" path="/exception"/>
-    public async Task<TransactionResult> ApplyAsync(GameInstall game, IReadOnlyList<CatalogVersion> install,
-        IReadOnlyList<string> uninstall, IProgress<ModInstallProgress>? progress = null, CancellationToken ct = default)
-    {
-        using var operation = BeginOperation(game);
-        return await ApplyReservedAsync(game, install, uninstall, progress, ct);
-    }
+    public Task<TransactionResult> ApplyAsync(GameInstall game, IReadOnlyList<CatalogVersion> install,
+        IReadOnlyList<string> uninstall, IProgress<ModInstallProgress>? progress = null, CancellationToken ct = default) =>
+        activity.RecordAsync(ActivityArea.Mods, ActivityActions.MODS_CHANGED, game, async () =>
+            {
+                using var operation = BeginOperation(game);
+                return await ApplyReservedAsync(game, install, uninstall, progress, ct);
+            },
+            ActivityText.DescribeChange, "Mod change failed", ActivityText.DescribeIntent(install, uninstall));
 
-    /// <summary>Reserves the game through planning, file commit and durable profile activation.</summary>
-    internal async Task ApplyProfileAsync(GameInstall game, Func<Task<ModChangePlan>> planProfile,
+    /// <summary>
+    /// Reserves the game through planning, file commit and durable profile activation. Records nothing: the caller
+    /// records the switch with the returned changes.
+    /// </summary>
+    internal async Task<TransactionResult> ApplyProfileAsync(GameInstall game, Func<Task<ModChangePlan>> planProfile,
         string name, Action<string> activate, IProgress<ModInstallProgress>? progress, CancellationToken ct)
     {
         using var operation = BeginOperation(game);
@@ -138,7 +151,7 @@ public sealed class ModInstallService(
         {
             throw new InstallException(string.Join(" ", plan.Problems));
         }
-        await ApplyReservedAsync(game, plan.Install.Select(i => i.Mod.Version).ToList(), plan.Uninstall,
+        var result = await ApplyReservedAsync(game, plan.Install.Select(i => i.Mod.Version).ToList(), plan.Uninstall,
             progress, ct, new ProfileActivation(name, plan.Requested.ToList()));
         try
         {
@@ -149,9 +162,13 @@ public sealed class ModInstallService(
         {
             throw new InstallException("Profile activation pending. The mod files committed; recheck this installation to finish activation.", e);
         }
+        return result;
     }
 
-    /// <summary>Caller must hold BeginOperation for this game through all record updates.</summary>
+    /// <summary>
+    /// Caller must hold BeginOperation for this game through all record updates. The result carries the changed mods'
+    /// versions from before the change.
+    /// </summary>
     internal async Task<TransactionResult> ApplyReservedAsync(GameInstall game, IReadOnlyList<CatalogVersion> install,
         IReadOnlyList<string> uninstall, IProgress<ModInstallProgress>? progress, CancellationToken ct,
         ProfileActivation? activation = null, bool runBeforeChange = true)
@@ -165,6 +182,7 @@ public sealed class ModInstallService(
             await beforeChange(game, ct);
         }
 
+        var before = await InstalledVersionsAsync(game, ct);
         var current = settings.Current;
         var platform = TargetFor(game);
         var targets = install
@@ -218,14 +236,18 @@ public sealed class ModInstallService(
             await Task.Run(() => DeleteArchives(archives), CancellationToken.None);
         }
 
-        return result;
+        return result with { PreviousVersions = before };
     }
 
     /// <summary>Removes the mods in one transaction.</summary>
     /// <exception cref="InstallationBusyException">Another operation holds this installation.</exception>
     /// <exception cref="GameRunningException">The game is running.</exception>
     /// <exception cref="InstallException">The removal failed and was rolled back.</exception>
-    public async Task<TransactionResult> UninstallAsync(GameInstall game, IReadOnlyList<string> references, CancellationToken ct = default)
+    public Task<TransactionResult> UninstallAsync(GameInstall game, IReadOnlyList<string> references, CancellationToken ct = default) =>
+        activity.RecordAsync(ActivityArea.Mods, ActivityActions.MODS_CHANGED, game, () => UninstallCoreAsync(game, references, ct),
+            ActivityText.DescribeChange, "Mod change failed", ActivityText.DescribeIntent([], references));
+
+    private async Task<TransactionResult> UninstallCoreAsync(GameInstall game, IReadOnlyList<string> references, CancellationToken ct)
     {
         using var operation = BeginOperation(game);
         if (await isGameRunning(game, ct))
@@ -236,10 +258,11 @@ public sealed class ModInstallService(
         {
             await beforeChange(game, ct);
         }
+        var before = await InstalledVersionsAsync(game, ct);
         var result = await Task.Run(
             () => InstallerFor(game).Apply(references.Select(r => (ModChange)new ModChange.Uninstall(r)).ToList(), ct: ct), ct);
         _log.LogInformation("Uninstalled {Mods} from {Game}", result.Uninstalled, game.GamePath);
-        return result;
+        return result with { PreviousVersions = before };
     }
 
     /// <summary>Mod folders another manager installed in this game; builds for another platform are listed as unreadable.</summary>
@@ -269,8 +292,13 @@ public sealed class ModInstallService(
     /// Reinstalls each damaged or missing mod at the version that was installed, from a kept archive
     /// when it still matches, otherwise by downloading it again.
     /// </summary>
-    public async Task<RepairResult> RepairAsync(GameInstall game, CheckResult check,
-        IProgress<ModInstallProgress>? progress = null, CancellationToken ct = default)
+    public Task<RepairResult> RepairAsync(GameInstall game, CheckResult check,
+        IProgress<ModInstallProgress>? progress = null, CancellationToken ct = default) =>
+        activity.RecordAsync(ActivityArea.Mods, ActivityActions.MODS_REPAIRED, game, () => RepairCoreAsync(game, check, progress, ct),
+            DescribeRepair, "Repair failed", check.NeedingRepair.Select(m => m.Reference).ToList());
+
+    private async Task<RepairResult> RepairCoreAsync(GameInstall game, CheckResult check,
+        IProgress<ModInstallProgress>? progress, CancellationToken ct)
     {
         using var operation = BeginOperation(game);
         var installed = await Task.Run(() => InstallerFor(game).Installed, ct);
@@ -317,6 +345,23 @@ public sealed class ModInstallService(
             return new RepairResult([], failed);
         }
     }
+
+    private static ActivityDescription DescribeRepair(RepairResult result) => result.Failed.Count == 0
+        ? new ActivityDescription($"Repaired {ActivityText.Count(result.Repaired.Count, "mod")}", result.Repaired)
+        : new ActivityDescription($"Couldn't repair {ActivityText.Count(result.Failed.Count, "mod")}",
+            [.. result.Repaired.Select(r => $"Repaired {r}"), .. result.Failed.Select(f => $"{f.Key}: {f.Value}")],
+            ActivityOutcome.Failed);
+
+    /// <summary>Only an interrupted change is worth recording; an ordinary launch check records nothing.</summary>
+    private static ActivityDescription? DescribeRecovery(GameModsStatus status) => status.Recovery is { HadInterruptedTransaction: true } r
+        ? new ActivityDescription("Finished an interrupted mod change",
+            [.. r.RolledForward.Select(m => $"Completed {m}"), .. r.Discarded.Select(m => $"Discarded {m}"), .. r.RolledBack.Select(m => $"Undid {m}")])
+        : null;
+
+    /// <summary>Each installed mod's version (reference → version), read before a change so its entry can say what changed.</summary>
+    private Task<Dictionary<string, string>> InstalledVersionsAsync(GameInstall game, CancellationToken ct) =>
+        Task.Run(() => InstallerFor(game).Installed.Values
+            .ToDictionary(m => m.Reference, m => m.Version, StringComparer.OrdinalIgnoreCase), ct);
 
     private void DeleteArchives(IEnumerable<string> archives)
     {

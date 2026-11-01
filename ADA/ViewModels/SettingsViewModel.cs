@@ -1,5 +1,6 @@
 using System.Globalization;
 using ADA.Core.Settings;
+using ADA.Infrastructure.Logging;
 using ADA.Infrastructure.Settings;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -14,6 +15,7 @@ public partial class SettingsViewModel : ViewModelBase
 
     private readonly SettingsStore _store;
     private readonly ArchiveCache _archives;
+    private readonly LogFiles? _logs;
     private readonly ILogger _log;
     private readonly bool _loading;
     private AppSettings _settings;
@@ -78,6 +80,23 @@ public partial class SettingsViewModel : ViewModelBase
     [ObservableProperty]
     public partial string? ErrorText { get; set; }
 
+    /// <summary>The logs folder limits the page offers.</summary>
+    public IReadOnlyList<LogLimitOption> LogFolderLimits { get; } =
+        AppSettings.LOG_FOLDER_LIMITS.Select(mb => new LogLimitOption(mb)).ToList();
+
+    /// <summary>The logs folder limit; lowering it deletes the oldest logs over it once saved.</summary>
+    [ObservableProperty]
+    public partial LogLimitOption? LogFolderLimit { get; set; }
+
+    /// <summary>E.g. "Logs use 8.1 MB (7 files)."</summary>
+    [ObservableProperty]
+    public partial string LogsSummary { get; private set; } = "";
+
+    public string? LogsFolder => _logs?.Folder;
+
+    /// <summary>Whether the page was given the logs folder; the LOGS section is hidden without it.</summary>
+    public bool HasLogs => _logs is not null;
+
     public bool HasArchives => ArchiveBytes > 0;
 
     public string ArchivesFolder => _archives.Folder;
@@ -85,11 +104,13 @@ public partial class SettingsViewModel : ViewModelBase
     /// <summary>Completes when the most recent change has been written; for tests.</summary>
     internal Task PendingSave { get; private set; } = Task.CompletedTask;
 
-    public SettingsViewModel(SettingsStore store, ArchiveCache archives, ILogger<SettingsViewModel> log)
+    /// <param name="logs">The logs folder, for its limit and usage; null hides the LOGS section.</param>
+    public SettingsViewModel(SettingsStore store, ArchiveCache archives, ILogger<SettingsViewModel> log, LogFiles? logs = null)
     {
         _store = store;
         _archives = archives;
         _log = log;
+        _logs = logs;
 
         _loading = true;
         _settings = store.Current;
@@ -101,6 +122,7 @@ public partial class SettingsViewModel : ViewModelBase
         DashboardLatestModsCount = _settings.DashboardLatestModsCount;
         InterfaceScale = _settings.InterfaceScale;
         Theme = _settings.Theme;
+        LogFolderLimit = LogFolderLimits.First(o => o.Megabytes == _settings.MaxLogFolderMegabytes);
         _loading = false;
     }
 
@@ -162,6 +184,14 @@ public partial class SettingsViewModel : ViewModelBase
         }
     }
 
+    partial void OnLogFolderLimitChanged(LogLimitOption? value)
+    {
+        if (!_loading && value is not null)
+        {
+            Update(_settings with { MaxLogFolderMegabytes = value.Megabytes });
+        }
+    }
+
     private void Update(AppSettings settings)
     {
         _settings = settings;
@@ -195,8 +225,14 @@ public partial class SettingsViewModel : ViewModelBase
                 DashboardLatestModsCount = settings.DashboardLatestModsCount,
                 InterfaceScale = settings.InterfaceScale,
                 Theme = settings.Theme,
+                MaxLogFolderMegabytes = settings.MaxLogFolderMegabytes,
             }), ct);
             ErrorText = null;
+            if (_logs is not null)
+            {
+                await _logs.TrimToAsync(settings.MaxLogFolderMegabytes * 1024L * 1024, ct);
+                await MeasureLogsAsync();
+            }
         }
         catch (OperationCanceledException)
         {
@@ -209,9 +245,10 @@ public partial class SettingsViewModel : ViewModelBase
         }
     }
 
-    /// <summary>Re-measures the archive folder; called whenever the page is shown. Never throws.</summary>
+    /// <summary>Re-measures the archive and logs folders; called whenever the page is shown. Never throws.</summary>
     public async Task RefreshAsync()
     {
+        await MeasureLogsAsync();
         try
         {
             var (count, bytes) = await Task.Run(_archives.Measure);
@@ -242,4 +279,27 @@ public partial class SettingsViewModel : ViewModelBase
         await RefreshAsync();
     }
 
+    private async Task MeasureLogsAsync()
+    {
+        if (_logs is null)
+        {
+            return;
+        }
+        try
+        {
+            var (count, bytes) = await Task.Run(_logs.Measure);
+            LogsSummary = $"Logs use {ByteSize.Format(bytes)} ({count.ToString("N0", CultureInfo.CurrentCulture)} file{(count == 1 ? "" : "s")}).";
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            _log.LogWarning(e, "Measuring the logs folder failed");
+            LogsSummary = $"Couldn't measure the logs folder: {e.Message}";
+        }
+    }
+}
+
+/// <summary>A logs folder limit as the Settings page lists it: "500 MB", "2 GB".</summary>
+public sealed record LogLimitOption(int Megabytes)
+{
+    public override string ToString() => Megabytes < 1024 ? $"{Megabytes} MB" : $"{Megabytes / 1024} GB";
 }

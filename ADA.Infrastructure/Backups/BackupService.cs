@@ -2,8 +2,10 @@ using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using ADA.Core.Activity;
 using ADA.Core.Backups;
 using ADA.Core.Games;
+using ADA.Infrastructure.Activity;
 using ADA.Infrastructure.IO;
 using ADA.Infrastructure.Saves;
 using Microsoft.Extensions.Logging;
@@ -23,6 +25,10 @@ namespace ADA.Infrastructure.Backups;
 /// <param name="isGameRunning">Whether the install's game is running; restores refuse while it is.</param>
 /// <param name="freeSpace">Free bytes on the drive holding a path, or null when unknown; the drive's own by default.</param>
 /// <param name="time">The clock backups are named and stamped with.</param>
+/// <param name="activity">
+/// Where backups, restores and deletes are recorded. Successful scheduled backups and pruning aren't: they're automatic
+/// housekeeping, listed on the Backups page.
+/// </param>
 public sealed class BackupService(
     Func<string> folderProvider,
     string adaConfigFolder,
@@ -30,7 +36,8 @@ public sealed class BackupService(
     Func<GameInstall, CancellationToken, Task<bool>> isGameRunning,
     ILogger<BackupService>? log = null,
     Func<string, long?>? freeSpace = null,
-    TimeProvider? time = null)
+    TimeProvider? time = null,
+    ActivityLog? activity = null)
 {
     internal const string MANIFEST_ENTRY = "manifest.json";
 
@@ -67,8 +74,8 @@ public sealed class BackupService(
     /// <summary>A service whose folder never changes; for tests.</summary>
     public BackupService(string folder, string adaConfigFolder, string pendingAdaConfigFolder,
         Func<GameInstall, CancellationToken, Task<bool>> isGameRunning, ILogger<BackupService>? log = null,
-        Func<string, long?>? freeSpace = null, TimeProvider? time = null)
-        : this(() => folder, adaConfigFolder, pendingAdaConfigFolder, isGameRunning, log, freeSpace, time)
+        Func<string, long?>? freeSpace = null, TimeProvider? time = null, ActivityLog? activity = null)
+        : this(() => folder, adaConfigFolder, pendingAdaConfigFolder, isGameRunning, log, freeSpace, time, activity)
     {
     }
 
@@ -84,8 +91,18 @@ public sealed class BackupService(
     /// </exception>
     /// <exception cref="IOException">Not enough free space, or writing failed; nothing is left behind.</exception>
     /// <exception cref="OperationCanceledException">Cancelled; nothing is left behind.</exception>
-    public async Task<BackupInfo> CreateAsync(GameInstall game, BackupPart parts, BackupTrigger trigger,
-        IProgress<BackupProgress>? progress = null, CancellationToken ct = default)
+    public Task<BackupInfo> CreateAsync(GameInstall game, BackupPart parts, BackupTrigger trigger,
+        IProgress<BackupProgress>? progress = null, CancellationToken ct = default) =>
+        activity.RecordAsync(ActivityArea.Backups, ActivityActions.BACKUP_CREATED, game,
+            () => CreateCoreAsync(game, parts, trigger, progress, ct),
+            backup => trigger == BackupTrigger.Scheduled ? null : new ActivityDescription(
+                $"Backed up {DescribeParts(parts)} ({DiskSpace.Format(backup.Size)})",
+                [Path.GetFileName(backup.FilePath), .. backup.Manifest.Skipped.Select(s => $"Skipped {s}: it kept changing")]),
+            trigger == BackupTrigger.Scheduled ? "Scheduled backup failed" : "Backup failed",
+            isNotAFailure: e => e is NothingToBackUpException && trigger != BackupTrigger.Manual);
+
+    private async Task<BackupInfo> CreateCoreAsync(GameInstall game, BackupPart parts, BackupTrigger trigger,
+        IProgress<BackupProgress>? progress, CancellationToken ct)
     {
         await _gate.WaitAsync(ct);
         try
@@ -133,8 +150,21 @@ public sealed class BackupService(
     /// </summary>
     /// <exception cref="BackupException">The game is running, the backup is damaged or unsafe, or a part can't be restored here.</exception>
     /// <exception cref="IOException">Writing failed after the safety backup; files restored so far stay restored.</exception>
-    public async Task<RestoreResult> RestoreAsync(BackupInfo backup, GameInstall target, BackupPart parts,
-        IProgress<BackupProgress>? progress = null, CancellationToken ct = default)
+    public Task<RestoreResult> RestoreAsync(BackupInfo backup, GameInstall target, BackupPart parts,
+        IProgress<BackupProgress>? progress = null, CancellationToken ct = default) =>
+        activity.RecordAsync(ActivityArea.Backups, ActivityActions.BACKUP_RESTORED, target,
+            () => RestoreCoreAsync(backup, target, parts, progress, ct),
+            result => new ActivityDescription(
+                $"Restored {DescribeParts(parts)} ({ActivityText.Count(result.FilesRestored, "file")})",
+                [
+                    $"From {Path.GetFileName(backup.FilePath)}",
+                    result.SafetyBackup is { } safety ? $"Safety copy: {Path.GetFileName(safety.FilePath)}" : "No safety copy needed",
+                    .. result.AdaConfigPending ? ["ADA settings apply at the next start"] : Array.Empty<string>(),
+                ]),
+            "Restore failed", [$"From {Path.GetFileName(backup.FilePath)}"]);
+
+    private async Task<RestoreResult> RestoreCoreAsync(BackupInfo backup, GameInstall target, BackupPart parts,
+        IProgress<BackupProgress>? progress, CancellationToken ct)
     {
         if (parts == BackupPart.None || (parts & ~backup.Manifest.Parts) != BackupPart.None)
         {
@@ -190,12 +220,24 @@ public sealed class BackupService(
             .ToList();
         foreach (var backup in old)
         {
-            await DeleteAsync(backup);
+            await DeleteFileAsync(backup);
         }
         return old.Count;
     }
 
-    public Task DeleteAsync(BackupInfo backup) => Task.Run(() =>
+    /// <summary>Deletes a backup the user chose; pruning deletes through <see cref="DeleteFileAsync"/>, which records nothing.</summary>
+    public Task DeleteAsync(BackupInfo backup) =>
+        activity.RecordAsync(ActivityArea.Backups, ActivityActions.BACKUP_DELETED, null, () => DeleteFileAsync(backup),
+            new ActivityDescription($"Deleted the backup from {backup.Manifest.CreatedUtc.ToLocalTime():g}",
+                [Path.GetFileName(backup.FilePath)]),
+            "Deleting a backup failed", [Path.GetFileName(backup.FilePath)]);
+
+    /// <summary>"Everything", or the parts' names joined, e.g. "Saves, Mod settings".</summary>
+    public static string DescribeParts(BackupPart parts) => parts == BackupPart.All
+        ? "Everything"
+        : string.Join(", ", Split(parts).Select(Describe));
+
+    private Task DeleteFileAsync(BackupInfo backup) => Task.Run(() =>
     {
         File.Delete(backup.FilePath);
         _log.LogInformation("Deleted backup {Backup}", backup.FilePath);

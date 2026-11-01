@@ -1,5 +1,7 @@
+using ADA.Core.Activity;
 using ADA.Core.Catalog;
 using ADA.Core.Games;
+using ADA.Infrastructure.Activity;
 using ADA.Infrastructure.Downloads;
 using ADA.Infrastructure.Installing;
 using ADA.Infrastructure.Profiles;
@@ -32,7 +34,7 @@ public sealed class GameProfilesTests : IDisposable
         new FakeVersionSource((_, _) => Task.FromResult<IReadOnlyList<CatalogVersion>>([])),
         (_, _) => Task.FromResult(false));
 
-    private GameProfiles Profiles() => new(_store, Installs());
+    private GameProfiles Profiles(ActivityLog? activity = null) => new(_store, Installs(), activity: activity);
 
     /// <summary>A mod folder as another manager leaves it.</summary>
     private void PlaceForeign(string location, string version = "1.0.0", params string[] requires)
@@ -236,5 +238,33 @@ public sealed class GameProfilesTests : IDisposable
 
         Assert.NotNull(_store.Get("Keep"));
         Assert.Equal("Keep", _store.ActiveName(_game.Root));
+    }
+
+    [Fact]
+    public async Task RecordsCreatingAndDeletingAProfile()
+    {
+        var activity = new ActivityLog(_dir.Combine("activity.jsonl"));
+        var profiles = Profiles(activity);
+
+        await profiles.CreateAsync(_install, "Atria");
+        await profiles.DeleteAsync("Atria", [_install]);
+
+        var entries = await activity.ReadAsync();
+        Assert.Equal(["Deleted profile Atria", "Created profile Atria (0 mods)"], entries.Select(e => e.Summary));
+        Assert.Equal([ActivityActions.PROFILE_DELETED, ActivityActions.PROFILE_CREATED], entries.Select(e => e.Action));
+        Assert.Equal([null, _install.GamePath], entries.Select(e => e.InstallKey));
+    }
+
+    [Fact]
+    public async Task RecordsSavingFoundModsAsAProfile()
+    {
+        var activity = new ActivityLog(_dir.Combine("activity.jsonl"));
+        PlaceForeign("Mods/SML", "3.12.0");
+
+        await Profiles(activity).ImportToNewAsync(_install, await Found(), "Later", switchTo: false);
+
+        var entry = Assert.Single(await activity.ReadAsync());
+        Assert.Equal((ActivityActions.MODS_TAKEN_OVER, "Saved 1 found mod as profile Later"), (entry.Action, entry.Summary));
+        Assert.Equal(["SML 3.12.0"], entry.Details);
     }
 }

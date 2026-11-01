@@ -1,5 +1,7 @@
+using ADA.Core.Activity;
 using ADA.Core.Games;
 using ADA.Core.Servers;
+using ADA.Infrastructure.Activity;
 using ADA.Infrastructure.Installing;
 using ADA.Infrastructure.Servers;
 using ADA.Tests.Fixtures;
@@ -32,6 +34,41 @@ public sealed class ServerConnectionsTests : IDisposable
 
     private static GameInstall InstallFor(ServerConnection server) => new(ServerConnections.InstallKey(server.Id), GameLauncher.Unknown,
         server.Host, GameKind.DedicatedServer, null, server.Name);
+
+    private ServerConnections Recording(ActivityLog activity) =>
+        new(_store, new ServerSecrets(_secrets), new SatisfactoryServerApi(new HttpClient(_http)), activity: activity);
+
+    [Fact]
+    public async Task RecordsAFailedConnectWithTheReason()
+    {
+        var activity = new ActivityLog(_dir.Combine("activity.jsonl"));
+        using var connections = Recording(activity);
+        var server = Unreachable();
+        _store.Save(server);
+        _secrets.Saved[$"server:{server.Id:N}"] = "hunter2";
+
+        await Assert.ThrowsAsync<ServerConnectException>(() => connections.ConnectAsync(server.Id));
+
+        var entry = Assert.Single(await activity.ReadAsync());
+        Assert.Equal((ActivityArea.Servers, ActivityOutcome.Failed, "Connecting to Home failed"), (entry.Area, entry.Outcome, entry.Summary));
+        Assert.StartsWith("Couldn't reach 127.0.0.1:1", entry.Error);
+        Assert.Equal(ServerConnections.InstallKey(server.Id), entry.InstallKey);
+    }
+
+    [Fact]
+    public async Task AutomaticReconnectsAreNotRecorded()
+    {
+        var activity = new ActivityLog(_dir.Combine("activity.jsonl"));
+        using var connections = Recording(activity);
+        var server = Unreachable(connected: true);
+        _store.Save(server);
+        _secrets.Saved[$"server:{server.Id:N}"] = "hunter2";
+
+        await connections.ResumeAsync();
+
+        Assert.Equal(ServerState.Unavailable, connections.State);
+        Assert.Empty(await activity.ReadAsync());
+    }
 
     [Fact]
     public void InstallKeysAreRemoteAndShowTheServersName()
