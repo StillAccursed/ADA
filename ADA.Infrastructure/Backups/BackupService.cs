@@ -202,7 +202,8 @@ public sealed class BackupService(
 
     /// <summary>
     /// Deletes backups of <paramref name="trigger"/> from the same install as <paramref name="source"/>, keeping the
-    /// newest <paramref name="keep"/>. Hand-made backups are never pruned.
+    /// newest <paramref name="keep"/>. Hand-made backups are never pruned. Waits for a running backup, restore or
+    /// prune to finish, so each prune sees the previous one's result.
     /// </summary>
     /// <returns>How many were deleted.</returns>
     /// <exception cref="ArgumentException"><paramref name="trigger"/> is <see cref="BackupTrigger.Manual"/>.</exception>
@@ -213,16 +214,24 @@ public sealed class BackupService(
             throw new ArgumentException("Hand-made backups are never pruned.", nameof(trigger));
         }
 
-        var listing = await ListAsync(ct);
-        var old = listing.Backups
-            .Where(b => b.Manifest.Trigger == trigger && IsSameInstall(b.Manifest.Source, source))
-            .Skip(Math.Max(keep, 0))
-            .ToList();
-        foreach (var backup in old)
+        await _gate.WaitAsync(ct);
+        try
         {
-            await DeleteFileAsync(backup);
+            var listing = await ListAsync(ct);
+            var old = listing.Backups
+                .Where(b => b.Manifest.Trigger == trigger && IsSameInstall(b.Manifest.Source, source))
+                .Skip(Math.Max(keep, 0))
+                .ToList();
+            foreach (var backup in old)
+            {
+                await DeleteFileAsync(backup);
+            }
+            return old.Count;
         }
-        return old.Count;
+        finally
+        {
+            _gate.Release();
+        }
     }
 
     /// <summary>Deletes a backup the user chose; pruning deletes through <see cref="DeleteFileAsync"/>, which records nothing.</summary>
@@ -522,7 +531,9 @@ public sealed class BackupService(
     {
         try
         {
-            using var zip = ZipFile.OpenRead(file);
+            // Delete sharing, so listing never stops a prune or the user from deleting the backup on Windows.
+            using var archive = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete);
+            using var zip = new ZipArchive(archive, ZipArchiveMode.Read);
             if (zip.GetEntry(MANIFEST_ENTRY) is not { } entry)
             {
                 return null;
