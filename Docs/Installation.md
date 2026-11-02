@@ -12,8 +12,7 @@ package for every platform and processor:
 | Linux | `StillAccursed.ADA-linux-x64.AppImage` | Intel or AMD, including Steam Deck |
 | Linux | `StillAccursed.ADA-linux-arm64.AppImage` | ARM |
 
-Each package includes everything ADA needs, so there's no need to install .NET. The `.nupkg` and `releases.*.json`
-files on the same page are for ADA's updater; ignore them.
+Each package includes everything ADA needs, so there's no need to install .NET.
 
 ADA builds aren't code-signed yet, so each platform warns the first time ADA runs. The steps below get past it.
 
@@ -22,8 +21,7 @@ ADA builds aren't code-signed yet, so each platform warns the first time ADA run
 1. Run the `Setup.exe`. It installs for your user only, so no administrator prompt.
 2. If SmartScreen says "Windows protected your PC", choose **More info → Run anyway**.
 
-ADA is installed to `%LocalAppData%\StillAccursed.ADA` and adds a Start menu shortcut. A `Portable.zip` is also
-available for running ADA from any folder without installing.
+ADA is installed to `%LocalAppData%\StillAccursed.ADA` and adds a Start menu shortcut.
 
 ## macOS
 

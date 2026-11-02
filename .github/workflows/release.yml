@@ -90,6 +90,8 @@ jobs:
           merge-multiple: true
 
       # Uses Docs/Releases/<version>.md when it exists; otherwise GitHub writes notes from the commits.
+      # Only the installers go on the release page. Velopack's update files (.nupkg, releases.*.json) stay in this
+      # run's artifacts: ADA doesn't update itself yet, so nothing needs to read them from the release.
       - name: Create draft release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -97,4 +99,5 @@ jobs:
           VERSION="${GITHUB_REF_NAME#v}"
           NOTES="Docs/Releases/$VERSION.md"
           if [ -f "$NOTES" ]; then NOTES_ARGS=(--notes-file "$NOTES"); else NOTES_ARGS=(--generate-notes); fi
-          gh release create "$GITHUB_REF_NAME" releases/* --repo "$GITHUB_REPOSITORY" --draft --title "ADA $VERSION" "${NOTES_ARGS[@]}"
+          gh release create "$GITHUB_REF_NAME" releases/*-Setup.exe releases/*.dmg releases/*.AppImage \
+            --repo "$GITHUB_REPOSITORY" --draft --title "ADA $VERSION" "${NOTES_ARGS[@]}"

@@ -1,7 +1,7 @@
 # Releasing
 
 Releases are built by [release.yml](../.github/workflows/release.yml) with [Velopack](https://velopack.io), which
-makes the installers and the update packages ADA's updater reads.
+makes the installers and the update packages a future in-app updater will read.
 
 ## Making a release
 
@@ -23,15 +23,19 @@ makes the installers and the update packages ADA's updater reads.
 
 ## What each target produces
 
-| Target | Runner | Packages |
+| Target | Runner | Installer on the release |
 |---|---|---|
-| `win-x64`, `win-arm64` | `windows-latest` | `Setup.exe`, `Portable.zip` |
+| `win-x64`, `win-arm64` | `windows-latest` | `Setup.exe` |
 | `linux-x64` | `ubuntu-latest` | `.AppImage` |
 | `linux-arm64` | `ubuntu-24.04-arm` | `.AppImage` |
 | `osx-arm64`, `osx-x64` | `macos-latest` | `.dmg` holding `ADA.app` |
 
-Every target also produces a `.nupkg` and `releases.<target>.json`. Each target is its own Velopack channel, so an
-installed copy only ever updates to the package for its own platform and processor.
+Only the installers are attached to the release. Every target also produces Velopack's update files (a `.nupkg`,
+`releases.<target>.json`, `assets.<target>.json` and `RELEASES-<target>`) and, on Windows, a `Portable.zip`. These
+stay in the run's artifacts (kept for 90 days). ADA doesn't update itself yet; once it does, the update files must be
+published where the updater reads them, such as a separate update feed, so the release page stays installers-only.
+Each target is its own Velopack channel, so an installed copy will only ever update to the package for its own
+platform and processor.
 
 Notes on the setup:
 
