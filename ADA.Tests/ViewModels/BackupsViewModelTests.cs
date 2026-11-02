@@ -243,10 +243,10 @@ public sealed class BackupsViewModelTests : IDisposable
         var page = await OpenAsync();
         Assert.Single(page.Backups);
 
-        page.Schedule.ChangeFolder(_dir.Combine("elsewhere"));
-        await Wait.Until(() => _settings.Current.BackupFolder == _dir.Combine("elsewhere"));
+        await page.Schedule.ChangeFolderAsync(_dir.Combine("elsewhere"));
         await page.PendingRefresh;
 
+        Assert.Equal(_dir.Combine("elsewhere"), _settings.Current.BackupFolder);
         Assert.Empty(page.Backups);
         Assert.Equal("Backups made before stay in the old folder.", page.Schedule.FolderNotice);
     }

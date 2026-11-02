@@ -1,0 +1,100 @@
+name: Release
+
+# Pushing a tag such as v0.8.0 builds every package and creates a draft GitHub release to review and publish.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+env:
+  # Not "ADA": on Windows Velopack installs to %LocalAppData%\<packId> and removes that folder on uninstall,
+  # and %LocalAppData%\ADA holds the user's data.
+  PACK_ID: StillAccursed.ADA
+  VPK_VERSION: 1.2.161
+
+jobs:
+  package:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: windows-latest,   rid: win-x64,     exe: ADA.exe, icon: ADA/Assets/ada.ico }
+          - { os: windows-latest,   rid: win-arm64,   exe: ADA.exe, icon: ADA/Assets/ada.ico }
+          - { os: ubuntu-latest,    rid: linux-x64,   exe: ADA,     icon: build/icons/ada.png }
+          - { os: ubuntu-24.04-arm, rid: linux-arm64, exe: ADA,     icon: build/icons/ada.png }
+          - { os: macos-latest,     rid: osx-arm64,   exe: ADA,     icon: build/icons/ada.icns }
+          - { os: macos-latest,     rid: osx-x64,     exe: ADA,     icon: build/icons/ada.icns }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Version from tag
+        shell: bash
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+
+      - name: Publish
+        run: dotnet publish ADA --configuration Release --runtime ${{ matrix.rid }} -p:Version=${{ env.VERSION }} --output publish
+
+      # macOS skips Velopack's .pkg; the next step wraps its portable .app in a disk image instead. The bundle
+      # is ad-hoc signed ("-"): left unsigned, a downloaded copy is reported as damaged and can't be opened.
+      - name: Pack
+        shell: bash
+        run: |
+          dotnet tool install --global vpk --version "$VPK_VERSION"
+          NOTES="Docs/Releases/$VERSION.md"
+          vpk pack --packId "$PACK_ID" --packVersion "$VERSION" --packTitle ADA --packAuthors StillAccursed \
+            --packDir publish --mainExe ${{ matrix.exe }} --icon ${{ matrix.icon }} \
+            --runtime ${{ matrix.rid }} --channel ${{ matrix.rid }} --outputDir releases \
+            $( [ -f "$NOTES" ] && echo --releaseNotes "$NOTES" ) \
+            ${{ runner.os == 'macOS' && '--noInst --bundleId com.stillaccursed.ada --signAppIdentity -' || '' }}
+
+      # The disk image replaces Velopack's .pkg and portable zip: ADA.app plus an Applications shortcut
+      # to drag it onto. The .app keeps Velopack's update data, so updates work the same way. ditto, not
+      # unzip, keeps the bundle's symlinks and attributes so its signature stays valid. hdiutil is retried
+      # because it occasionally fails with "Resource busy" on GitHub's runners.
+      - name: Disk image (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          mkdir dmg
+          ditto -x -k releases/*-Portable.zip dmg
+          ln -s /Applications dmg/Applications
+          for attempt in 1 2 3; do
+            hdiutil create -volname ADA -srcfolder dmg -fs HFS+ -format UDZO \
+              "releases/$PACK_ID-${{ matrix.rid }}.dmg" && break
+            sleep 5
+          done
+          test -f "releases/$PACK_ID-${{ matrix.rid }}.dmg"
+          rm releases/*-Portable.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.rid }}
+          path: releases/*
+
+  # One job creates the release, so the six package jobs don't race to create it.
+  draft-release:
+    needs: package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: releases
+          merge-multiple: true
+
+      # Uses Docs/Releases/<version>.md when it exists; otherwise GitHub writes notes from the commits.
+      - name: Create draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          NOTES="Docs/Releases/$VERSION.md"
+          if [ -f "$NOTES" ]; then NOTES_ARGS=(--notes-file "$NOTES"); else NOTES_ARGS=(--generate-notes); fi
+          gh release create "$GITHUB_REF_NAME" releases/* --repo "$GITHUB_REPOSITORY" --draft --title "ADA $VERSION" "${NOTES_ARGS[@]}"

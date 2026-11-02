@@ -4,6 +4,14 @@
         <AssemblyName>ADA</AssemblyName>
         <OutputType>WinExe</OutputType>
         <ApplicationManifest>app.manifest</ApplicationManifest>
+        <ApplicationIcon>Assets\ada.ico</ApplicationIcon>
+    </PropertyGroup>
+
+    <!-- Release packages bundle the runtime, so users don't need .NET installed. Not trimmed:
+         linq2db and Avalonia rely on reflection. ReadyToRun speeds up the first launch. -->
+    <PropertyGroup Condition="'$(RuntimeIdentifier)' != ''">
+        <SelfContained>true</SelfContained>
+        <PublishReadyToRun>true</PublishReadyToRun>
     </PropertyGroup>
 
     <ItemGroup>
@@ -28,6 +36,7 @@
         <PackageReference Include="Serilog" />
         <PackageReference Include="Serilog.Extensions.Logging" />
         <PackageReference Include="Serilog.Sinks.File" />
+        <PackageReference Include="Velopack" />
     </ItemGroup>
 
     <ItemGroup>

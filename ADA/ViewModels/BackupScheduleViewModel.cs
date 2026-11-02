@@ -97,9 +97,10 @@ public partial class BackupScheduleViewModel : ViewModelBase
 
     /// <summary>
     /// Uses <paramref name="folder"/> for backups from now on, creating it; old backups stay where they are. Called by
-    /// the view after its folder picker. Not saved when the folder can't be created.
+    /// the view after its folder picker. Not saved when the folder can't be created. <see cref="FolderChanged"/> is
+    /// raised once the setting is saved, because the backup service reads its folder from the saved settings.
     /// </summary>
-    internal void ChangeFolder(string folder)
+    internal async Task ChangeFolderAsync(string folder)
     {
         try
         {
@@ -110,24 +111,24 @@ public partial class BackupScheduleViewModel : ViewModelBase
             FolderNotice = $"Couldn't use that folder: {e.Message}";
             return;
         }
-        Save(s => s with { BackupFolder = Path.GetFullPath(folder) });
         Folder = Path.GetFullPath(folder);
         FolderNotice = "Backups made before stay in the old folder.";
         OnPropertyChanged(nameof(IsDefaultFolder));
+        await SaveAsync(s => s with { BackupFolder = Path.GetFullPath(folder) });
         FolderChanged?.Invoke(this, EventArgs.Empty);
     }
 
     [RelayCommand]
-    private void UseDefaultFolder()
+    private async Task UseDefaultFolderAsync()
     {
         if (IsDefaultFolder)
         {
             return;
         }
-        Save(s => s with { BackupFolder = null });
         Folder = _defaultFolder;
         FolderNotice = "Backups made before stay in the old folder.";
         OnPropertyChanged(nameof(IsDefaultFolder));
+        await SaveAsync(s => s with { BackupFolder = null });
         FolderChanged?.Invoke(this, EventArgs.Empty);
     }
 
@@ -234,7 +235,10 @@ public partial class BackupScheduleViewModel : ViewModelBase
             ? $"Next backup in {(int)wait.TotalHours} h {wait.Minutes} m."
             : $"Next backup in {wait.Minutes} m.";
 
-    private void Save(Func<AppSettings, AppSettings> change) => _ = Task.Run(() =>
+    private void Save(Func<AppSettings, AppSettings> change) => _ = SaveAsync(change);
+
+    /// <summary>Saves on a background thread. Never throws: a failed save is logged and the old settings stay.</summary>
+    private Task SaveAsync(Func<AppSettings, AppSettings> change) => Task.Run(() =>
     {
         try
         {

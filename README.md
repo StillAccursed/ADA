@@ -9,7 +9,7 @@
 
 ADA's core concept is efficiency. After all, failures cost time and money, and neither has been allocated to reinstalling your mods. Browse, install and update what you need, then return to the entirely reasonable task of rebuilding your power grid for the third time.
 
-> **In development:** ADA is still being built. The dedicated Profiles, Servers and Activity pages are not yet available. Please report problems; the paperwork serves a purpose on this occasion.
+> **Preview:** ADA 0.8 is its first public release. It has mainly been tested on macOS, and dedicated server support is untested. Testers on Windows, Linux and dedicated servers are very welcome; please report what you find, good or bad.
 
 ## Features
 
@@ -31,13 +31,7 @@ ADA detects launcher-managed installations automatically. Custom game-folder sel
 
 ## Installation and Usage
 
-For a development build, install the [.NET 10 SDK](https://dotnet.microsoft.com/download) and Git, then run:
-
-```bash
-git clone https://github.com/StillAccursed/ADA.git
-cd ADA
-dotnet run --project ADA
-```
+Download the package for your platform from the [Releases page](https://github.com/StillAccursed/ADA/releases): a `Setup.exe` for Windows, a `.dmg` for macOS or an `.AppImage` for Linux. No separate .NET install is needed. Builds aren't code-signed yet, so the first launch shows a warning; [Installation](Docs/Installation.md) explains each platform's steps, updates and uninstalling.
 
 Once ADA is open:
 
@@ -69,9 +63,11 @@ Logs are stored here:
 
 ## Development
 
-ADA is built with **C#**, **.NET 10** and **Avalonia**. With the .NET 10 SDK installed, run these commands from the repository root:
+ADA is built with **C#**, **.NET 10** and **Avalonia**. With the [.NET 10 SDK](https://dotnet.microsoft.com/download) and Git installed, run these commands from the repository root:
 
 ```bash
+git clone https://github.com/StillAccursed/ADA.git
+cd ADA
 dotnet build ADA.sln
 dotnet test ADA.sln
 dotnet run --project ADA

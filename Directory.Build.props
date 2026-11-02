@@ -8,6 +8,10 @@
     <!-- Reports .editorconfig naming and brace rules during build, not only in the IDE. -->
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
     <TreatWarningsAsErrors Condition="'$(Configuration)' == 'Release'">true</TreatWarningsAsErrors>
+    <!-- Local builds use this; releases pass -p:Version from the git tag (v1.2.3 → 1.2.3). -->
+    <Version>0.8.0</Version>
+    <Authors>StillAccursed</Authors>
+    <Product>ADA</Product>
   </PropertyGroup>
   <PropertyGroup Condition="!$(MSBuildProjectName.EndsWith('.Tests'))">
     <!-- Checks that doc comments stay correct: well-formed XML, real parameter names, crefs that

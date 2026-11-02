@@ -69,7 +69,7 @@ public partial class BackupsView : UserControl
         });
         if (folders.FirstOrDefault()?.TryGetLocalPath() is { } path)
         {
-            _page.Schedule.ChangeFolder(path);
+            await _page.Schedule.ChangeFolderAsync(path);
         }
     }
 
